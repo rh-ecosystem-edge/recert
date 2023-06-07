@@ -22,9 +22,20 @@ separate from other clusters deployed in the same manner.
 - [ ] Remove OLM package server hack
 - [ ] Better error handling instead of `.unwrap()` everywhere
 - [ ] Somehow reduce binary size
+- [ ] Convert from resource YAML to etcd key-value key more gracefuly
+- [ ] Find proof that root-ca private key is actually missing
+- [ ] Get rid of the external certs list
+- [ ] Get rid of the external certs list
+- [ ] Find out how to use 
+- [ ] Move to a crypto lib that actually supports hybrid certs (EC signing RSA or vice versa) instead of shelling out to openssl for it
+- [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
+- [ ] Add warnings when the certs already expired. Plugin idea: extend expiration
+- [ ] Remove the code to adjust the signature algorithm identifer once we maintain the original algorithms instead of forcing RSA everywhere
+- [ ] Fix all code TODO comments
+
 
 ## Critical
-- [ ] Annotate every cert, every key
+- [ ] Figure out why /etc/machine-config-daemon/currentconfig doesn't get regenerated (probably because *sometimes* it's missing a `kind` field)
 - [ ] Create new serial numbers for regenerated certs
 - [ ] Make sure cert fingerprint matches after key regeneration (also must match signer)
 - [ ] Use the same RSA bit size as the original key
