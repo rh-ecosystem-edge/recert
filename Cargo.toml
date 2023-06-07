@@ -1,0 +1,35 @@
+[package]
+name = "recert"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde_json = "1.0.93"
+serde_yaml = "0.9.17"
+glob = "0.3.1"
+base64 = "0.21.0"
+pem = "2.0.1"
+x509-certificate = "0.19.0"
+lazy_static = "1.4.0"
+rsa = "0.9.0"
+pkcs1 = "0.7.5"
+bytes = "1.4.0"
+etcd-client = { version = "0.11", features = ["tls"] }
+tokio = { version = "1.0", features = ["full"] }
+ring = "0.16.20"
+bcder = "0.7.1"
+async-trait = "0.1.68"
+futures-util = "0.3.28"
+rand = "0.8.5"
+hmac = "0.12.1"
+sha2 = "0.10.6"
+jwt-simple = "0.11.5"
+serde = "1.0.163"
+clap = { version = "4.3.0", features = ["derive"] }
+p256 = "0.13.2"
+tempfile = "3.5.0"
+regex = "1.8.3"
+data-url = "0.3.0"
+dataurl = "0.1.2"
