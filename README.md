@@ -32,6 +32,7 @@ separate from other clusters deployed in the same manner.
 - [ ] Allow cert modification plugins (e.g. expiration change for testing, CN/SAN adjustment for image-based SNO)
 - [ ] Leave traces everywhere - PEM comments, resource annotations, etc to indicate that the resource has been modified
 - [ ] Create a very informative summary that can be used to debug the cert regen in prod
+- [ ] Give users an option to regenerate pointer ignitions
 
 ## Performance 
 
