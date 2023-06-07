@@ -17,6 +17,7 @@ separate from other clusters deployed in the same manner.
 # TODO
 
 ## Critical
+- [ ] Figure out ACM integration - how do we ensure certs relating to the spoke-hub relationship also get regenerated
 - [ ] Figure out why /etc/machine-config-daemon/currentconfig doesn't get regenerated (probably because *sometimes* it's missing a `kind` field)
 - [ ] Create new serial numbers for regenerated certs
 - [ ] Make sure cert fingerprint matches after key regeneration (also must match signer)
