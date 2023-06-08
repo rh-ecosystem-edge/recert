@@ -19,39 +19,39 @@ separate from other clusters deployed in the same manner.
 <details>
   <summary>TODO List</summary>
 
-    ## Critical
-    - [ ] Figure out ACM integration - how do we ensure certs relating to the spoke-hub relationship also get regenerated
-    - [ ] Figure out why /etc/machine-config-daemon/currentconfig doesn't get regenerated (probably because *sometimes* it's missing a `kind` field)
-    - [ ] Create new serial numbers for regenerated certs
-    - [ ] Make sure cert fingerprint matches after key regeneration (also must match signer)
-    - [ ] Use the same RSA bit size as the original key
-    - [ ] Don't use RSA everywhere - EC certs/keys should still be EC
-        - [ ] Remove the code to adjust the signature algorithm identifer once we've done that as it's no longer needed
-    - [ ] Allow cert modification plugins (e.g. expiration change for testing, CN/SAN adjustment for image-based SNO)
-    - [ ] Leave traces everywhere - PEM comments, resource annotations, etc to indicate that the resource has been modified
-    - [ ] Create a very informative summary that can be used to debug the cert regen in prod
-    - [ ] Give users an option to regenerate pointer ignitions
+## Critical
+- [ ] Figure out ACM integration - how do we ensure certs relating to the spoke-hub relationship also get regenerated
+- [ ] Figure out why /etc/machine-config-daemon/currentconfig doesn't get regenerated (probably because *sometimes* it's missing a `kind` field)
+- [ ] Create new serial numbers for regenerated certs
+- [ ] Make sure cert fingerprint matches after key regeneration (also must match signer)
+- [ ] Use the same RSA bit size as the original key
+- [ ] Don't use RSA everywhere - EC certs/keys should still be EC
+    - [ ] Remove the code to adjust the signature algorithm identifer once we've done that as it's no longer needed
+- [ ] Allow cert modification plugins (e.g. expiration change for testing, CN/SAN adjustment for image-based SNO)
+- [ ] Leave traces everywhere - PEM comments, resource annotations, etc to indicate that the resource has been modified
+- [ ] Create a very informative summary that can be used to debug the cert regen in prod
+- [ ] Give users an option to regenerate pointer ignitions
 
-    ## Performance 
+## Performance 
 
-    - [ ] Consider recalculating machine-config hashes hack to make machine-config start faster
-        - [ ] Or just delete `/etc/machine-config-daemon` and hope MCO starts fast enough
-    - [ ] Delete leases to make operators start faster
+- [ ] Consider recalculating machine-config hashes hack to make machine-config start faster
+    - [ ] Or just delete `/etc/machine-config-daemon` and hope MCO starts fast enough
+- [ ] Delete leases to make operators start faster
 
-    ## Nice to have
-    - [ ] Output kubeconfig as YAML and not JSON to make it look nicer
-    - [ ] Somehow have built-in ouger functionality instead of shelling out to ouger
-    - [ ] Remove OLM package server hack
-    - [ ] Better error handling instead of `.unwrap()` everywhere
-    - [ ] Somehow reduce binary size
-    - [ ] Get rid of unnecessary dependencies. Right now we have more than 300
-    - [ ] Convert from resource YAML to etcd key-value key more gracefuly
-    - [ ] Find proof that root-ca private key is actually missing
-    - [ ] Get rid of the external certs list
-    - [ ] Move to a crypto lib that actually supports hybrid certs (EC signing RSA or vice versa) instead of shelling out to openssl for it
-    - [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
-    - [ ] Add warnings when the certs already expired. Plugin idea: extend expiration
-    - [ ] Fix all code TODO comments
+## Nice to have
+- [ ] Output kubeconfig as YAML and not JSON to make it look nicer
+- [ ] Somehow have built-in ouger functionality instead of shelling out to ouger
+- [ ] Remove OLM package server hack
+- [ ] Better error handling instead of `.unwrap()` everywhere
+- [ ] Somehow reduce binary size
+- [ ] Get rid of unnecessary dependencies. Right now we have more than 300
+- [ ] Convert from resource YAML to etcd key-value key more gracefuly
+- [ ] Find proof that root-ca private key is actually missing
+- [ ] Get rid of the external certs list
+- [ ] Move to a crypto lib that actually supports hybrid certs (EC signing RSA or vice versa) instead of shelling out to openssl for it
+- [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
+- [ ] Add warnings when the certs already expired. Plugin idea: extend expiration
+- [ ] Fix all code TODO comments
 
 </details>
 
