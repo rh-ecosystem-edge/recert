@@ -1,5 +1,4 @@
 use super::{
-    crypto_utils::generate_rsa_key,
     distributed_public_key::DistributedPublicKey,
     k8s_etcd::get_etcd_yaml,
     keys::{PrivateKey, PublicKey},
@@ -10,6 +9,7 @@ use super::{
 use crate::{
     file_utils::{get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::InMemoryK8sEtcd,
+    rsa_key_pool::RsaKeyPool,
 };
 use pkcs1::EncodeRsaPrivateKey;
 use std::{self, cell::RefCell, fmt::Display, rc::Rc};
@@ -50,11 +50,11 @@ impl Display for DistributedPrivateKey {
 }
 
 impl DistributedPrivateKey {
-    pub(crate) fn regenerate(&mut self) {
-        let (self_new_rsa_private_key, self_new_key_pair) = generate_rsa_key();
+    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool) {
+        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().unwrap();
 
         for signee in &mut self.signees {
-            signee.regenerate(&PublicKey::from(&self.key), Some(&self_new_key_pair));
+            signee.regenerate(&PublicKey::from(&self.key), Some(&self_new_key_pair), rsa_key_pool);
         }
 
         self.key = PrivateKey::Rsa(self_new_rsa_private_key);

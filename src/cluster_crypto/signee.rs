@@ -1,6 +1,12 @@
+use super::{cert_key_pair::CertKeyPair, distributed_jwt::DistributedJwt, keys};
+use crate::rsa_key_pool::RsaKeyPool;
+use std::{
+    self,
+    cell::RefCell,
+    fmt::{Display, Formatter},
+    rc::Rc,
+};
 use x509_certificate::InMemorySigningKeyPair;
-use std::{self, fmt::{Formatter, Display}, cell::RefCell, rc::Rc};
-use super::{distributed_jwt::DistributedJwt, cert_key_pair::CertKeyPair, keys};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Signee {
@@ -20,10 +26,15 @@ impl Display for Signee {
 }
 
 impl Signee {
-    pub(crate) fn regenerate(&mut self, original_signing_public_key: &keys::PublicKey, new_signing_key: Option<&InMemorySigningKeyPair>) {
+    pub(crate) fn regenerate(
+        &mut self,
+        original_signing_public_key: &keys::PublicKey,
+        new_signing_key: Option<&InMemorySigningKeyPair>,
+        rsa_key_pool: &mut RsaKeyPool,
+    ) {
         match self {
             Self::CertKeyPair(cert_key_pair) => {
-                (**cert_key_pair).borrow_mut().regenerate(new_signing_key);
+                (**cert_key_pair).borrow_mut().regenerate(new_signing_key, rsa_key_pool);
             }
             Self::Jwt(jwt) => match new_signing_key {
                 Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair),
@@ -34,4 +45,3 @@ impl Signee {
         }
     }
 }
-

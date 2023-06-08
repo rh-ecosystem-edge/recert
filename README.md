@@ -33,8 +33,6 @@ separate from other clusters deployed in the same manner.
 
 - [ ] Consider recalculating machine-config hashes hack to make machine-config start faster
     - [ ] Or just delete `/etc/machine-config-daemon` and hope MCO starts fast enough
-- [ ] Start generating a pool of RSA/EC keys during the scanning phase to save time later (when we actually ned the key we'll simply draw from the pool)
-- [ ] More fine grained locking for the cluster crypto struct fields, instead of locking the entire struct could speed up scanning phase
 - [ ] Delete leases to make operators start faster
 
 ## Nice to have

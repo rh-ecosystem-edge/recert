@@ -46,12 +46,12 @@ impl From<jwt::Jwt> for CryptoObject {
     }
 }
 
-pub(crate) struct DiscoverdCryptoObect {
+pub(crate) struct DiscoveredCryptoObect {
     pub(crate) crypto_object: CryptoObject,
     pub(crate) location: Location,
 }
 
-impl DiscoverdCryptoObect {
+impl DiscoveredCryptoObect {
     pub(crate) fn new(crypto_object: CryptoObject, location: Location) -> Self {
         Self { crypto_object, location }
     }
@@ -59,7 +59,7 @@ impl DiscoverdCryptoObect {
 
 /// Given a value taken from a YAML field, scan it for cryptographic keys and certificates and
 /// record them in the appropriate data structures.
-pub(crate) fn process_yaml_value(value: String, location: &Location) -> Vec<DiscoverdCryptoObect> {
+pub(crate) fn process_yaml_value(value: String, location: &Location) -> Vec<DiscoveredCryptoObect> {
     let pem_bundle_objects = process_pem_bundle(&value, location);
     if pem_bundle_objects.len() > 0 {
         return pem_bundle_objects;
@@ -74,7 +74,7 @@ pub(crate) fn process_yaml_value(value: String, location: &Location) -> Vec<Disc
 
 /// Given a value taken from a YAML field, check if it looks like a JWT and record it in the
 /// appropriate data structures.
-pub(crate) fn process_jwt(value: &str, location: &Location) -> Option<DiscoverdCryptoObect> {
+pub(crate) fn process_jwt(value: &str, location: &Location) -> Option<DiscoveredCryptoObect> {
     // Need a cheap way to detect jwts that doesn't involve parsing them because we run this
     // against every secret/configmap data entry
     let parts = value.split('.').collect::<Vec<_>>();
@@ -100,12 +100,12 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Option<DiscoverdC
 
     let location = location.with_jwt();
 
-    Some(DiscoverdCryptoObect::new(jwt.into(), location))
+    Some(DiscoveredCryptoObect::new(jwt.into(), location))
 }
 
 /// Given a PEM bundle, scan it for cryptographic keys and certificates and record them in the
 /// appropriate data structures.
-pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Vec<DiscoverdCryptoObect> {
+pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Vec<DiscoveredCryptoObect> {
     let pems = pem::parse_many(value).unwrap();
 
     pems.iter()
@@ -113,7 +113,7 @@ pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Vec<Discov
         .enumerate()
         .filter(|(_, crypto_object)| crypto_object.is_some())
         .map(|(i, crypto_object)| (i, crypto_object.unwrap()))
-        .map(|(i, crypto_object)| DiscoverdCryptoObect::new(crypto_object, location.with_pem_bundle_index(i.try_into().unwrap())))
+        .map(|(i, crypto_object)| DiscoveredCryptoObect::new(crypto_object, location.with_pem_bundle_index(i.try_into().unwrap())))
         .collect()
 }
 

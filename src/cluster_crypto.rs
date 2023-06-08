@@ -1,6 +1,6 @@
 use self::{
     cert_key_pair::CertKeyPair,
-    crypto_objects::{process_yaml_value, DiscoverdCryptoObect},
+    crypto_objects::DiscoveredCryptoObect,
     distributed_jwt::DistributedJwt,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
@@ -9,19 +9,13 @@ use self::{
 };
 use crate::{
     cluster_crypto::signee::Signee,
-    file_utils::{self, read_file_to_string},
     k8s_etcd::{self, InMemoryK8sEtcd},
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
+    rsa_key_pool::{RsaKeyPool, self},
 };
-use futures_util::future::join_all;
-use locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType};
 use regex::Regex;
-use serde_json::Value;
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc};
-use std::{
-    collections::hash_map::Entry::{Occupied, Vacant},
-    path::Path,
-};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tokio::sync::Mutex;
 use x509_certificate::X509CertificateError;
 
@@ -37,6 +31,7 @@ pub(crate) mod jwt;
 pub(crate) mod keys;
 pub(crate) mod locations;
 pub(crate) mod pem_utils;
+pub(crate) mod scanning;
 pub(crate) mod signee;
 pub(crate) mod yaml_crawl;
 
@@ -83,8 +78,8 @@ impl ClusterCryptoObjects {
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
         self.internal.lock().await.commit_to_etcd_and_disk(etcd_client).await;
     }
-    pub(crate) async fn regenerate_crypto(&self) {
-        self.internal.lock().await.regenerate_crypto();
+    pub(crate) async fn regenerate_crypto(&self, rsa_key_pool: rsa_key_pool::RsaKeyPool) {
+        self.internal.lock().await.regenerate_crypto(rsa_key_pool);
     }
     pub(crate) async fn fill_signees(&mut self) {
         self.internal.lock().await.fill_signees();
@@ -101,14 +96,11 @@ impl ClusterCryptoObjects {
     pub(crate) async fn fill_jwt_signers(&mut self) {
         self.internal.lock().await.fill_jwt_signers();
     }
-    pub(crate) async fn process_k8s_static_resources(&mut self, k8s_dir: &Path) {
-        self.internal.lock().await.process_filesystem_resources(k8s_dir).await;
-    }
-    pub(crate) async fn process_static_resource_yaml(&mut self, contents: String, yaml_path: &PathBuf) {
-        self.internal.lock().await.process_static_resource_yaml(contents, yaml_path);
-    }
-    pub(crate) async fn process_etcd_resources(&mut self, etcd_client: Arc<InMemoryK8sEtcd>) {
-        self.internal.lock().await.process_etcd_resources(etcd_client).await;
+    pub(crate) async fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
+        self.internal
+            .lock()
+            .await
+            .register_discovered_crypto_objects(discovered_crypto_objects);
     }
 }
 
@@ -163,17 +155,17 @@ impl ClusterCryptoObjectsInternal {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    fn regenerate_crypto(&mut self) {
+    fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool) {
         for cert_key_pair in &self.cert_key_pairs {
             if (**cert_key_pair).borrow().signer.is_some() {
                 continue;
             }
 
-            (**cert_key_pair).borrow_mut().regenerate(None)
+            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool)
         }
 
         for private_key in self.private_keys.values() {
-            (**private_key).borrow_mut().regenerate()
+            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool)
         }
 
         println!("Making sure everything was regenerated...");
@@ -506,139 +498,7 @@ impl ClusterCryptoObjectsInternal {
         }
     }
 
-    /// Recursively scans the filesystem for resources which might contain cryptographic objects
-    /// and records them in the appropriate data structures
-    async fn process_filesystem_resources(&mut self, dir: &Path) {
-        self.process_filesystem_raw_pems(dir).await;
-        self.process_filesystem_yamls(dir).await;
-    }
-
-    /// Recursively scans a directoy for files which exclusively contain a PEM bundle (as opposed
-    /// to being embedded in a YAML file) and records them in the appropriate data structures.
-    async fn process_filesystem_raw_pems(&mut self, dir: &Path) {
-        let join_results = join_all(
-            file_utils::globvec(dir, "**/*.pem")
-                .into_iter()
-                .chain(file_utils::globvec(dir, "**/*.crt").into_iter())
-                .chain(file_utils::globvec(dir, "**/*.key").into_iter())
-                .chain(file_utils::globvec(dir, "**/*.pub").into_iter())
-                // Also scan for the .mcdorig versions of the above files, which are sometimes created
-                // by machine-config-daemon
-                .chain(file_utils::globvec(dir, "**/*.crt.mcdorig").into_iter())
-                .chain(file_utils::globvec(dir, "**/*.key.mcdorig").into_iter())
-                .chain(file_utils::globvec(dir, "**/*.pub.mcdorig").into_iter())
-                .map(|file_path| {
-                    tokio::spawn(async move {
-                        let contents = read_file_to_string(file_path.clone()).await;
-
-                        crypto_objects::process_pem_bundle(
-                            &contents,
-                            &Location::Filesystem(FileLocation {
-                                path: file_path.to_string_lossy().to_string(),
-                                content_location: FileContentLocation::Raw(LocationValueType::Unknown),
-                            }),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>(),
-        )
-        .await;
-
-        for discovered_crypto_objects in join_results {
-            self.register_discovered_crypto_objects(discovered_crypto_objects.unwrap());
-        }
-    }
-
-    /// Recrusively scans a directory for yaml files which might contain cryptographic objects and
-    /// records said objects in the appropriate data structures.
-    async fn process_filesystem_yamls(&mut self, dir: &Path) {
-        for yaml_path in file_utils::globvec(dir, "**/kubeconfig*")
-            .into_iter()
-            .chain(file_utils::globvec(dir, "**/currentconfig").into_iter())
-        {
-            if self
-                .process_static_resource_yaml(read_file_to_string(yaml_path.clone()).await, &yaml_path)
-                .is_none()
-            {
-                println!("Failed to process {}", yaml_path.to_string_lossy());
-            }
-        }
-    }
-
-    /// Read all relevant resources from etcd, scan them for cryptographic objects and record them
-    /// in the appropriate data structures.
-    async fn process_etcd_resources(&mut self, etcd_client: Arc<InMemoryK8sEtcd>) {
-        println!("Listing etcd keys...");
-        let key_lists = {
-            let etcd_client = &etcd_client;
-            [
-                &(etcd_client.list_keys("secrets").await),
-                &(etcd_client.list_keys("configmaps").await),
-                &(etcd_client.list_keys("validatingwebhookconfigurations").await),
-                &(etcd_client.list_keys("apiregistration.k8s.io/apiservices").await),
-                &(etcd_client.list_keys("machineconfiguration.openshift.io/machineconfigs").await),
-            ]
-        };
-
-        let all_keys = key_lists.into_iter().flatten();
-
-        println!("Crawling etcd...");
-        let join_results = join_all(
-            all_keys
-                .into_iter()
-                .map(|key| {
-                    let key = key.clone();
-                    let etcd_client = Arc::clone(&etcd_client);
-                    tokio::spawn(async move {
-                        let etcd_result = etcd_client.get(key).await;
-                        let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice()).expect("failed to parse yaml");
-                        let k8s_resource_location = K8sResourceLocation::from(&value);
-
-                        // Ensure our as_etcd_key function knows to generates the expected key, while we still
-                        // have the key. TODO: Find a more robust way to generate etcd keys, kubernetes is
-                        // doing it weirdly which is why as_etcd_key is so complicated. Couldn't find
-                        // documentation on how it should be done properly
-                        assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
-
-                        let decoded_yaml_values = yaml_crawl::crawl_yaml(value)
-                            .iter()
-                            .map(yaml_crawl::decode_yaml_value)
-                            .collect::<Vec<_>>();
-
-                        decoded_yaml_values
-                            .into_iter()
-                            .flatten()
-                            .map(|(yaml_location, yaml_value)| {
-                                process_yaml_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
-                            })
-                            .flatten()
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .collect::<Vec<_>>(),
-        )
-        .await;
-
-        println!("Processing etcd discovered crypto objects...");
-        for discovered_crypto_objects in join_results {
-            self.register_discovered_crypto_objects(discovered_crypto_objects.unwrap());
-        }
-    }
-
-    fn process_static_resource_yaml(&mut self, contents: String, yaml_path: &PathBuf) -> Option<()> {
-        for yaml_value in yaml_crawl::crawl_yaml((&serde_yaml::from_str::<Value>(contents.as_str()).ok().unwrap()).clone()) {
-            if let Some((_yaml_location, decoded_yaml_value)) = yaml_crawl::decode_yaml_value(&yaml_value) {
-                self.register_discovered_crypto_objects(process_yaml_value(
-                    decoded_yaml_value,
-                    &Location::file_yaml(&yaml_path.to_string_lossy().to_string(), &yaml_value.location),
-                ));
-            }
-        }
-
-        Some(())
-    }
-
-    fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoverdCryptoObect>) {
+    pub(crate) fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
         for discovered_crypto_object in discovered_crypto_objects {
             let location = discovered_crypto_object.location.clone();
             match discovered_crypto_object.crypto_object {

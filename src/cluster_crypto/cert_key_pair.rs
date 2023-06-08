@@ -1,6 +1,6 @@
 use super::{
     certificate::Certificate,
-    crypto_utils::{encode_tbs_cert_to_der, generate_rsa_key},
+    crypto_utils::encode_tbs_cert_to_der,
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
@@ -13,6 +13,7 @@ use crate::{
     cluster_crypto::locations::LocationValueType,
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
+    rsa_key_pool::RsaKeyPool,
 };
 use bcder::BitString;
 use bytes::Bytes;
@@ -49,14 +50,15 @@ impl CertKeyPair {
         }
     }
 
-    pub(crate) fn regenerate(&mut self, sign_with: Option<&InMemorySigningKeyPair>) {
-        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(sign_with);
+    pub(crate) fn regenerate(&mut self, sign_with: Option<&InMemorySigningKeyPair>, rsa_key_pool: &mut RsaKeyPool) {
+        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(sign_with, rsa_key_pool);
         (*self.distributed_cert).borrow_mut().certificate = Certificate::from(new_cert);
 
         for signee in &mut self.signees {
             signee.regenerate(
                 &(*self.distributed_cert).borrow().certificate.public_key,
                 Some(&new_cert_subject_key_pair),
+                rsa_key_pool,
             );
         }
 
@@ -80,9 +82,10 @@ impl CertKeyPair {
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
+        rsa_key_pool: &mut RsaKeyPool,
     ) -> (InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate) {
         // Generate a new RSA key for this cert
-        let (self_new_rsa_private_key, self_new_key_pair) = generate_rsa_key();
+        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().unwrap();
 
         // Copy the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;

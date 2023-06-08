@@ -7,7 +7,8 @@ use rsa::{
     RsaPrivateKey,
 };
 use serde_json::{Map, Value};
-use std::{cell::RefCell, io::Write, process::Command, rc::Rc};
+use std::{cell::RefCell, io::Write, rc::Rc};
+use tokio::process::Command;
 use x509_certificate::{rfc5280, InMemorySigningKeyPair};
 
 /// Shell out to openssl to verify that a certificate is signed by a given signing certificate. We
@@ -54,7 +55,7 @@ pub(crate) fn openssl_is_signed(potential_signer: &Rc<RefCell<CertKeyPair>>, sig
                 .as_bytes(),
         )
         .unwrap();
-    let mut openssl_verify_command = Command::new("openssl");
+    let mut openssl_verify_command = std::process::Command::new("openssl");
     openssl_verify_command
         .arg("verify")
         .arg("-no_check_time")
@@ -79,12 +80,13 @@ pub(crate) fn verify_jwt(
     .verify_token::<Map<String, Value>>(&distributed_jwt.jwt.str, None)
 }
 
-pub(crate) fn generate_rsa_key() -> (RsaPrivateKey, InMemorySigningKeyPair) {
+pub(crate) async fn generate_rsa_key_async() -> (RsaPrivateKey, InMemorySigningKeyPair) {
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
         String::from_utf8_lossy(
-            &std::process::Command::new("openssl")
+            &Command::new("openssl")
                 .args(&["genrsa", "2048"])
                 .output()
+                .await
                 .expect("failed to execute openssl")
                 .stdout,
         )

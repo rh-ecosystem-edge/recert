@@ -9,7 +9,6 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-
 pub(crate) struct EtcdResult {
     pub(crate) key: String,
     pub(crate) value: Vec<u8>,
@@ -35,28 +34,28 @@ impl InMemoryK8sEtcd {
     }
 
     pub(crate) async fn commit_to_actual_etcd(&self) {
-        let futures = self
-            .etcd_keyvalue_hashmap
-            .lock()
-            .await
-            .iter()
-            .map(|(key, value)| {
-                let key = key.clone();
-                let value = value.clone();
-                let etcd_client = Arc::clone(&self.etcd_client);
-                tokio::spawn(async move {
-                    // TODO: Find a fancier way to detect CRDs
-                    let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
-                        value.to_vec()
-                    } else {
-                        run_ouger("encode", value.as_slice()).await
-                    };
-                    etcd_client.kv_client().put(key.as_bytes(), value, None).await.unwrap()
+        join_all(
+            self.etcd_keyvalue_hashmap
+                .lock()
+                .await
+                .iter()
+                .map(|(key, value)| {
+                    let key = key.clone();
+                    let value = value.clone();
+                    let etcd_client = Arc::clone(&self.etcd_client);
+                    tokio::spawn(async move {
+                        // TODO: Find a fancier way to detect CRDs
+                        let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
+                            value.to_vec()
+                        } else {
+                            run_ouger("encode", value.as_slice()).await
+                        };
+                        etcd_client.kv_client().put(key.as_bytes(), value, None).await.unwrap()
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-
-        join_all(futures).await;
+                .collect::<Vec<_>>(),
+        )
+        .await;
     }
 
     pub(crate) async fn get(&self, key: String) -> EtcdResult {
