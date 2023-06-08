@@ -129,12 +129,12 @@ impl CertKeyPair {
         (self_new_key_pair, self_new_rsa_private_key, cert)
     }
 
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &mut InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
         self.commit_pair_certificate(etcd_client).await;
         self.commit_pair_key(etcd_client).await;
     }
 
-    pub(crate) async fn commit_pair_certificate(&self, etcd_client: &mut InMemoryK8sEtcd) {
+    pub(crate) async fn commit_pair_certificate(&self, etcd_client: &InMemoryK8sEtcd) {
         for location in (*self.distributed_cert).borrow().locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
@@ -147,7 +147,7 @@ impl CertKeyPair {
         }
     }
 
-    pub(crate) async fn commit_k8s_cert(&self, etcd_client: &mut InMemoryK8sEtcd, k8slocation: &K8sLocation) {
+    pub(crate) async fn commit_k8s_cert(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) {
         let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await;
 
         etcd_client
@@ -164,7 +164,7 @@ impl CertKeyPair {
             .await;
     }
 
-    pub(crate) async fn commit_pair_key(&self, etcd_client: &mut InMemoryK8sEtcd) {
+    pub(crate) async fn commit_pair_key(&self, etcd_client: &InMemoryK8sEtcd) {
         if let Some(private_key) = &self.distributed_private_key {
             (*private_key).borrow_mut().commit_to_etcd_and_disk(etcd_client).await;
         }

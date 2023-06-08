@@ -65,7 +65,7 @@ impl DistributedPrivateKey {
         }
     }
 
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &mut InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
@@ -78,7 +78,7 @@ impl DistributedPrivateKey {
         }
     }
 
-    async fn commit_k8s_private_key(&self, etcd_client: &mut InMemoryK8sEtcd, k8slocation: &K8sLocation) {
+    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) {
         let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await;
 
         etcd_client

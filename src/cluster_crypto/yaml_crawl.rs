@@ -210,11 +210,17 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Vec<YamlValue> {
     res
 }
 
-pub(crate) fn decode_yaml_value(yaml_value: &YamlValue) -> Option<String> {
-    match yaml_value.location.encoding {
+pub(crate) fn decode_yaml_value(yaml_value: &YamlValue) -> Option<(YamlLocation, String)> {
+    let decoded = match yaml_value.location.encoding {
         FieldEncoding::None => Some(yaml_value.value.as_str().unwrap().to_string()),
         FieldEncoding::Base64 => process_base64_value(&yaml_value.value),
         FieldEncoding::DataUrl => process_data_url_value(&yaml_value.value),
+    };
+
+    if let Some(decoded) = decoded {
+        Some((yaml_value.location.clone(), decoded))
+    } else {
+        None
     }
 }
 

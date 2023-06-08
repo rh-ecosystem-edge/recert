@@ -4,7 +4,6 @@ use cluster_crypto::ClusterCryptoObjects;
 use etcd_client::Client as EtcdClient;
 use k8s_etcd::InMemoryK8sEtcd;
 use std::{path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
 
 mod cluster_crypto;
 mod file_utils;
@@ -46,18 +45,18 @@ async fn main_internal(args: Args) {
     print_summary(cluster_crypto).await;
 }
 
-async fn init(args: Args) -> (Option<PathBuf>, Vec<PathBuf>, ClusterCryptoObjects, Arc<Mutex<InMemoryK8sEtcd>>) {
+async fn init(args: Args) -> (Option<PathBuf>, Vec<PathBuf>, ClusterCryptoObjects, Arc<InMemoryK8sEtcd>) {
     let etcd_client = EtcdClient::connect([args.etcd_endpoint.as_str()], None).await.unwrap();
 
     let kubeconfig = args.kubeconfig;
     let cluster_crypto = ClusterCryptoObjects::new();
-    let in_memory_etcd_client = Arc::new(Mutex::new(InMemoryK8sEtcd::new(etcd_client)));
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
 
     (kubeconfig, args.static_dir, cluster_crypto, in_memory_etcd_client)
 }
 
 async fn recertify(
-    in_memory_etcd_client: Arc<Mutex<InMemoryK8sEtcd>>,
+    in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     kubeconfig: Option<PathBuf>,
     static_dirs: Vec<PathBuf>,
@@ -67,7 +66,7 @@ async fn recertify(
     regenerate_cryptographic_objects(&cluster_crypto).await;
 }
 
-async fn finalize(in_memory_etcd_client: Arc<Mutex<InMemoryK8sEtcd>>, cluster_crypto: &mut ClusterCryptoObjects) {
+async fn finalize(in_memory_etcd_client: Arc<InMemoryK8sEtcd>, cluster_crypto: &mut ClusterCryptoObjects) {
     // Commit the cryptographic objects back to memory etcd and to disk
     commit_cryptographic_objects_back(&in_memory_etcd_client, &cluster_crypto).await;
     ocp_postprocess(&in_memory_etcd_client).await;
@@ -75,7 +74,7 @@ async fn finalize(in_memory_etcd_client: Arc<Mutex<InMemoryK8sEtcd>>, cluster_cr
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done
     println!("Committing to etcd...");
-    in_memory_etcd_client.lock().await.commit_to_actual_etcd().await;
+    in_memory_etcd_client.commit_to_actual_etcd().await;
 }
 
 async fn print_summary(cluster_crypto: ClusterCryptoObjects) {
@@ -83,10 +82,10 @@ async fn print_summary(cluster_crypto: ClusterCryptoObjects) {
     cluster_crypto.display().await;
 }
 
-async fn commit_cryptographic_objects_back(in_memory_etcd_client: &Arc<Mutex<InMemoryK8sEtcd>>, cluster_crypto: &ClusterCryptoObjects) {
+async fn commit_cryptographic_objects_back(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>, cluster_crypto: &ClusterCryptoObjects) {
     println!("Committing changes...");
-    let mut etcd_client = in_memory_etcd_client.lock().await;
-    cluster_crypto.commit_to_etcd_and_disk(&mut etcd_client).await;
+    let etcd_client = in_memory_etcd_client;
+    cluster_crypto.commit_to_etcd_and_disk(&etcd_client).await;
 }
 
 async fn regenerate_cryptographic_objects(cluster_crypto: &ClusterCryptoObjects) {
@@ -95,7 +94,7 @@ async fn regenerate_cryptographic_objects(cluster_crypto: &ClusterCryptoObjects)
 }
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
-async fn ocp_postprocess(in_memory_etcd_client: &Arc<Mutex<InMemoryK8sEtcd>>) {
+async fn ocp_postprocess(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) {
     println!("OCP postprocessing...");
     ocp_postprocess::fix_olm_secret_hash_annotation(in_memory_etcd_client).await;
 }
@@ -115,7 +114,7 @@ async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) {
 
 async fn collect_crypto_objects(
     cluster_crypto: &mut ClusterCryptoObjects,
-    in_memory_etcd_client: &Arc<Mutex<InMemoryK8sEtcd>>,
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     kubeconfig: Option<PathBuf>,
     static_dirs: Vec<PathBuf>,
 ) {

@@ -86,7 +86,7 @@ impl ClusterCryptoObjects {
     pub(crate) async fn display(&self) {
         self.internal.lock().await.display();
     }
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &mut InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
         self.internal.lock().await.commit_to_etcd_and_disk(etcd_client).await;
     }
     pub(crate) async fn regenerate_crypto(&self) {
@@ -113,7 +113,7 @@ impl ClusterCryptoObjects {
     pub(crate) async fn process_static_resource_yaml(&mut self, contents: String, yaml_path: &PathBuf) {
         self.internal.lock().await.process_static_resource_yaml(contents, yaml_path);
     }
-    pub(crate) async fn process_etcd_resources(&mut self, etcd_client: Arc<Mutex<InMemoryK8sEtcd>>) {
+    pub(crate) async fn process_etcd_resources(&mut self, etcd_client: Arc<InMemoryK8sEtcd>) {
         self.internal.lock().await.process_etcd_resources(etcd_client).await;
     }
 }
@@ -147,7 +147,7 @@ impl ClusterCryptoObjectsInternal {
     /// Commit all the crypto objects to etcd and disk. This is called after all the crypto
     /// objects have been regenerated so that the newly generated objects are persisted in
     /// etcd and on disk.
-    async fn commit_to_etcd_and_disk(&mut self, etcd_client: &mut InMemoryK8sEtcd) {
+    async fn commit_to_etcd_and_disk(&mut self, etcd_client: &InMemoryK8sEtcd) {
         for cert_key_pair in &self.cert_key_pairs {
             (**cert_key_pair).borrow().commit_to_etcd_and_disk(etcd_client).await;
         }
@@ -778,9 +778,10 @@ impl ClusterCryptoObjectsInternal {
 
     /// Read all relevant resources from etcd, scan them for cryptographic objects and record them
     /// in the appropriate data structures.
-    async fn process_etcd_resources(&mut self, etcd_client: Arc<Mutex<InMemoryK8sEtcd>>) {
+    async fn process_etcd_resources(&mut self, etcd_client: Arc<InMemoryK8sEtcd>) {
+        println!("Listing etcd keys...");
         let key_lists = {
-            let etcd_client = etcd_client.lock().await;
+            let etcd_client = &etcd_client;
             [
                 &(etcd_client.list_keys("secrets").await),
                 &(etcd_client.list_keys("configmaps").await),
@@ -792,38 +793,43 @@ impl ClusterCryptoObjectsInternal {
 
         let all_keys = key_lists.into_iter().flatten();
 
-        println!("Retrieving etcd resources...");
+        println!("Crawling etcd...");
         let join_results = join_all(
             all_keys
                 .into_iter()
                 .map(|key| {
                     let key = key.clone();
                     let etcd_client = Arc::clone(&etcd_client);
-                    tokio::spawn(async move { etcd_client.lock().await.get(key).await })
+                    tokio::spawn(async move {
+                        let etcd_result = etcd_client.get(key).await;
+                        let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice()).expect("failed to parse yaml");
+                        let k8s_resource_location = K8sResourceLocation::from(&value);
+
+                        // Ensure our as_etcd_key function knows to generates the expected key, while we still
+                        // have the key. TODO: Find a more robust way to generate etcd keys, kubernetes is
+                        // doing it weirdly which is why as_etcd_key is so complicated. Couldn't find
+                        // documentation on how it should be done properly
+                        assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
+
+                        (
+                            yaml_crawl::crawl_yaml(value)
+                                .iter()
+                                .map(yaml_crawl::decode_yaml_value)
+                                .collect::<Vec<_>>(),
+                            k8s_resource_location,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>(),
         )
         .await;
 
-        println!("Processing etcd resources...");
-        for etcd_result in join_results {
-            let etcd_result = etcd_result.unwrap();
-            let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice()).expect("failed to parse yaml");
-            let k8s_resource_location = K8sResourceLocation::from(&value);
-
-            // Ensure our as_etcd_key function knows to generates the expected key, while we still
-            // have the key. TODO: Find a more robust way to generate etcd keys, kubernetes is
-            // doing it weirdly which is why as_etcd_key is so complicated. Couldn't find
-            // documentation on how it should be done properly
-            assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
-
-            let yaml_values = yaml_crawl::crawl_yaml(value);
+        println!("Processing etcd discovered crypto objects...");
+        for yaml_values in join_results {
+            let (yaml_values, k8s_resource_location) = yaml_values.unwrap();
             for yaml_value in yaml_values {
-                if let Some(decoded_yaml_value) = yaml_crawl::decode_yaml_value(&yaml_value) {
-                    self.process_yaml_value(
-                        decoded_yaml_value,
-                        &Location::k8s_yaml(&k8s_resource_location, &yaml_value.location),
-                    );
+                if let Some((yaml_location, decoded_yaml_value)) = yaml_value {
+                    self.process_yaml_value(decoded_yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location));
                 }
             }
         }
@@ -853,7 +859,7 @@ impl ClusterCryptoObjectsInternal {
 
     fn process_static_resource_yaml(&mut self, contents: String, yaml_path: &PathBuf) -> Option<()> {
         for yaml_value in yaml_crawl::crawl_yaml((&serde_yaml::from_str::<Value>(contents.as_str()).ok().unwrap()).clone()) {
-            if let Some(decoded_yaml_value) = yaml_crawl::decode_yaml_value(&yaml_value) {
+            if let Some((_yaml_location, decoded_yaml_value)) = yaml_crawl::decode_yaml_value(&yaml_value) {
                 self.process_yaml_value(
                     decoded_yaml_value,
                     &Location::file_yaml(&yaml_path.to_string_lossy().to_string(), &yaml_value.location),
