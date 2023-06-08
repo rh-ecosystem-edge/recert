@@ -1,30 +1,23 @@
 use self::{
-    cert_key_pair::CertKeyPair, distributed_jwt::DistributedJwt, distributed_private_key::DistributedPrivateKey,
-    distributed_public_key::DistributedPublicKey, locations::Locations,
+    cert_key_pair::CertKeyPair,
+    crypto_objects::{process_yaml_value, DiscoverdCryptoObect},
+    distributed_jwt::DistributedJwt,
+    distributed_private_key::DistributedPrivateKey,
+    distributed_public_key::DistributedPublicKey,
+    keys::{PrivateKey, PublicKey},
+    locations::Locations,
 };
 use crate::{
     cluster_crypto::signee::Signee,
     file_utils::{self, read_file_to_string},
     k8s_etcd::{self, InMemoryK8sEtcd},
-    rules::{self, KNOWN_MISSING_PRIVATE_KEY_CERTS},
+    rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use bytes::Bytes;
 use futures_util::future::join_all;
 use locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType};
-use p256::SecretKey;
-use pkcs1::DecodeRsaPrivateKey;
 use regex::Regex;
 use serde_json::Value;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io::Write,
-    path::PathBuf,
-    process::{Command, Stdio},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc};
 use std::{
     collections::hash_map::Entry::{Occupied, Vacant},
     path::Path,
@@ -34,6 +27,7 @@ use x509_certificate::X509CertificateError;
 
 pub(crate) mod cert_key_pair;
 pub(crate) mod certificate;
+pub(crate) mod crypto_objects;
 pub(crate) mod crypto_utils;
 pub(crate) mod distributed_cert;
 pub(crate) mod distributed_jwt;
@@ -56,8 +50,8 @@ pub(crate) struct ClusterCryptoObjectsInternal {
     /// locations where the key/cert was found, and the list of locations for each cert/key grows
     /// as we scan more and more resources. The hashmap keys are of-course hashables so we can
     /// easily check if we already encountered the object before.
-    pub(crate) private_keys: HashMap<keys::PrivateKey, Rc<RefCell<DistributedPrivateKey>>>,
-    pub(crate) public_keys: HashMap<keys::PublicKey, Rc<RefCell<DistributedPublicKey>>>,
+    pub(crate) private_keys: HashMap<PrivateKey, Rc<RefCell<DistributedPrivateKey>>>,
+    pub(crate) public_keys: HashMap<PublicKey, Rc<RefCell<DistributedPublicKey>>>,
     pub(crate) certs: HashMap<certificate::Certificate, Rc<RefCell<distributed_cert::DistributedCert>>>,
     pub(crate) jwts: HashMap<jwt::Jwt, Rc<RefCell<DistributedJwt>>>,
 
@@ -65,7 +59,7 @@ pub(crate) struct ClusterCryptoObjectsInternal {
     /// from it and add to this mapping. This will later allow us to easily
     /// associate certificates with their matching private key (which would
     /// otherwise require brute force search).
-    pub(crate) public_to_private: HashMap<keys::PublicKey, keys::PrivateKey>,
+    pub(crate) public_to_private: HashMap<PublicKey, PrivateKey>,
 
     /// After collecting all certs and private keys, we go through the list of certs and try to
     /// find a private key that matches the public key of the cert (with the help of
@@ -340,7 +334,7 @@ impl ClusterCryptoObjectsInternal {
             let mut maybe_signer = jwt::JwtSigner::Unknown;
 
             if let Some(last_signer) = &last_signer {
-                match crypto_utils::verify_jwt(&keys::PublicKey::from(&(*last_signer).borrow().key), &(**distributed_jwt).borrow()) {
+                match crypto_utils::verify_jwt(&PublicKey::from(&(*last_signer).borrow().key), &(**distributed_jwt).borrow()) {
                     Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
                         maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(&last_signer));
                     }
@@ -349,7 +343,7 @@ impl ClusterCryptoObjectsInternal {
             } else {
                 for distributed_private_key in self.private_keys.values() {
                     match crypto_utils::verify_jwt(
-                        &keys::PublicKey::from(&(**distributed_private_key).borrow().key),
+                        &PublicKey::from(&(**distributed_private_key).borrow().key),
                         &(**distributed_jwt).borrow(),
                     ) {
                         Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
@@ -367,7 +361,7 @@ impl ClusterCryptoObjectsInternal {
                     for cert_key_pair in &self.cert_key_pairs {
                         if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
                             match crypto_utils::verify_jwt(
-                                &keys::PublicKey::from(&(**distributed_private_key).borrow().key),
+                                &PublicKey::from(&(**distributed_private_key).borrow().key),
                                 &(**distributed_jwt).borrow(),
                             ) {
                                 Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
@@ -504,221 +498,10 @@ impl ClusterCryptoObjectsInternal {
         }
 
         for distributed_private_key in self.private_keys.values() {
-            let public_part = keys::PublicKey::from(&(*distributed_private_key).borrow().key);
+            let public_part = PublicKey::from(&(*distributed_private_key).borrow().key);
 
             if let Occupied(public_key_entry) = self.public_keys.entry(public_part) {
                 (*distributed_private_key).borrow_mut().associated_distributed_public_key = Some(Rc::clone(public_key_entry.get()));
-            }
-        }
-    }
-
-    /// Given a value taken from a YAML field, scan it for cryptographic keys and certificates and
-    /// record them in the appropriate data structures.
-    fn process_yaml_value(&mut self, value: String, location: &Location) {
-        if let Some(_) = self.process_pem_bundle(&value, location) {
-            return;
-        };
-
-        if let Some(_) = self.process_jwt(&value, location) {
-            return;
-        }
-    }
-
-    /// Given a value taken from a YAML field, check if it looks like a JWT and record it in the
-    /// appropriate data structures.
-    fn process_jwt(&mut self, value: &str, location: &Location) -> Option<()> {
-        // Need a cheap way to detect jwts that doesn't involve parsing them because we run this
-        // against every secret/configmap data entry
-        let parts = value.split('.').collect::<Vec<_>>();
-        if parts.len() != 3 {
-            return None;
-        }
-
-        let header = parts[0];
-        let payload = parts[1];
-        let signature = parts[2];
-
-        if let Err(_) = URL_SAFE_NO_PAD.decode(header.as_bytes()) {
-            return None;
-        }
-        if let Err(_) = URL_SAFE_NO_PAD.decode(payload.as_bytes()) {
-            return None;
-        }
-        if let Err(_) = URL_SAFE_NO_PAD.decode(signature.as_bytes()) {
-            return None;
-        }
-
-        let jwt = jwt::Jwt { str: value.to_string() };
-
-        let location = location.with_jwt();
-
-        match self.jwts.entry(jwt.clone()) {
-            Vacant(distributed_jwt) => {
-                distributed_jwt.insert(Rc::new(RefCell::new(distributed_jwt::DistributedJwt {
-                    jwt,
-                    locations: Locations(vec![location].into_iter().collect()),
-                    signer: jwt::JwtSigner::Unknown,
-                    regenerated: false,
-                })));
-            }
-            Occupied(distributed_jwt) => {
-                (**distributed_jwt.get()).borrow_mut().locations.0.insert(location);
-            }
-        }
-
-        Some(())
-    }
-
-    /// Given a PEM bundle, scan it for cryptographic keys and certificates and record them in the
-    /// appropriate data structures.
-    fn process_pem_bundle(&mut self, value: &str, location: &Location) -> Option<()> {
-        let pems = pem::parse_many(value).unwrap();
-
-        if pems.is_empty() {
-            return None;
-        }
-
-        for (i, pem) in pems.iter().enumerate() {
-            let location = location.with_pem_bundle_index(i.try_into().unwrap());
-
-            self.process_single_pem(pem, &location);
-        }
-
-        Some(())
-    }
-
-    /// Given a single PEM, scan it for cryptographic keys and certificates and record them in the
-    /// appropriate data structures.
-    fn process_single_pem(&mut self, pem: &pem::Pem, location: &Location) {
-        match pem.tag() {
-            "CERTIFICATE" => {
-                self.process_pem_cert(pem, location);
-            }
-            "RSA PRIVATE KEY" => {
-                self.process_pem_rsa_private_key(pem, location);
-            }
-            "EC PRIVATE KEY" => {
-                self.process_pem_ec_private_key(pem, location);
-            }
-            "PRIVATE KEY" => {
-                panic!("private pkcs8 unsupported at {}", location);
-            }
-            "PUBLIC KEY" => {
-                panic!("public pkcs8 unsupported at {}", location);
-            }
-            "RSA PUBLIC KEY" => {
-                self.process_pem_public_key(pem, location);
-            }
-            "ENTITLEMENT DATA" | "RSA SIGNATURE" => {
-                // dbg!("TODO: Handle {} at {}", pem.tag(), location);
-            }
-            _ => {
-                panic!("unknown pem tag {}", pem.tag());
-            }
-        }
-    }
-
-    /// Given an RSA private key PEM, record it in the appropriate data structures.
-    fn process_pem_rsa_private_key(&mut self, pem: &pem::Pem, location: &Location) {
-        let rsa_private_key = rsa::RsaPrivateKey::from_pkcs1_pem(&pem.to_string()).unwrap();
-
-        let private_part = keys::PrivateKey::Rsa(rsa_private_key);
-        let public_part = keys::PublicKey::from(&private_part);
-
-        self.register_private_key_public_key_mapping(public_part, &private_part);
-        self.register_private_key(private_part, location);
-    }
-
-    /// Given an EC private key PEM, record it in the appropriate data structures.
-    fn process_pem_ec_private_key(&mut self, pem: &pem::Pem, location: &Location) {
-        // First convert to pkcs#8 by shelling out to openssl pkcs8 -topk8 -nocrypt:
-        let mut command = Command::new("openssl")
-            .arg("pkcs8")
-            .arg("-topk8")
-            .arg("-nocrypt")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        command.stdin.take().unwrap().write_all(pem.to_string().as_bytes()).unwrap();
-
-        let output = command.wait_with_output().unwrap();
-        let pem = pem::parse(output.stdout).unwrap();
-
-        let key = pem.to_string().parse::<SecretKey>().unwrap();
-        let public_key = key.public_key();
-
-        let private_part = keys::PrivateKey::Ec(Bytes::copy_from_slice(pem.contents()));
-        let public_part = keys::PublicKey::Ec(Bytes::copy_from_slice(public_key.to_string().as_bytes()));
-
-        self.register_private_key_public_key_mapping(public_part, &private_part);
-        self.register_private_key(private_part, location);
-    }
-
-    /// Associate a private key with the public key derived from it by us. This later helps
-    /// us associate it with the certificate that contains the public key as the subject.
-    fn register_private_key_public_key_mapping(&mut self, public_part: keys::PublicKey, private_part: &keys::PrivateKey) {
-        self.public_to_private.insert(public_part, private_part.clone());
-    }
-
-    fn register_private_key(&mut self, private_part: keys::PrivateKey, location: &Location) {
-        match self.private_keys.entry(private_part.clone()) {
-            Vacant(distributed_private_key_entry) => {
-                distributed_private_key_entry.insert(Rc::new(RefCell::new(distributed_private_key::DistributedPrivateKey {
-                    locations: Locations(vec![location.clone()].into_iter().collect()),
-                    key: private_part,
-                    signees: vec![],
-                    // We don't set the public key here even though we just generated it because
-                    // this field is for actual public keys that we find in the wild, not ones we
-                    // generate ourselves.
-                    associated_distributed_public_key: None,
-                    regenerated: false,
-                })));
-            }
-
-            Occupied(distributed_private_key_entry) => {
-                (**distributed_private_key_entry.into_mut())
-                    .borrow_mut()
-                    .locations
-                    .0
-                    .insert(location.clone());
-            }
-        }
-    }
-
-    /// Given a certificate PEM, record it in the appropriate data structures.
-    fn process_pem_cert(&mut self, pem: &pem::Pem, location: &Location) {
-        self.register_cert(
-            &x509_certificate::CapturedX509Certificate::from_der(pem.contents()).unwrap(),
-            location,
-        );
-    }
-
-    fn register_cert(&mut self, x509_certificate: &x509_certificate::CapturedX509Certificate, location: &Location) {
-        let hashable_cert = certificate::Certificate::from(x509_certificate.clone());
-
-        if rules::EXTERNAL_CERTS.contains(&hashable_cert.subject) {
-            return;
-        }
-
-        match hashable_cert.original.key_algorithm().unwrap() {
-            x509_certificate::KeyAlgorithm::Rsa => {}
-            x509_certificate::KeyAlgorithm::Ecdsa(_) => {}
-            x509_certificate::KeyAlgorithm::Ed25519 => {
-                panic!("ed25519 unsupported at {}", location);
-            }
-        }
-
-        match self.certs.entry(hashable_cert.clone()) {
-            Vacant(distributed_cert) => {
-                distributed_cert.insert(Rc::new(RefCell::new(distributed_cert::DistributedCert {
-                    certificate: hashable_cert,
-                    locations: Locations(vec![location.clone()].into_iter().collect()),
-                })));
-            }
-            Occupied(distributed_cert) => {
-                (**distributed_cert.get()).borrow_mut().locations.0.insert(location.clone());
             }
         }
     }
@@ -733,18 +516,36 @@ impl ClusterCryptoObjectsInternal {
     /// Recursively scans a directoy for files which exclusively contain a PEM bundle (as opposed
     /// to being embedded in a YAML file) and records them in the appropriate data structures.
     async fn process_filesystem_raw_pems(&mut self, dir: &Path) {
-        for raw_pem_path in file_utils::globvec(dir, "**/*.pem")
-            .into_iter()
-            .chain(file_utils::globvec(dir, "**/*.crt").into_iter())
-            .chain(file_utils::globvec(dir, "**/*.key").into_iter())
-            .chain(file_utils::globvec(dir, "**/*.pub").into_iter())
-            // Also scan for the .mcdorig versions of the above files, which are sometimes created
-            // by machine-config-daemon
-            .chain(file_utils::globvec(dir, "**/*.crt.mcdorig").into_iter())
-            .chain(file_utils::globvec(dir, "**/*.key.mcdorig").into_iter())
-            .chain(file_utils::globvec(dir, "**/*.pub.mcdorig").into_iter())
-        {
-            self.process_static_resource_raw_pem_bundle(read_file_to_string(raw_pem_path.clone()).await, &raw_pem_path);
+        let join_results = join_all(
+            file_utils::globvec(dir, "**/*.pem")
+                .into_iter()
+                .chain(file_utils::globvec(dir, "**/*.crt").into_iter())
+                .chain(file_utils::globvec(dir, "**/*.key").into_iter())
+                .chain(file_utils::globvec(dir, "**/*.pub").into_iter())
+                // Also scan for the .mcdorig versions of the above files, which are sometimes created
+                // by machine-config-daemon
+                .chain(file_utils::globvec(dir, "**/*.crt.mcdorig").into_iter())
+                .chain(file_utils::globvec(dir, "**/*.key.mcdorig").into_iter())
+                .chain(file_utils::globvec(dir, "**/*.pub.mcdorig").into_iter())
+                .map(|file_path| {
+                    tokio::spawn(async move {
+                        let contents = read_file_to_string(file_path.clone()).await;
+
+                        crypto_objects::process_pem_bundle(
+                            &contents,
+                            &Location::Filesystem(FileLocation {
+                                path: file_path.to_string_lossy().to_string(),
+                                content_location: FileContentLocation::Raw(LocationValueType::Unknown),
+                            }),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await;
+
+        for discovered_crypto_objects in join_results {
+            self.register_discovered_crypto_objects(discovered_crypto_objects.unwrap());
         }
     }
 
@@ -762,18 +563,6 @@ impl ClusterCryptoObjectsInternal {
                 println!("Failed to process {}", yaml_path.to_string_lossy());
             }
         }
-    }
-
-    // Processes a filesystem pem bundle for cryptographic objects and records them in the
-    // appropriate data structures
-    fn process_static_resource_raw_pem_bundle(&mut self, contents: String, pem_file_path: &PathBuf) {
-        self.process_pem_bundle(
-            &contents,
-            &Location::Filesystem(FileLocation {
-                path: pem_file_path.to_string_lossy().to_string(),
-                content_location: FileContentLocation::Raw(LocationValueType::Unknown),
-            }),
-        );
     }
 
     /// Read all relevant resources from etcd, scan them for cryptographic objects and record them
@@ -811,13 +600,19 @@ impl ClusterCryptoObjectsInternal {
                         // documentation on how it should be done properly
                         assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
 
-                        (
-                            yaml_crawl::crawl_yaml(value)
-                                .iter()
-                                .map(yaml_crawl::decode_yaml_value)
-                                .collect::<Vec<_>>(),
-                            k8s_resource_location,
-                        )
+                        let decoded_yaml_values = yaml_crawl::crawl_yaml(value)
+                            .iter()
+                            .map(yaml_crawl::decode_yaml_value)
+                            .collect::<Vec<_>>();
+
+                        decoded_yaml_values
+                            .into_iter()
+                            .flatten()
+                            .map(|(yaml_location, yaml_value)| {
+                                process_yaml_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
+                            })
+                            .flatten()
+                            .collect::<Vec<_>>()
                     })
                 })
                 .collect::<Vec<_>>(),
@@ -825,48 +620,96 @@ impl ClusterCryptoObjectsInternal {
         .await;
 
         println!("Processing etcd discovered crypto objects...");
-        for yaml_values in join_results {
-            let (yaml_values, k8s_resource_location) = yaml_values.unwrap();
-            for yaml_value in yaml_values {
-                if let Some((yaml_location, decoded_yaml_value)) = yaml_value {
-                    self.process_yaml_value(decoded_yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location));
-                }
-            }
-        }
-    }
-
-    fn process_pem_public_key(&mut self, pem: &pem::Pem, location: &Location) {
-        let rsa_public_key = keys::PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(pem.contents()));
-
-        match self.public_keys.entry(rsa_public_key.clone()) {
-            Vacant(distributed_public_key_entry) => {
-                distributed_public_key_entry.insert(Rc::new(RefCell::new(distributed_public_key::DistributedPublicKey {
-                    locations: Locations(vec![location.clone()].into_iter().collect()),
-                    key: rsa_public_key,
-                    regenerated: false,
-                })));
-            }
-
-            Occupied(distributed_public_key_entry) => {
-                (**distributed_public_key_entry.into_mut())
-                    .borrow_mut()
-                    .locations
-                    .0
-                    .insert(location.clone());
-            }
+        for discovered_crypto_objects in join_results {
+            self.register_discovered_crypto_objects(discovered_crypto_objects.unwrap());
         }
     }
 
     fn process_static_resource_yaml(&mut self, contents: String, yaml_path: &PathBuf) -> Option<()> {
         for yaml_value in yaml_crawl::crawl_yaml((&serde_yaml::from_str::<Value>(contents.as_str()).ok().unwrap()).clone()) {
             if let Some((_yaml_location, decoded_yaml_value)) = yaml_crawl::decode_yaml_value(&yaml_value) {
-                self.process_yaml_value(
+                self.register_discovered_crypto_objects(process_yaml_value(
                     decoded_yaml_value,
                     &Location::file_yaml(&yaml_path.to_string_lossy().to_string(), &yaml_value.location),
-                );
+                ));
             }
         }
 
         Some(())
+    }
+
+    fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoverdCryptoObect>) {
+        for discovered_crypto_object in discovered_crypto_objects {
+            let location = discovered_crypto_object.location.clone();
+            match discovered_crypto_object.crypto_object {
+                crypto_objects::CryptoObject::PrivateKey(private_part, public_part) => {
+                    self.public_to_private.insert(public_part, private_part.clone());
+
+                    match self.private_keys.entry(private_part.clone()) {
+                        Vacant(distributed_private_key_entry) => {
+                            distributed_private_key_entry.insert(Rc::new(RefCell::new(distributed_private_key::DistributedPrivateKey {
+                                locations: Locations(vec![location.clone()].into_iter().collect()),
+                                key: private_part,
+                                signees: vec![],
+                                // We don't set the public key here even though we just generated it because
+                                // this field is for actual public keys that we find in the wild, not ones we
+                                // generate ourselves.
+                                associated_distributed_public_key: None,
+                                regenerated: false,
+                            })));
+                        }
+
+                        Occupied(distributed_private_key_entry) => {
+                            (**distributed_private_key_entry.into_mut())
+                                .borrow_mut()
+                                .locations
+                                .0
+                                .insert(location.clone());
+                        }
+                    }
+                }
+                crypto_objects::CryptoObject::PublicKey(public_key) => match self.public_keys.entry(public_key.clone()) {
+                    Vacant(distributed_public_key_entry) => {
+                        distributed_public_key_entry.insert(Rc::new(RefCell::new(distributed_public_key::DistributedPublicKey {
+                            locations: Locations(vec![location.clone()].into_iter().collect()),
+                            key: public_key,
+                            regenerated: false,
+                        })));
+                    }
+
+                    Occupied(distributed_public_key_entry) => {
+                        (**distributed_public_key_entry.into_mut())
+                            .borrow_mut()
+                            .locations
+                            .0
+                            .insert(location.clone());
+                    }
+                },
+                crypto_objects::CryptoObject::Certificate(hashable_cert) => match self.certs.entry(hashable_cert.clone()) {
+                    Vacant(distributed_cert) => {
+                        distributed_cert.insert(Rc::new(RefCell::new(distributed_cert::DistributedCert {
+                            certificate: hashable_cert,
+                            locations: Locations(vec![location.clone()].into_iter().collect()),
+                        })));
+                    }
+                    Occupied(distributed_cert) => {
+                        (**distributed_cert.get()).borrow_mut().locations.0.insert(location.clone());
+                    }
+                },
+                crypto_objects::CryptoObject::Jwt(jwt) => match self.jwts.entry(jwt.clone()) {
+                    Vacant(distributed_jwt) => {
+                        distributed_jwt.insert(Rc::new(RefCell::new(distributed_jwt::DistributedJwt {
+                            jwt,
+                            locations: Locations(vec![location].into_iter().collect()),
+                            signer: jwt::JwtSigner::Unknown,
+                            regenerated: false,
+                        })));
+                    }
+                    Occupied(distributed_jwt) => {
+                        (**distributed_jwt.get()).borrow_mut().locations.0.insert(location);
+                    }
+                },
+            }
+        }
     }
 }
