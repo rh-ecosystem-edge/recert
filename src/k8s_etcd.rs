@@ -45,6 +45,7 @@ impl InMemoryK8sEtcd {
                 let value = value.clone();
                 let etcd_client = Arc::clone(&self.etcd_client);
                 tokio::spawn(async move {
+                    // TODO: Find a fancier way to detect CRDs
                     let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
                         value.to_vec()
                     } else {
