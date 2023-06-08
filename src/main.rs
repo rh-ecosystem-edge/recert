@@ -66,7 +66,7 @@ async fn recertify(
     // crypto objeccts
     println!("Scanning etcd/filesystem... This might take a while");
     let all_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, kubeconfig));
-    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(200));
+    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300));
 
     // Wait for the parallelizable tasks to finish and get their results
     let all_crypto_objects = all_crypto_objects.await.unwrap();
