@@ -64,18 +64,24 @@ async fn recertify(
 ) {
     // Perform parallelizable tasks like generating raw RSA keys to be used later and scanning for
     // crypto objeccts
+    println!("Scanning etcd/filesystem... This might take a while");
     let all_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, kubeconfig));
     let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(200));
 
     // Wait for the parallelizable tasks to finish and get their results
     let all_crypto_objects = all_crypto_objects.await.unwrap();
+    println!("Scanning complete, waiting for random key generation to complete...");
     let rsa_pool = rsa_keys.await.unwrap();
+    println!("Key generation complete");
 
     // Perform non-parallizable tasks like registering discovered crypto objects, establishing the
     // relationships between them, and regenerating the cryptographic objects using the pregenerated
     // RSA keys
+    println!("Registering discovered crypto objects...");
     cluster_crypto.register_discovered_crypto_objects(all_crypto_objects).await;
+    println!("Establishing relationships...");
     establish_relationships(cluster_crypto).await;
+    println!("Regenerating cryptographic objects...");
     regenerate_cryptographic_objects(&cluster_crypto, rsa_pool).await;
 }
 
@@ -102,7 +108,6 @@ async fn commit_cryptographic_objects_back(in_memory_etcd_client: &Arc<InMemoryK
 }
 
 async fn regenerate_cryptographic_objects(cluster_crypto: &ClusterCryptoObjects, rsa_key_pool: rsa_key_pool::RsaKeyPool) {
-    println!("Regenerating certs...");
     cluster_crypto.regenerate_crypto(rsa_key_pool).await;
 }
 
@@ -113,15 +118,15 @@ async fn ocp_postprocess(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) {
 }
 
 async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) {
-    println!("Pairing certs and keys...");
+    println!("- Pairing certs and keys...");
     cluster_crypto.pair_certs_and_keys().await;
-    println!("Calculating cert signers...");
+    println!("- Calculating cert signers...");
     cluster_crypto.fill_cert_key_signers().await;
-    println!("Calculating jwt signers...");
+    println!("- Calculating jwt signers...");
     cluster_crypto.fill_jwt_signers().await;
-    println!("Calculating signees...");
+    println!("- Calculating signees...");
     cluster_crypto.fill_signees().await;
-    println!("Associating standalone public keys...");
+    println!("- Associating standalone public keys...");
     cluster_crypto.associate_public_keys().await;
 }
 

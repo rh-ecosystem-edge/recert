@@ -168,7 +168,7 @@ impl ClusterCryptoObjectsInternal {
             (**private_key).borrow_mut().regenerate(&mut rsa_key_pool)
         }
 
-        println!("Making sure everything was regenerated...");
+        println!("- Regeneration complete, verifying...");
         self.assert_regeneration();
     }
 
@@ -457,7 +457,8 @@ impl ClusterCryptoObjectsInternal {
                     re.is_match(&(**distributed_cert).borrow().certificate.subject)
                 })
             {
-                println!("Known no private key for {}", (**distributed_cert).borrow().certificate.subject);
+                // This is a known missing private key cert, so we don't need to panic about it not
+                // having a private key.
             } else {
                 panic!(
                     "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
