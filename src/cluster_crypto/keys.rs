@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
 use p256::pkcs8::EncodePublicKey;
@@ -41,17 +42,21 @@ pub(crate) enum PublicKey {
     Ec(Bytes),
 }
 
-impl From<&PrivateKey> for PublicKey {
-    fn from(priv_key: &PrivateKey) -> Self {
-        match priv_key {
+impl TryFrom<&PrivateKey> for PublicKey {
+    type Error = anyhow::Error;
+
+    fn try_from(priv_key: &PrivateKey) -> Result<Self> {
+        Ok(match priv_key {
             PrivateKey::Rsa(private_key) => PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(
-                private_key.to_public_key().to_public_key_der().unwrap().as_bytes(),
+                private_key.to_public_key().to_public_key_der()?.as_bytes(),
             )),
             PrivateKey::Ec(ec_bytes) => {
-                let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, ec_bytes).unwrap();
+                let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, ec_bytes)
+                    .ok()
+                    .context("failed to make pair from pkcs8")?;
                 PublicKey::Ec(Bytes::copy_from_slice(pair.public_key().as_ref()))
             }
-        }
+        })
     }
 }
 

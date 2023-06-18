@@ -10,13 +10,12 @@ use self::{
 use crate::{
     cluster_crypto::signee::Signee,
     k8s_etcd::{self, InMemoryK8sEtcd},
+    rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
-    rsa_key_pool::{RsaKeyPool, self},
 };
-use regex::Regex;
+use anyhow::Result;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
-use tokio::sync::Mutex;
 use x509_certificate::X509CertificateError;
 
 pub(crate) mod cert_key_pair;
@@ -37,7 +36,7 @@ pub(crate) mod yaml_crawl;
 
 /// This is the main struct that holds all the crypto objects we've found in the cluster and the
 /// locations where we found them, and how they relate to each other.
-pub(crate) struct ClusterCryptoObjectsInternal {
+pub(crate) struct ClusterCryptoObjects {
     /// At the end of the day we're scanning the entire cluster for private keys, public keys
     /// certificates, and jwts. These four hashmaps is where we store all of them. The reason
     /// they're hashmaps and not vectors is because every one of those objects we encounter might
@@ -62,51 +61,9 @@ pub(crate) struct ClusterCryptoObjectsInternal {
     pub(crate) cert_key_pairs: Vec<Rc<RefCell<CertKeyPair>>>,
 }
 
-pub(crate) struct ClusterCryptoObjects {
-    internal: Mutex<ClusterCryptoObjectsInternal>,
-}
-
 impl ClusterCryptoObjects {
-    pub(crate) fn new() -> ClusterCryptoObjects {
-        ClusterCryptoObjects {
-            internal: Mutex::new(ClusterCryptoObjectsInternal::new()),
-        }
-    }
-    pub(crate) async fn display(&self) {
-        self.internal.lock().await.display();
-    }
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
-        self.internal.lock().await.commit_to_etcd_and_disk(etcd_client).await;
-    }
-    pub(crate) async fn regenerate_crypto(&self, rsa_key_pool: rsa_key_pool::RsaKeyPool) {
-        self.internal.lock().await.regenerate_crypto(rsa_key_pool);
-    }
-    pub(crate) async fn fill_signees(&mut self) {
-        self.internal.lock().await.fill_signees();
-    }
-    pub(crate) async fn pair_certs_and_keys(&mut self) {
-        self.internal.lock().await.pair_certs_and_keys();
-    }
-    pub(crate) async fn associate_public_keys(&mut self) {
-        self.internal.lock().await.associate_public_keys();
-    }
-    pub(crate) async fn fill_cert_key_signers(&mut self) {
-        self.internal.lock().await.fill_cert_key_signers();
-    }
-    pub(crate) async fn fill_jwt_signers(&mut self) {
-        self.internal.lock().await.fill_jwt_signers();
-    }
-    pub(crate) async fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
-        self.internal
-            .lock()
-            .await
-            .register_discovered_crypto_objects(discovered_crypto_objects);
-    }
-}
-
-impl ClusterCryptoObjectsInternal {
     pub(crate) fn new() -> Self {
-        ClusterCryptoObjectsInternal {
+        Self {
             private_keys: HashMap::new(),
             public_keys: HashMap::new(),
             certs: HashMap::new(),
@@ -133,43 +90,47 @@ impl ClusterCryptoObjectsInternal {
     /// Commit all the crypto objects to etcd and disk. This is called after all the crypto
     /// objects have been regenerated so that the newly generated objects are persisted in
     /// etcd and on disk.
-    async fn commit_to_etcd_and_disk(&mut self, etcd_client: &InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&mut self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
-            (**cert_key_pair).borrow().commit_to_etcd_and_disk(etcd_client).await;
+            (**cert_key_pair).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
         for jwt in self.jwts.values() {
-            (**jwt).borrow().commit_to_etcd_and_disk(etcd_client).await;
+            (**jwt).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
         for private_key in self.private_keys.values() {
-            (**private_key).borrow().commit_to_etcd_and_disk(etcd_client).await;
+            (**private_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
         for public_key in self.public_keys.values() {
-            (**public_key).borrow().commit_to_etcd_and_disk(etcd_client).await;
+            (**public_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
+
+        Ok(())
     }
 
     /// Recursively regenerate all the crypto objects. This is done by regenerating the top level
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool) {
+    pub(crate) fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             if (**cert_key_pair).borrow().signer.is_some() {
                 continue;
             }
 
-            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool)
+            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool)?
         }
 
         for private_key in self.private_keys.values() {
-            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool)
+            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool)?
         }
 
         println!("- Regeneration complete, verifying...");
         self.assert_regeneration();
+
+        Ok(())
     }
 
     fn assert_regeneration(&mut self) {
@@ -265,7 +226,7 @@ impl ClusterCryptoObjectsInternal {
         assert_eq!(self.certs.len(), 0);
     }
 
-    fn fill_cert_key_signers(&mut self) {
+    pub(crate) fn fill_cert_key_signers(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             let mut true_signing_cert: Option<Rc<RefCell<CertKeyPair>>> = None;
             if !(*(**cert_key_pair).borrow().distributed_cert)
@@ -291,7 +252,7 @@ impl ClusterCryptoObjectsInternal {
                             X509CertificateError::UnsupportedSignatureVerification(..) => {
                                 // This is a hack to get around the fact this lib doesn't support
                                 // all signature algorithms yet.
-                                if crypto_utils::openssl_is_signed(&potential_signing_cert_key_pair, &cert_key_pair) {
+                                if crypto_utils::openssl_is_signed(&potential_signing_cert_key_pair, &cert_key_pair)? {
                                     true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair));
                                 }
                             }
@@ -310,12 +271,14 @@ impl ClusterCryptoObjectsInternal {
 
             (**cert_key_pair).borrow_mut().signer = true_signing_cert;
         }
+
+        Ok(())
     }
 
     /// For every jwt, find the private key that signed it (or certificate key pair that signed it,
     /// although rare in OCP) and record it. This will later be used to know how to regenerate the
     /// jwt.
-    fn fill_jwt_signers(&mut self) {
+    pub(crate) fn fill_jwt_signers(&mut self) -> Result<()> {
         // Usually it's just one private key signing all the jwts, so to speed things up, we record
         // the last signer and use that as the first guess for the next jwt. This dramatically
         // speeds up the process of finding the signer for each jwt, as trying all private keys is
@@ -326,7 +289,7 @@ impl ClusterCryptoObjectsInternal {
             let mut maybe_signer = jwt::JwtSigner::Unknown;
 
             if let Some(last_signer) = &last_signer {
-                match crypto_utils::verify_jwt(&PublicKey::from(&(*last_signer).borrow().key), &(**distributed_jwt).borrow()) {
+                match crypto_utils::verify_jwt(&PublicKey::try_from(&(*last_signer).borrow().key)?, &(**distributed_jwt).borrow()) {
                     Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
                         maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(&last_signer));
                     }
@@ -335,7 +298,7 @@ impl ClusterCryptoObjectsInternal {
             } else {
                 for distributed_private_key in self.private_keys.values() {
                     match crypto_utils::verify_jwt(
-                        &PublicKey::from(&(**distributed_private_key).borrow().key),
+                        &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
                         &(**distributed_jwt).borrow(),
                     ) {
                         Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
@@ -353,7 +316,7 @@ impl ClusterCryptoObjectsInternal {
                     for cert_key_pair in &self.cert_key_pairs {
                         if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
                             match crypto_utils::verify_jwt(
-                                &PublicKey::from(&(**distributed_private_key).borrow().key),
+                                &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
                                 &(**distributed_jwt).borrow(),
                             ) {
                                 Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
@@ -374,11 +337,13 @@ impl ClusterCryptoObjectsInternal {
 
             (**distributed_jwt).borrow_mut().signer = maybe_signer;
         }
+
+        Ok(())
     }
 
     /// For every cert-key pair or private key, find all the crypto objects that depend on it and
     /// record them. This will later be used to know how to regenerate the crypto objects.
-    fn fill_signees(&mut self) {
+    pub(crate) fn fill_signees(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             let mut signees = Vec::new();
             for potential_signee in &self.cert_key_pairs {
@@ -424,12 +389,14 @@ impl ClusterCryptoObjectsInternal {
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Find the private key associated with the subject of each certificate and combine them into
     /// a cert-key pair. Also remove the private key from the list of private keys as it is now
     /// part of a cert-key pair, the remaining private keys are considered standalone.
-    fn pair_certs_and_keys(&mut self) {
+    pub(crate) fn pair_certs_and_keys(&mut self) -> Result<()> {
         let mut paired_cers_to_remove = vec![];
         for (hashable_cert, distributed_cert) in &self.certs {
             let pair = Rc::new(RefCell::new(cert_key_pair::CertKeyPair {
@@ -451,12 +418,9 @@ impl ClusterCryptoObjectsInternal {
                 } else {
                     panic!("Private key not found");
                 }
-            } else if KNOWN_MISSING_PRIVATE_KEY_CERTS.contains(&(**distributed_cert).borrow().certificate.subject)
-                || KNOWN_MISSING_PRIVATE_KEY_CERTS.iter().any(|known_missing_private_key_cert| {
-                    let re = Regex::new(known_missing_private_key_cert).unwrap();
-                    re.is_match(&(**distributed_cert).borrow().certificate.subject)
-                })
-            {
+            } else if KNOWN_MISSING_PRIVATE_KEY_CERTS.iter().any(|known_missing_private_key_cert| {
+                known_missing_private_key_cert.is_match(&(**distributed_cert).borrow().certificate.subject)
+            }) {
                 // This is a known missing private key cert, so we don't need to panic about it not
                 // having a private key.
             } else {
@@ -474,10 +438,12 @@ impl ClusterCryptoObjectsInternal {
         for paired_cer_to_remove in paired_cers_to_remove {
             self.certs.remove(&paired_cer_to_remove);
         }
+
+        Ok(())
     }
 
     /// Associate public keys with their cert-key pairs or standalone private keys.
-    fn associate_public_keys(&mut self) {
+    pub(crate) fn associate_public_keys(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             if let Occupied(public_key_entry) = self.public_keys.entry(
                 (*(**cert_key_pair).borrow().distributed_cert)
@@ -491,12 +457,14 @@ impl ClusterCryptoObjectsInternal {
         }
 
         for distributed_private_key in self.private_keys.values() {
-            let public_part = PublicKey::from(&(*distributed_private_key).borrow().key);
+            let public_part = PublicKey::try_from(&(*distributed_private_key).borrow().key)?;
 
             if let Occupied(public_key_entry) = self.public_keys.entry(public_part) {
                 (*distributed_private_key).borrow_mut().associated_distributed_public_key = Some(Rc::clone(public_key_entry.get()));
             }
         }
+
+        Ok(())
     }
 
     pub(crate) fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {

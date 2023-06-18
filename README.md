@@ -31,6 +31,8 @@ separate from other clusters deployed in the same manner.
 - [ ] Leave traces everywhere - PEM comments, resource annotations, etc to indicate that the resource has been modified
 - [ ] Create a very informative summary that can be used to debug the cert regen in prod
 - [ ] Give users an option to regenerate pointer ignitions
+- [ ] Regenerate filesystem standalone token file (localhost-recovery-client-token/token)
+
 
 ## Performance 
 
@@ -131,7 +133,10 @@ for kind in machineconfiguration.openshift.io/machineconfigs; do
     done
 done
 
+wait
+
 # Run utility
+ulimit -n 999999
 cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
     --etcd-endpoint localhost:2379 \
     --static-dir "$CLUSTER_DIR"/kubernetes \

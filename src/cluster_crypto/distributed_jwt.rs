@@ -9,6 +9,7 @@ use crate::{
     file_utils::encode_resource_data_entry,
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
 };
+use anyhow::Result;
 use jwt_simple::prelude::RSAKeyPairLike;
 use serde_json::Value;
 use x509_certificate::InMemorySigningKeyPair;
@@ -51,21 +52,23 @@ impl DistributedJwt {
         }
     }
 
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in &self.locations.0 {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_to_etcd(etcd_client, &k8slocation).await;
+                    self.commit_to_etcd(etcd_client, &k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_to_filesystem(&filelocation).await;
+                    self.commit_to_filesystem(&filelocation).await?;
                 }
             }
         }
+
+        Ok(())
     }
 
-    pub(crate) async fn commit_to_etcd(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) {
-        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await;
+    pub(crate) async fn commit_to_etcd(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
+        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
         if let Some(value_at_json_pointer) = resource.pointer_mut(&k8slocation.yaml_location.json_pointer) {
             if let Value::String(value_at_json_pointer) = value_at_json_pointer {
                 match &k8slocation.yaml_location.value {
@@ -84,13 +87,15 @@ impl DistributedJwt {
             panic!("shouldn't happen");
         }
 
-        let newcontents = serde_yaml::to_string(&resource).unwrap();
+        let newcontents = serde_yaml::to_string(&resource)?;
         etcd_client
             .put(&k8slocation.resource_location.as_etcd_key(), newcontents.as_bytes().to_vec())
             .await;
+
+        Ok(())
     }
 
-    pub(crate) async fn commit_to_filesystem(&self, _filelocation: &FileLocation) {
+    pub(crate) async fn commit_to_filesystem(&self, _filelocation: &FileLocation) -> Result<()> {
         todo!()
     }
 }

@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use super::{
     keys::{PrivateKey, PublicKey},
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
@@ -31,38 +33,44 @@ impl Display for DistributedPublicKey {
 }
 
 impl DistributedPublicKey {
-    pub(crate) fn regenerate(&mut self, new_private: &PrivateKey) {
-        self.key = new_private.into();
+    pub(crate) fn regenerate(&mut self, new_private: &PrivateKey) -> Result<()> {
+        self.key = PublicKey::try_from(new_private)?;
         self.regenerated = true;
+
+        Ok(())
     }
 
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_k8s_private_key(etcd_client, &k8slocation).await;
+                    self.commit_k8s_private_key(etcd_client, &k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_private_key(&filelocation).await;
+                    self.commit_filesystem_private_key(&filelocation).await?;
                 }
             }
         }
+
+        Ok(())
     }
 
-    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) {
-        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await;
+    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
+        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
 
         etcd_client
             .put(
                 &k8slocation.resource_location.as_etcd_key(),
-                recreate_yaml_at_location_with_new_pem(resource, &k8slocation.yaml_location, &self.key.pem())
+                recreate_yaml_at_location_with_new_pem(resource, &k8slocation.yaml_location, &self.key.pem())?
                     .as_bytes()
                     .to_vec(),
             )
             .await;
+
+        Ok(())
     }
 
-    async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) {
+    async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
         let public_key_pem = match &self.key {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
             PublicKey::Ec(_) => panic!("unsupported"),
@@ -73,21 +81,22 @@ impl DistributedPublicKey {
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
                     LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                        String::from_utf8((read_file_to_string(filelocation.path.clone().into()).await).into_bytes()).unwrap(),
+                        String::from_utf8((read_file_to_string(filelocation.path.clone().into()).await?).into_bytes())?,
                         pem_location_info.pem_bundle_index,
                         &public_key_pem,
-                    ),
+                    )?,
                     _ => {
                         panic!("shouldn't happen");
                     }
                 },
                 FileContentLocation::Yaml(yaml_location) => {
-                    let resource = get_filesystem_yaml(filelocation).await;
-                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &public_key_pem)
+                    let resource = get_filesystem_yaml(filelocation).await?;
+                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &public_key_pem)?
                 }
             },
         )
-        .await
-        .unwrap();
+        .await?;
+
+        Ok(())
     }
 }

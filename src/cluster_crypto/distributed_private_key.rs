@@ -11,6 +11,7 @@ use crate::{
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
 };
+use anyhow::{Context, Result};
 use pkcs1::EncodeRsaPrivateKey;
 use std::{self, cell::RefCell, fmt::Display, rc::Rc};
 
@@ -50,50 +51,56 @@ impl Display for DistributedPrivateKey {
 }
 
 impl DistributedPrivateKey {
-    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool) {
-        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().unwrap();
+    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool) -> Result<()> {
+        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().context("RSA pool empty")?;
 
         for signee in &mut self.signees {
-            signee.regenerate(&PublicKey::from(&self.key), Some(&self_new_key_pair), rsa_key_pool);
+            signee.regenerate(&PublicKey::try_from(&self.key)?, Some(&self_new_key_pair), rsa_key_pool)?;
         }
 
         self.key = PrivateKey::Rsa(self_new_rsa_private_key);
         self.regenerated = true;
 
         if let Some(public_key) = &self.associated_distributed_public_key {
-            (*public_key).borrow_mut().regenerate(&self.key);
+            (*public_key).borrow_mut().regenerate(&self.key)?;
         }
+
+        Ok(())
     }
 
-    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) {
+    pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_k8s_private_key(etcd_client, &k8slocation).await;
+                    self.commit_k8s_private_key(etcd_client, &k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_private_key(&filelocation).await;
+                    self.commit_filesystem_private_key(&filelocation).await?;
                 }
             }
         }
+
+        Ok(())
     }
 
-    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) {
-        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await;
+    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
+        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
 
         etcd_client
             .put(
                 &k8slocation.resource_location.as_etcd_key(),
-                recreate_yaml_at_location_with_new_pem(resource, &k8slocation.yaml_location, &self.key.pem())
+                recreate_yaml_at_location_with_new_pem(resource, &k8slocation.yaml_location, &self.key.pem())?
                     .as_bytes()
                     .to_vec(),
             )
             .await;
+
+        Ok(())
     }
 
-    async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) {
+    async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
         let private_key_pem = match &self.key {
-            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der().unwrap().as_bytes()),
+            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
             PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
         };
 
@@ -102,21 +109,22 @@ impl DistributedPrivateKey {
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
                     LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                        String::from_utf8((read_file_to_string(filelocation.path.clone().into()).await).into_bytes()).unwrap(),
+                        String::from_utf8((read_file_to_string(filelocation.path.clone().into()).await)?.into_bytes())?,
                         pem_location_info.pem_bundle_index,
                         &private_key_pem,
-                    ),
+                    )?,
                     _ => {
                         panic!("shouldn't happen");
                     }
                 },
                 FileContentLocation::Yaml(yaml_location) => {
-                    let resource = get_filesystem_yaml(filelocation).await;
-                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &private_key_pem)
+                    let resource = get_filesystem_yaml(filelocation).await?;
+                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &private_key_pem)?
                 }
             },
         )
-        .await
-        .unwrap();
+        .await?;
+
+        Ok(())
     }
 }

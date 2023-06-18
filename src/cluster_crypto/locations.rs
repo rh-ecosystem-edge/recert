@@ -1,11 +1,10 @@
+use crate::json_tools;
+use anyhow::anyhow;
+use serde_json::Value;
 use std::{
     collections::HashSet,
     fmt::{Debug, Display},
 };
-
-use serde_json::Value;
-
-use crate::json_tools;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locations(pub(crate) HashSet<Location>);
@@ -103,8 +102,8 @@ impl Location {
         }
     }
 
-    pub(crate) fn with_jwt(&self) -> Self {
-        match self {
+    pub(crate) fn with_jwt(&self) -> anyhow::Result<Self> {
+        Ok(match self {
             Self::K8s(k8s_location) => {
                 let mut new_k8s_location = k8s_location.clone();
                 new_k8s_location.yaml_location.value = LocationValueType::Jwt;
@@ -112,8 +111,8 @@ impl Location {
             }
             Self::Filesystem(file_location) => match &file_location.content_location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
-                    LocationValueType::Pem(_) => panic!("Already has PEM info"),
-                    LocationValueType::Jwt => panic!("Already has JWT info"),
+                    LocationValueType::Pem(_) => return Err(anyhow!("already has PEM info")),
+                    LocationValueType::Jwt => return Err(anyhow!("already has jwt info")),
                     LocationValueType::Unknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location = FileContentLocation::Raw(LocationValueType::Jwt);
@@ -128,7 +127,7 @@ impl Location {
                     Self::Filesystem(new_file_location)
                 }
             },
-        }
+        })
     }
 }
 
@@ -295,8 +294,8 @@ impl K8sResourceLocation {
                 None => "".to_string(),
             },
             self.kind.to_lowercase(),
-            match self.namespace {
-                Some(_) => format!("{}/", self.namespace.as_ref().unwrap()),
+            match &self.namespace {
+                Some(namespace) => format!("{}/", namespace),
                 None => "".to_string(),
             },
             self.name,

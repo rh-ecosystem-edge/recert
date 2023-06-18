@@ -1,4 +1,5 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
+use anyhow::{anyhow, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -33,7 +34,7 @@ impl InMemoryK8sEtcd {
         }
     }
 
-    pub(crate) async fn commit_to_actual_etcd(&self) {
+    pub(crate) async fn commit_to_actual_etcd(&self) -> Result<()> {
         join_all(
             self.etcd_keyvalue_hashmap
                 .lock()
@@ -48,17 +49,26 @@ impl InMemoryK8sEtcd {
                         let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
                             value.to_vec()
                         } else {
-                            run_ouger("encode", value.as_slice()).await
+                            run_ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
                         };
-                        etcd_client.kv_client().put(key.as_bytes(), value, None).await.unwrap()
+
+                        etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
+
+                        Ok::<_, anyhow::Error>(())
                     })
                 })
                 .collect::<Vec<_>>(),
         )
-        .await;
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(())
     }
 
-    pub(crate) async fn get(&self, key: String) -> EtcdResult {
+    pub(crate) async fn get(&self, key: String) -> Result<EtcdResult> {
         let mut result = EtcdResult {
             key: key.to_string(),
             value: vec![],
@@ -68,11 +78,11 @@ impl InMemoryK8sEtcd {
             let hashmap = self.etcd_keyvalue_hashmap.lock().await;
             if let Some(value) = hashmap.get(&key) {
                 result.value = value.clone();
-                return result;
+                return Ok(result);
             }
         }
 
-        let get_result = self.etcd_client.kv_client().get(key.clone(), None).await.unwrap();
+        let get_result = self.etcd_client.kv_client().get(key.clone(), None).await?;
         let raw_etcd_value = get_result
             .kvs()
             .first()
@@ -81,64 +91,77 @@ impl InMemoryK8sEtcd {
 
         if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
             result.value = raw_etcd_value.to_vec();
-            return result;
+            return Ok(result);
         }
 
-        let decoded_value = run_ouger("decode", raw_etcd_value).await;
+        let decoded_value = run_ouger("decode", raw_etcd_value).await?;
         self.etcd_keyvalue_hashmap
             .lock()
             .await
             .insert(key.to_string(), decoded_value.clone());
 
         result.value = decoded_value;
-        result
+        Ok(result)
     }
 
     pub(crate) async fn put(&self, key: &str, value: Vec<u8>) {
         self.etcd_keyvalue_hashmap.lock().await.insert(key.to_string(), value.clone());
     }
 
-    pub(crate) async fn list_keys(&self, resource_kind: &str) -> Vec<String> {
+    pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
         let etcd_get_options = GetOptions::new().with_prefix().with_limit(0).with_keys_only();
         let keys = self
             .etcd_client
             .kv_client()
             .get(format!("/kubernetes.io/{}", resource_kind), Some(etcd_get_options.clone()))
-            .await
-            .expect("Couldn't get secrets list, is etcd down?");
+            .await?;
+
         keys.kvs()
             .into_iter()
-            .map(|k| k.key_str().unwrap().to_string())
-            .collect::<Vec<String>>()
+            .map(|k| Ok(k.key_str()?.to_string()))
+            .collect::<Result<Vec<String>>>()
     }
 }
 
-async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Vec<u8> {
+async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<u8>> {
     let mut command = Command::new("ouger")
         .arg(ouger_subcommand)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
-    command.stdin.take().unwrap().write_all(raw_etcd_value).await.unwrap();
+    command
+        .stdin
+        .take()
+        .context("opening ouger's stdin pipe")?
+        .write_all(raw_etcd_value)
+        .await
+        .context("writing to ouger's stdin pipe")?;
 
-    let result = command.wait_with_output().await.unwrap();
+    let result = command.wait_with_output().await.context("waiting for ouger to finish")?;
 
     if !result.status.success() {
-        panic!("ouger failed on, error: {}", String::from_utf8(result.stderr).unwrap().to_string());
+        return Err(anyhow!(
+            "ouger {} failed with exit code {} and stderr: {}",
+            ouger_subcommand,
+            result.status.code().context("checking ouger exit code")?,
+            String::from_utf8_lossy(&result.stderr)
+        ));
     };
 
-    result.stdout
+    Ok(result.stdout)
 }
 
-pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Value {
-    serde_yaml::from_str(&String::from_utf8_lossy(&(client.get(k8slocation.as_etcd_key()).await.value))).unwrap()
+pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Value> {
+    Ok(serde_yaml::from_str(&String::from_utf8(
+        client.get(k8slocation.as_etcd_key()).await?.value,
+    )?)?)
 }
 
-pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation, value: Value) {
+pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation, value: Value) -> Result<()> {
     client
-        .put(&k8slocation.as_etcd_key(), serde_yaml::to_string(&value).unwrap().as_bytes().into())
+        .put(&k8slocation.as_etcd_key(), serde_yaml::to_string(&value)?.as_bytes().into())
         .await;
+    Ok(())
 }

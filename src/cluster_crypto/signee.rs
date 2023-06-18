@@ -1,5 +1,6 @@
 use super::{cert_key_pair::CertKeyPair, distributed_jwt::DistributedJwt, keys};
 use crate::rsa_key_pool::RsaKeyPool;
+use anyhow::Result;
 use std::{
     self,
     cell::RefCell,
@@ -31,10 +32,10 @@ impl Signee {
         original_signing_public_key: &keys::PublicKey,
         new_signing_key: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
-    ) {
+    ) -> Result<()> {
         match self {
             Self::CertKeyPair(cert_key_pair) => {
-                (**cert_key_pair).borrow_mut().regenerate(new_signing_key, rsa_key_pool);
+                (**cert_key_pair).borrow_mut().regenerate(new_signing_key, rsa_key_pool)?;
             }
             Self::Jwt(jwt) => match new_signing_key {
                 Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair),
@@ -43,5 +44,7 @@ impl Signee {
                 }
             },
         }
+
+        Ok(())
     }
 }
