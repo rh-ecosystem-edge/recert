@@ -165,6 +165,7 @@ impl CertKeyPair {
                     resource,
                     &k8slocation.yaml_location,
                     &pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?,
+                    crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
                 .to_vec(),
@@ -204,7 +205,7 @@ impl CertKeyPair {
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;
-                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &newpem)?
+                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &newpem, crate::file_utils::RecreateYamlEncoding::Yaml)?
                 }
             },
         )

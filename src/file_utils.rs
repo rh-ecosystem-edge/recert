@@ -36,10 +36,16 @@ pub(crate) async fn get_filesystem_yaml(file_location: &FileLocation) -> Result<
     serde_yaml::from_str(read_file_to_string(file_location.path.clone().into()).await?.as_str()).context("failed to parse yaml")
 }
 
+pub(crate) enum RecreateYamlEncoding {
+    Json,
+    Yaml,
+}
+
 pub(crate) fn recreate_yaml_at_location_with_new_pem(
     mut resource: Value,
     yaml_location: &YamlLocation,
     new_pem: &pem::Pem,
+    encoding: RecreateYamlEncoding,
 ) -> Result<String> {
     let value_at_json_pointer = resource.pointer_mut(&yaml_location.json_pointer).context("value disappeared")?;
 
@@ -61,7 +67,10 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
         _ => bail!("called with non-pem location"),
     }
 
-    serde_json::to_string(&resource).context("serializing yaml")
+    match encoding {
+        RecreateYamlEncoding::Json => serde_json::to_string(&resource).context("serializing json"),
+        RecreateYamlEncoding::Yaml => serde_yaml::to_string(&resource).context("serializing yaml"),
+    }
 }
 
 pub(crate) fn encode_resource_data_entry(k8slocation: &YamlLocation, value: &String) -> String {

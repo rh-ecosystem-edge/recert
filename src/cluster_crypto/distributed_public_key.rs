@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 use super::{
     keys::{PrivateKey, PublicKey},
@@ -61,9 +61,14 @@ impl DistributedPublicKey {
         etcd_client
             .put(
                 &k8slocation.resource_location.as_etcd_key(),
-                recreate_yaml_at_location_with_new_pem(resource, &k8slocation.yaml_location, &self.key.pem())?
-                    .as_bytes()
-                    .to_vec(),
+                recreate_yaml_at_location_with_new_pem(
+                    resource,
+                    &k8slocation.yaml_location,
+                    &self.key.pem(),
+                    crate::file_utils::RecreateYamlEncoding::Json,
+                )?
+                .as_bytes()
+                .to_vec(),
             )
             .await;
 
@@ -89,7 +94,12 @@ impl DistributedPublicKey {
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;
-                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &public_key_pem)?
+                    recreate_yaml_at_location_with_new_pem(
+                        resource,
+                        yaml_location,
+                        &public_key_pem,
+                        crate::file_utils::RecreateYamlEncoding::Yaml,
+                    )?
                 }
             },
         )

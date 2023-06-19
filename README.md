@@ -41,7 +41,6 @@ separate from other clusters deployed in the same manner.
 - [ ] Delete leases to make operators start faster
 
 ## Nice to have
-- [ ] Output kubeconfig as YAML and not JSON to make it look nicer
 - [ ] Somehow have built-in ouger functionality instead of shelling out to ouger
 - [ ] Remove OLM package server hack
 - [ ] Somehow reduce binary size
