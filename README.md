@@ -44,7 +44,7 @@ separate from other clusters deployed in the same manner.
 - [ ] Output kubeconfig as YAML and not JSON to make it look nicer
 - [ ] Somehow have built-in ouger functionality instead of shelling out to ouger
 - [ ] Remove OLM package server hack
-- [ ] Better error handling instead of `.unwrap()` everywhere
+- [ ] Get rid of all `unwrap`s and `expect`s
 - [ ] Somehow reduce binary size
 - [ ] Get rid of unnecessary dependencies. Right now we have more than 300
 - [ ] Convert from resource YAML to etcd key-value key more gracefuly
