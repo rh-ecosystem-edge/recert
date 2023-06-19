@@ -23,8 +23,35 @@ pub(crate) async fn crypto_scan(
     kubeconfig: Option<PathBuf>,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
+    let discovered_filesystem_objects = scan_static_dirs(static_dirs);
+    let discovered_crypto_objects = discovered_etcd_objects.await??;
+    let discovered_filesystem_objects = discovered_filesystem_objects.await??;
 
-    let discovered_filesystem_objects = tokio::spawn(async move {
+    // If we have a kubeconfig, we can also process that
+    let kubeconfig_crypto_objects = if let Some(kubeconfig_path) = kubeconfig {
+        scan_kubeconfig(kubeconfig_path).await?
+    } else {
+        vec![]
+    };
+
+    Ok(discovered_crypto_objects
+        .into_iter()
+        .chain(discovered_filesystem_objects)
+        .chain(kubeconfig_crypto_objects)
+        .collect::<Vec<_>>())
+}
+
+async fn scan_kubeconfig(kubeconfig_path: PathBuf) -> Result<Vec<DiscoveredCryptoObect>, anyhow::Error> {
+    Ok(process_static_resource_yaml(
+        read_file_to_string(kubeconfig_path.clone())
+            .await
+            .with_context(|| format!("reading kubeconfig {:?}", kubeconfig_path))?,
+        &kubeconfig_path,
+    )?)
+}
+
+fn scan_static_dirs(static_dirs: Vec<PathBuf>) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+    tokio::spawn(async move {
         anyhow::Ok(
             join_all(
                 static_dirs
@@ -47,28 +74,7 @@ pub(crate) async fn crypto_scan(
             .flatten()
             .collect::<Vec<_>>(),
         )
-    });
-
-    let discovered_crypto_objects = discovered_etcd_objects.await??;
-    let discovered_filesystem_objects = discovered_filesystem_objects.await??;
-
-    // If we have a kubeconfig, we can also process that
-    let kubeconfig_crypto_objects = if let Some(kubeconfig_path) = kubeconfig {
-        process_static_resource_yaml(
-            read_file_to_string(kubeconfig_path.clone())
-                .await
-                .with_context(|| format!("reading kubeconfig {:?}", kubeconfig_path))?,
-            &kubeconfig_path,
-        )?
-    } else {
-        vec![]
-    };
-
-    Ok(discovered_crypto_objects
-        .into_iter()
-        .chain(discovered_filesystem_objects)
-        .chain(kubeconfig_crypto_objects)
-        .collect::<Vec<_>>())
+    })
 }
 
 /// Read all relevant resources from etcd, scan them for cryptographic objects and record them
