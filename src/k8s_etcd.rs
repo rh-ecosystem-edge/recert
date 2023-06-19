@@ -83,11 +83,7 @@ impl InMemoryK8sEtcd {
         }
 
         let get_result = self.etcd_client.kv_client().get(key.clone(), None).await?;
-        let raw_etcd_value = get_result
-            .kvs()
-            .first()
-            .expect(format!("couldn't get key {} from etcd", key).as_str())
-            .value();
+        let raw_etcd_value = get_result.kvs().first().context("key not found")?.value();
 
         if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
             result.value = raw_etcd_value.to_vec();

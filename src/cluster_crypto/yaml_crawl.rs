@@ -37,7 +37,7 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
 pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
     let mut ret = Vec::new();
 
-    if let Some(data) = value.as_object().unwrap().get("data") {
+    if let Some(data) = value.as_object().context("configmap is not object")?.get("data") {
         if let Value::Object(data) = data {
             for (key, value) in data.iter() {
                 if IGNORE_LIST_CONFIGMAP.contains(key) {
@@ -61,7 +61,7 @@ pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
 
 pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
-    if let Some(data) = value.as_object().unwrap().get("data") {
+    if let Some(data) = value.as_object().context("not object")?.get("data") {
         if let Value::Object(data) = data {
             for (key, value) in data.iter() {
                 if rules::IGNORE_LIST_SECRET.contains(key) {
@@ -76,7 +76,7 @@ pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
         }
     }
 
-    if let Some(metadata) = value.as_object().unwrap().get("metadata") {
+    if let Some(metadata) = value.as_object().context("not object")?.get("metadata") {
         if let Value::Object(metadata) = metadata {
             if let Some(annotations) = metadata.get("annotations") {
                 if let Value::Object(annotations) = annotations {

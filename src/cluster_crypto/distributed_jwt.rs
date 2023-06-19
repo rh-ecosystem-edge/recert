@@ -9,7 +9,7 @@ use crate::{
     file_utils::encode_resource_data_entry,
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use jwt_simple::prelude::RSAKeyPairLike;
 use serde_json::Value;
 use x509_certificate::InMemorySigningKeyPair;
@@ -23,30 +23,30 @@ pub(crate) struct DistributedJwt {
 }
 
 impl DistributedJwt {
-    pub(crate) fn regenerate(&mut self, original_signing_key: &PublicKey, new_signing_key: &InMemorySigningKeyPair) {
+    pub(crate) fn regenerate(&mut self, original_signing_key: &PublicKey, new_signing_key: &InMemorySigningKeyPair) -> Result<()> {
         let new_key = match &self.signer {
-            JwtSigner::Unknown => panic!("Cannot regenerate JWT with unknown signer"),
-            JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key),
-            JwtSigner::PrivateKey(_private_key) => self.resign(&original_signing_key, new_signing_key),
+            JwtSigner::Unknown => return Err(anyhow!("cannot regenerate jwt with unknown signer")),
+            JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key)?,
+            JwtSigner::PrivateKey(_private_key) => self.resign(&original_signing_key, new_signing_key)?,
         };
         self.jwt.str = new_key;
         self.regenerated = true;
+
+        Ok(())
     }
 
-    fn resign(&self, original_public_key: &PublicKey, new_signing_key_pair: &InMemorySigningKeyPair) -> String {
+    fn resign(&self, original_public_key: &PublicKey, new_signing_key_pair: &InMemorySigningKeyPair) -> Result<String> {
         match verify_jwt(&original_public_key, self) {
             Ok(claims) => match new_signing_key_pair {
                 InMemorySigningKeyPair::Ecdsa(_, _, _) => {
-                    panic!("Unsupported key type")
+                    return Err(anyhow!("ecdsa unsupported"));
                 }
                 InMemorySigningKeyPair::Ed25519(_) => {
-                    panic!("Unsupported key type")
+                    return Err(anyhow!("ecdsa unsupported"));
                 }
-                InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => jwt_simple::prelude::RS256KeyPair::from_der(bytes)
-                    .unwrap()
-                    .sign(claims)
-                    .unwrap()
-                    .to_string(),
+                InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => {
+                    Ok(jwt_simple::prelude::RS256KeyPair::from_der(bytes)?.sign(claims)?.to_string())
+                }
             },
             Err(_) => panic!("Failed to parse token"),
         }

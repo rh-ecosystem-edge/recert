@@ -38,7 +38,7 @@ impl Signee {
                 (**cert_key_pair).borrow_mut().regenerate(new_signing_key, rsa_key_pool)?;
             }
             Self::Jwt(jwt) => match new_signing_key {
-                Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair),
+                Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair)?,
                 None => {
                     panic!("Cannot regenerate a jwt without a signing key, regenerate may only be called on a signee that is a root cert-key-pair")
                 }

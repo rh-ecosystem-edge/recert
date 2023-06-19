@@ -79,16 +79,9 @@ pub(crate) fn verify_jwt(
 
 pub(crate) async fn generate_rsa_key_async() -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
-        String::from_utf8_lossy(
-            &Command::new("openssl")
-                .args(&["genrsa", "2048"])
-                .output()
-                .await
-                .expect("failed to execute openssl")
-                .stdout,
-        )
-        .to_string()
-        .as_str(),
+        String::from_utf8_lossy(&Command::new("openssl").args(&["genrsa", "2048"]).output().await?.stdout)
+            .to_string()
+            .as_str(),
     )?;
 
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der()?.as_bytes().into();

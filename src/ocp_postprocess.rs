@@ -2,7 +2,7 @@ use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{self, get_etcd_yaml, put_etcd_yaml},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
@@ -17,19 +17,17 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
     let mut hasher = sha2::Sha256::new();
 
     hasher.update(
-        base64_standard
-            .decode(
-                get_etcd_yaml(
-                    &mut etcd_client,
-                    &K8sResourceLocation::new(None, "APIService", "v1.packages.operators.coreos.com", "apiregistration.k8s.io/v1"),
-                )
-                .await?
-                .pointer("/spec/caBundle")
-                .unwrap()
-                .as_str()
-                .unwrap(),
+        base64_standard.decode(
+            get_etcd_yaml(
+                &mut etcd_client,
+                &K8sResourceLocation::new(None, "APIService", "v1.packages.operators.coreos.com", "apiregistration.k8s.io/v1"),
             )
-            .unwrap(),
+            .await?
+            .pointer("/spec/caBundle")
+            .context("couldn't find OLM .spec.caBundle")?
+            .as_str()
+            .context("couldn't find OLM caBundle")?,
+        )?,
     );
     let hash = hasher.finalize();
 
@@ -43,9 +41,9 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
     let mut packageserver_serving_cert_secret = get_etcd_yaml(&mut etcd_client, &package_serving_cert_secret_k8s_resource_location).await?;
     packageserver_serving_cert_secret
         .pointer_mut("/metadata/annotations")
-        .unwrap()
+        .context("no .metadata.annotations")?
         .as_object_mut()
-        .unwrap()
+        .context("annotations not an object")?
         .insert("olmcahash".to_string(), serde_json::Value::String(format!("{:x}", hash)));
 
     put_etcd_yaml(

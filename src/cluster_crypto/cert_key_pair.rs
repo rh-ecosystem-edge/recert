@@ -164,7 +164,7 @@ impl CertKeyPair {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem()).unwrap(),
+                    &pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?,
                 )?
                 .as_bytes()
                 .to_vec(),
@@ -195,7 +195,7 @@ impl CertKeyPair {
                 FileContentLocation::Raw(location_value_type) => {
                     if let LocationValueType::Pem(pem_location_info) = &location_value_type {
                         pem_utils::pem_bundle_replace_pem_at_index(
-                            String::from_utf8(contents).unwrap(),
+                            String::from_utf8(contents)?,
                             pem_location_info.pem_bundle_index,
                             &newpem,
                         )?
@@ -233,11 +233,11 @@ impl Display for CertKeyPair {
         write!(
             f,
             "{}",
-            if self.distributed_private_key.is_some() {
+            if let Some(distributed_private_key) = &self.distributed_private_key {
                 format!(
                     "priv {:03} locations {}",
-                    (**self.distributed_private_key.as_ref().unwrap()).borrow().locations.0.len(),
-                    (**self.distributed_private_key.as_ref().unwrap()).borrow().locations,
+                    (*distributed_private_key).borrow().locations.0.len(),
+                    (*distributed_private_key).borrow().locations,
                     // "<>",
                 )
             } else {

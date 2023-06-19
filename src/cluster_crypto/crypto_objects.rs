@@ -109,8 +109,7 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Result<Option<Dis
 pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
     let pems = pem::parse_many(value).context("parsing pem")?;
 
-    Ok(pems
-        .iter()
+    pems.iter()
         .enumerate()
         .map(|(pem_index, pem)| process_single_pem(pem).with_context(|| format!("processing pem at index {} in the bundle", pem_index)))
         .collect::<Result<Vec<_>>>()?
@@ -119,9 +118,12 @@ pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Result<Vec
         .filter(|(_, crypto_object)| crypto_object.is_some())
         .map(|(pem_index, crypto_object)| (pem_index, crypto_object.unwrap()))
         .map(|(pem_index, crypto_object)| {
-            DiscoveredCryptoObect::new(crypto_object, location.with_pem_bundle_index(pem_index.try_into().unwrap()))
+            Ok(DiscoveredCryptoObect::new(
+                crypto_object,
+                location.with_pem_bundle_index(pem_index.try_into()?),
+            ))
         })
-        .collect())
+        .collect::<Result<Vec<_>>>()
 }
 
 /// Given a single PEM, scan it for cryptographic keys and certificates and record them in the

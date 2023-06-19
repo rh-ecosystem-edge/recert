@@ -40,7 +40,7 @@ impl TryFrom<CapturedX509Certificate> for Certificate {
                     &bytes::Bytes::copy_from_slice(&cert.to_public_key_der().context("parsing public key")?.as_bytes()),
                 )),
                 x509_certificate::KeyAlgorithm::Ecdsa(_) => {
-                    PublicKey::from_ec_cert_bytes(&bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes()))
+                    PublicKey::from_ec_cert_bytes(&bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes()))?
                 }
                 x509_certificate::KeyAlgorithm::Ed25519 => panic!("ed25519 not supported"),
             },

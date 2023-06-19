@@ -1,5 +1,5 @@
 use crate::json_tools;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -102,7 +102,7 @@ impl Location {
         }
     }
 
-    pub(crate) fn with_jwt(&self) -> anyhow::Result<Self> {
+    pub(crate) fn with_jwt(&self) -> Result<Self> {
         Ok(match self {
             Self::K8s(k8s_location) => {
                 let mut new_k8s_location = k8s_location.clone();
@@ -239,15 +239,15 @@ impl K8sResourceLocation {
     }
 }
 
-impl From<&Value> for K8sResourceLocation {
-    fn from(value: &Value) -> Self {
-        Self {
+impl TryFrom<&Value> for K8sResourceLocation {
+    type Error = anyhow::Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        Ok(Self {
             namespace: json_tools::read_metadata_string_field(value, "namespace"),
-            kind: json_tools::read_string_field(value, "kind").unwrap(),
-            name: json_tools::read_metadata_string_field(value, "name").unwrap(),
-            apiversion: json_tools::read_string_field(value, "apiVersion")
-                .expect(format!("Missing apiversion field in {}", value).as_str()),
-        }
+            kind: json_tools::read_string_field(value, "kind").context("missing kind field")?,
+            name: json_tools::read_metadata_string_field(value, "name").context("missing name field")?,
+            apiversion: json_tools::read_string_field(value, "apiVersion").context("missing apiversion field")?,
+        })
     }
 }
 

@@ -104,7 +104,7 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                         .with_context(|| format!("getting key {:?}", key))?;
                     let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
                         .with_context(|| format!("deserializing value of key {:?}", key,))?;
-                    let k8s_resource_location = K8sResourceLocation::from(&value);
+                    let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
                     // Ensure our as_etcd_key function knows to generates the expected key, while we still
                     // have the key. TODO: Find a more robust way to generate etcd keys, kubernetes is

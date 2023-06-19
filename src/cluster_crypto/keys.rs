@@ -28,11 +28,11 @@ impl std::fmt::Debug for PrivateKey {
 }
 
 impl PrivateKey {
-    pub(crate) fn pem(&self) -> pem::Pem {
-        match &self {
-            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der().unwrap().as_bytes()),
+    pub(crate) fn pem(&self) -> Result<pem::Pem> {
+        Ok(match &self {
+            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
             PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
-        }
+        })
     }
 }
 
@@ -80,7 +80,7 @@ impl PublicKey {
         PublicKey::Rsa(der_bytes.clone())
     }
 
-    pub(crate) fn from_ec_cert_bytes(cert_bytes: &Bytes) -> PublicKey {
+    pub(crate) fn from_ec_cert_bytes(cert_bytes: &Bytes) -> Result<PublicKey> {
         // Need to shell out to openssl
         let mut command = Command::new("openssl")
             .arg("x509")
@@ -88,14 +88,20 @@ impl PublicKey {
             .arg("-noout")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        command.stdin.take().unwrap().write_all(cert_bytes).unwrap();
-        let output = command.wait_with_output().unwrap();
+            .spawn()?;
+
+        command
+            .stdin
+            .take()
+            .context("failed to get openssl stdin pipe")?
+            .write_all(cert_bytes)?;
+
+        let output = command.wait_with_output()?;
         if !output.status.success() {
-            panic!("openssl failed: {:?}", output);
+            return Err(anyhow::anyhow!("openssl failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
-        PublicKey::Ec(output.stdout.into())
+
+        Ok(PublicKey::Ec(output.stdout.into()))
     }
 
     pub(crate) fn pem(&self) -> pem::Pem {

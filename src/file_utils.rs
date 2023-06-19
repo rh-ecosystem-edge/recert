@@ -19,15 +19,14 @@ pub(crate) fn globvec(location: &Path, globstr: &str) -> Result<Vec<PathBuf>> {
             .with_context(|| format!("non-unicode path {} while globbing {:?}", globstr, location))?,
         globoptions,
     )?
-    .map(|x| x.unwrap())
+    .collect::<Result<Vec<_>, _>>()?
+    .into_iter()
     .filter(|x| !x.is_symlink())
     .collect::<Vec<_>>())
 }
 
 pub(crate) async fn read_file_to_string(file_path: PathBuf) -> Result<String> {
-    let mut file = tokio::fs::File::open(file_path.clone())
-        .await
-        .expect(format!("failed to open file {:?}", file_path).as_str());
+    let mut file = tokio::fs::File::open(file_path.clone()).await?;
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.context("failed to read file")?;
     Ok(contents)
