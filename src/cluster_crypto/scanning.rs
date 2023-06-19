@@ -54,7 +54,12 @@ pub(crate) async fn crypto_scan(
 
     // If we have a kubeconfig, we can also process that
     let kubeconfig_crypto_objects = if let Some(kubeconfig_path) = kubeconfig {
-        process_static_resource_yaml(read_file_to_string(kubeconfig_path.clone()).await?, &kubeconfig_path)?
+        process_static_resource_yaml(
+            read_file_to_string(kubeconfig_path.clone())
+                .await
+                .with_context(|| format!("reading kubeconfig {:?}", kubeconfig_path))?,
+            &kubeconfig_path,
+        )?
     } else {
         vec![]
     };
