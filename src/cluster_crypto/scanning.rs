@@ -170,8 +170,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/*.crt.mcdorig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.key.mcdorig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.pub.mcdorig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/currentconfig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
             .map(|file_path| {
                 tokio::spawn(async move {
                     let contents = read_file_to_string(file_path.clone()).await?;
