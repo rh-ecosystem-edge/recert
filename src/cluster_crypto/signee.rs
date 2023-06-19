@@ -1,6 +1,6 @@
 use super::{cert_key_pair::CertKeyPair, distributed_jwt::DistributedJwt, keys};
 use crate::rsa_key_pool::RsaKeyPool;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::{
     self,
     cell::RefCell,
@@ -40,7 +40,7 @@ impl Signee {
             Self::Jwt(jwt) => match new_signing_key {
                 Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair)?,
                 None => {
-                    panic!("Cannot regenerate a jwt without a signing key, regenerate may only be called on a signee that is a root cert-key-pair")
+                    bail!("Cannot regenerate a jwt without a signing key, regenerate may only be called on a signee that is a root cert-key-pair")
                 }
             },
         }

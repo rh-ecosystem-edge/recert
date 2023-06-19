@@ -106,10 +106,10 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                         .with_context(|| format!("deserializing value of key {:?}", key,))?;
                     let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                    // Ensure our as_etcd_key function knows to generates the expected key, while we still
-                    // have the key. TODO: Find a more robust way to generate etcd keys, kubernetes is
-                    // doing it weirdly which is why as_etcd_key is so complicated. Couldn't find
-                    // documentation on how it should be done properly
+                    // Ensure our as_etcd_key function knows to generates the correct key, while we
+                    // still have the key to compare to. TODO: Find a more robust way to generate
+                    // etcd keys, kubernetes is doing it weirdly which is why as_etcd_key is so
+                    // complicated. Couldn't find documentation on how it should be done properly
                     assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
 
                     let decoded_yaml_values = yaml_crawl::crawl_yaml(value)

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
 use p256::pkcs8::EncodePublicKey;
@@ -99,7 +99,7 @@ impl PublicKey {
 
         let output = command.wait_with_output().context("waiting for openssl output")?;
         if !output.status.success() {
-            return Err(anyhow::anyhow!("openssl failed: {}", String::from_utf8_lossy(&output.stderr)));
+            bail!("openssl failed: {}", String::from_utf8_lossy(&output.stderr));
         }
 
         Ok(PublicKey::Ec(output.stdout.into()))

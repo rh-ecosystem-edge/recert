@@ -29,7 +29,7 @@ lazy_static! {
     // in order to regenerate their signees, we just don't have to record them back to the
     // filesystem or etcd because they were never there in the first place. These are rare so we
     // explicitly record them here and any time we encounter a cert without a matching private key
-    // we check if it's in this list and panic if it's not, as it means we might have a bug in our
+    // we check if it's in this list and error if it's not, as it means we might have a bug in our
     // code.
     pub(crate) static ref KNOWN_MISSING_PRIVATE_KEY_CERTS: Vec<&'static Lazy<Regex>> = vec![
         // This is a self-signed cert trusted by the kube-apiserver and its private key is used to

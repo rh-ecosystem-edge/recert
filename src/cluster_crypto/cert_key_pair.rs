@@ -15,7 +15,7 @@ use crate::{
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bcder::BitString;
 use bytes::Bytes;
 use rsa::{signature::Signer, RsaPrivateKey};
@@ -192,17 +192,16 @@ impl CertKeyPair {
         Ok(tokio::fs::write(
             &filelocation.path,
             match &filelocation.content_location {
-                FileContentLocation::Raw(location_value_type) => {
-                    if let LocationValueType::Pem(pem_location_info) = &location_value_type {
-                        pem_utils::pem_bundle_replace_pem_at_index(
-                            String::from_utf8(contents)?,
-                            pem_location_info.pem_bundle_index,
-                            &newpem,
-                        )?
-                    } else {
-                        panic!("shouldn't happen");
+                FileContentLocation::Raw(location_value_type) => match &location_value_type {
+                    LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
+                        String::from_utf8(contents)?,
+                        pem_location_info.pem_bundle_index,
+                        &newpem,
+                    )?,
+                    _ => {
+                        bail!("Cannot replace PEM in non-PEM file");
                     }
-                }
+                },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;
                     recreate_yaml_at_location_with_new_pem(resource, yaml_location, &newpem)?

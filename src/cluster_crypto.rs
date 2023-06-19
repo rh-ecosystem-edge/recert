@@ -13,7 +13,7 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
@@ -247,25 +247,20 @@ impl ClusterCryptoObjects {
                                 .original,
                         ) {
                         Ok(_) => true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair)),
-                        Err(err) => match err {
-                            X509CertificateError::CertificateSignatureVerificationFailed => {}
-                            X509CertificateError::UnsupportedSignatureVerification(..) => {
-                                // This is a hack to get around the fact this lib doesn't support
-                                // all signature algorithms yet.
-                                if crypto_utils::openssl_is_signed(&potential_signing_cert_key_pair, &cert_key_pair)? {
-                                    true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair));
-                                }
+                        Err(X509CertificateError::CertificateSignatureVerificationFailed) => {}
+                        Err(X509CertificateError::UnsupportedSignatureVerification(..)) => {
+                            // This is a hack to get around the fact this lib doesn't support
+                            // all signature algorithms yet.
+                            if crypto_utils::openssl_is_signed(&potential_signing_cert_key_pair, &cert_key_pair)? {
+                                true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair));
                             }
-                            _ => panic!("Error verifying signed by certificate: {:?}", err),
-                        },
+                        }
+                        unknown_err => unknown_err?,
                     }
                 }
 
                 if true_signing_cert.is_none() {
-                    panic!(
-                        "No signing cert found for {}",
-                        (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
-                    );
+                    bail!("no signing cert found");
                 }
             }
 
@@ -332,7 +327,17 @@ impl ClusterCryptoObjects {
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
-                panic!("JWT has unknown signer");
+                bail!(
+                    "no signer found for jwt in location {}",
+                    (**distributed_jwt)
+                        .borrow()
+                        .clone()
+                        .locations
+                        .0
+                        .into_iter()
+                        .next()
+                        .context("no locations for jwt")?
+                );
             }
 
             (**distributed_jwt).borrow_mut().signer = maybe_signer;
@@ -360,7 +365,7 @@ impl ClusterCryptoObjects {
             }
             for potential_jwt_signee in self.jwts.values() {
                 match &(*potential_jwt_signee).borrow_mut().signer {
-                    jwt::JwtSigner::Unknown => panic!("JWT has unknown signer"),
+                    jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
                     jwt::JwtSigner::CertKeyPair(jwt_signer_cert_key_pair) => {
                         if jwt_signer_cert_key_pair == cert_key_pair {
                             signees.push(signee::Signee::Jwt(Rc::clone(potential_jwt_signee)));
@@ -376,7 +381,7 @@ impl ClusterCryptoObjects {
         for distributed_private_key in self.private_keys.values() {
             for potential_jwt_signee in self.jwts.values() {
                 match &(**potential_jwt_signee).borrow_mut().signer {
-                    jwt::JwtSigner::Unknown => panic!("JWT has unknown signer"),
+                    jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
                     jwt::JwtSigner::CertKeyPair(_cert_key_pair) => {}
                     jwt::JwtSigner::PrivateKey(jwt_signer_distributed_private_key) => {
                         if jwt_signer_distributed_private_key == distributed_private_key {
@@ -416,15 +421,19 @@ impl ClusterCryptoObjects {
                     // Remove the private key from the pool of private keys as it's now paired with a cert
                     self.private_keys.remove(&private_key.get());
                 } else {
-                    panic!("Private key not found");
+                    bail!(
+                        "Private key not found for cert {}. The cert was found in {}",
+                        (**distributed_cert).borrow().certificate.subject,
+                        (**distributed_cert).borrow().locations,
+                    );
                 }
             } else if KNOWN_MISSING_PRIVATE_KEY_CERTS.iter().any(|known_missing_private_key_cert| {
                 known_missing_private_key_cert.is_match(&(**distributed_cert).borrow().certificate.subject)
             }) {
-                // This is a known missing private key cert, so we don't need to panic about it not
+                // This is a known missing private key cert, so we don't need to worry about it not
                 // having a private key.
             } else {
-                panic!(
+                bail!(
                     "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
                     (**distributed_cert).borrow().certificate.subject,
                     (**distributed_cert).borrow().locations,

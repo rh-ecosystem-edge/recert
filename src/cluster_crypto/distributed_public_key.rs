@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use super::{
     keys::{PrivateKey, PublicKey},
@@ -44,10 +44,10 @@ impl DistributedPublicKey {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_k8s_private_key(etcd_client, &k8slocation).await?;
+                    self.commit_k8s_public_key(etcd_client, &k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_private_key(&filelocation).await?;
+                    self.commit_filesystem_public_key(&filelocation).await?;
                 }
             }
         }
@@ -55,7 +55,7 @@ impl DistributedPublicKey {
         Ok(())
     }
 
-    async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
+    async fn commit_k8s_public_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
         let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
 
         etcd_client
@@ -70,10 +70,10 @@ impl DistributedPublicKey {
         Ok(())
     }
 
-    async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
+    async fn commit_filesystem_public_key(&self, filelocation: &FileLocation) -> Result<()> {
         let public_key_pem = match &self.key {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
-            PublicKey::Ec(_) => panic!("unsupported"),
+            PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
         };
 
         tokio::fs::write(
@@ -85,9 +85,7 @@ impl DistributedPublicKey {
                         pem_location_info.pem_bundle_index,
                         &public_key_pem,
                     )?,
-                    _ => {
-                        panic!("shouldn't happen");
-                    }
+                    _ => bail!("cannot commit non-PEM location to filesystem"),
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;

@@ -2,7 +2,7 @@ use crate::cluster_crypto::{
     locations::{FileLocation, LocationValueType, YamlLocation},
     pem_utils,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -41,26 +41,24 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
     yaml_location: &YamlLocation,
     new_pem: &pem::Pem,
 ) -> Result<String> {
-    match resource.pointer_mut(&yaml_location.json_pointer) {
-        Some(value_at_json_pointer) => {
-            if let Value::String(value_at_json_pointer) = value_at_json_pointer {
-                let decoded = decode_resource_data_entry(yaml_location, value_at_json_pointer)?;
+    let value_at_json_pointer = resource.pointer_mut(&yaml_location.json_pointer).context("value disappeared")?;
 
-                match &yaml_location.value {
-                    LocationValueType::Pem(pem_location_info) => {
-                        let newbundle = pem_utils::pem_bundle_replace_pem_at_index(decoded, pem_location_info.pem_bundle_index, &new_pem)?;
-                        let encoded = encode_resource_data_entry(&yaml_location, &newbundle);
-                        *value_at_json_pointer = encoded;
-                    }
-                    _ => {
-                        panic!("shouldn't happen");
-                    }
-                }
+    match &yaml_location.value {
+        LocationValueType::Pem(pem_location_info) => {
+            let newbundle = pem_utils::pem_bundle_replace_pem_at_index(
+                decode_resource_data_entry(yaml_location, value_at_json_pointer.as_str().context("value no longer string")?)?,
+                pem_location_info.pem_bundle_index,
+                &new_pem,
+            )?;
+            let encoded = encode_resource_data_entry(&yaml_location, &newbundle);
+
+            if let Value::String(value_at_json_pointer) = value_at_json_pointer {
+                *value_at_json_pointer = encoded;
+            } else {
+                bail!("value not string");
             }
         }
-        None => {
-            panic!("shouldn't happen {} {:#?}", resource.to_string(), yaml_location);
-        }
+        _ => bail!("called with non-pem location"),
     }
 
     serde_json::to_string(&resource).context("failed to serialize yaml")
@@ -78,11 +76,11 @@ pub(crate) fn encode_resource_data_entry(k8slocation: &YamlLocation, value: &Str
     }
 }
 
-pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_json_pointer: &mut String) -> Result<String> {
+pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_json_pointer: &str) -> Result<String> {
     Ok(match yaml_location.encoding {
         crate::cluster_crypto::locations::FieldEncoding::None => value_at_json_pointer.to_string(),
         crate::cluster_crypto::locations::FieldEncoding::Base64 => {
-            String::from_utf8_lossy(base64_standard.decode(value_at_json_pointer.as_bytes())?.as_slice()).to_string()
+            String::from_utf8(base64_standard.decode(value_at_json_pointer.as_bytes())?)?
         }
         crate::cluster_crypto::locations::FieldEncoding::DataUrl => {
             let (decoded, _fragment) = data_url::DataUrl::process(value_at_json_pointer)

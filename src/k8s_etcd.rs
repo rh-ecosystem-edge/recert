@@ -1,5 +1,5 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, bail};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -54,7 +54,7 @@ impl InMemoryK8sEtcd {
 
                         etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
 
-                        Ok::<_, anyhow::Error>(())
+                        anyhow::Ok(())
                     })
                 })
                 .collect::<Vec<_>>(),
@@ -143,12 +143,12 @@ async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<
     let result = command.wait_with_output().await.context("waiting for ouger to finish")?;
 
     if !result.status.success() {
-        return Err(anyhow!(
+        bail!(
             "ouger {} failed with exit code {} and stderr: {}",
             ouger_subcommand,
             result.status.code().context("checking ouger exit code")?,
             String::from_utf8_lossy(&result.stderr)
-        ));
+        );
     };
 
     Ok(result.stdout)

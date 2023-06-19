@@ -1,5 +1,5 @@
 use super::{cert_key_pair::CertKeyPair, distributed_jwt, keys};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
 use rsa::{
@@ -72,7 +72,7 @@ pub(crate) fn verify_jwt(
 ) -> Result<jwt_simple::prelude::JWTClaims<Map<String, Value>>, jwt_simple::Error> {
     match &public_key {
         keys::PublicKey::Rsa(bytes) => jwt_simple::prelude::RS256PublicKey::from_der(bytes)?,
-        keys::PublicKey::Ec(_) => return Err(jwt_simple::Error::msg("EC public keys are not supported")),
+        keys::PublicKey::Ec(_) => bail!("EC public keys are not supported"),
     }
     .verify_token::<Map<String, Value>>(&distributed_jwt.jwt.str, None)
 }

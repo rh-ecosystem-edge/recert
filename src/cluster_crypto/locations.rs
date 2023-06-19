@@ -1,5 +1,5 @@
 use crate::json_tools;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -73,8 +73,8 @@ impl Debug for Location {
 }
 
 impl Location {
-    pub(crate) fn with_pem_bundle_index(&self, pem_bundle_index: u64) -> Self {
-        match self {
+    pub(crate) fn with_pem_bundle_index(&self, pem_bundle_index: u64) -> Result<Self> {
+        Ok(match self {
             Self::K8s(k8s_location) => {
                 let mut new_k8s_location = k8s_location.clone();
                 new_k8s_location.yaml_location.value = LocationValueType::Pem(PemLocationInfo { pem_bundle_index });
@@ -82,8 +82,8 @@ impl Location {
             }
             Self::Filesystem(file_location) => match &file_location.content_location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
-                    LocationValueType::Pem(_) => panic!("Already has PEM info"),
-                    LocationValueType::Jwt => panic!("Already has JWT info"),
+                    LocationValueType::Pem(_) => bail!("already has PEM info"),
+                    LocationValueType::Jwt => bail!("already has jwt info"),
                     LocationValueType::Unknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location =
@@ -99,7 +99,7 @@ impl Location {
                     Self::Filesystem(new_file_location)
                 }
             },
-        }
+        })
     }
 
     pub(crate) fn with_jwt(&self) -> Result<Self> {
@@ -111,8 +111,8 @@ impl Location {
             }
             Self::Filesystem(file_location) => match &file_location.content_location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
-                    LocationValueType::Pem(_) => return Err(anyhow!("already has PEM info")),
-                    LocationValueType::Jwt => return Err(anyhow!("already has jwt info")),
+                    LocationValueType::Pem(_) => bail!("already has PEM info"),
+                    LocationValueType::Jwt => bail!("already has jwt info"),
                     LocationValueType::Unknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location = FileContentLocation::Raw(LocationValueType::Jwt);
@@ -181,7 +181,7 @@ impl std::fmt::Display for LocationValueType {
         match self {
             LocationValueType::Pem(pem_location_info) => write!(f, "{}", pem_location_info),
             LocationValueType::Jwt => write!(f, ":jwt"),
-            LocationValueType::Unknown => panic!("Cannot display unknown location value type"),
+            LocationValueType::Unknown => write!(f, ":unknown"),
         }
     }
 }

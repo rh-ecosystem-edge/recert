@@ -11,7 +11,7 @@ use crate::{
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use pkcs1::EncodeRsaPrivateKey;
 use std::{self, cell::RefCell, fmt::Display, rc::Rc};
 
@@ -113,9 +113,7 @@ impl DistributedPrivateKey {
                         pem_location_info.pem_bundle_index,
                         &private_key_pem,
                     )?,
-                    _ => {
-                        panic!("shouldn't happen");
-                    }
+                    _ => bail!("cannot commit non-PEM to filesystem"),
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;

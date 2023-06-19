@@ -1,5 +1,5 @@
 use super::keys::PublicKey;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use p256::pkcs8::EncodePublicKey;
 use std::hash::{Hash, Hasher};
 use x509_certificate::{self, CapturedX509Certificate};
@@ -43,7 +43,7 @@ impl TryFrom<CapturedX509Certificate> for Certificate {
                     PublicKey::from_ec_cert_bytes(&bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes()))
                         .context("converting EC key bytes")?
                 }
-                x509_certificate::KeyAlgorithm::Ed25519 => panic!("ed25519 not supported"),
+                x509_certificate::KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
             },
             original: cert,
         })

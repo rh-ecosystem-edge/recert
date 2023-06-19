@@ -5,7 +5,7 @@ use super::{
     locations::Location,
 };
 use crate::rules;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use p256::SecretKey;
@@ -120,7 +120,7 @@ pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Result<Vec
         .map(|(pem_index, crypto_object)| {
             Ok(DiscoveredCryptoObect::new(
                 crypto_object,
-                location.with_pem_bundle_index(pem_index.try_into()?),
+                location.with_pem_bundle_index(pem_index.try_into()?)?,
             ))
         })
         .collect::<Result<Vec<_>>>()
@@ -197,7 +197,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
         x509_certificate::KeyAlgorithm::Rsa => {}
         x509_certificate::KeyAlgorithm::Ecdsa(_) => {}
         x509_certificate::KeyAlgorithm::Ed25519 => {
-            panic!("ed25519 unsupported");
+            bail!("ed25519 certs unsupported");
         }
     }
 
