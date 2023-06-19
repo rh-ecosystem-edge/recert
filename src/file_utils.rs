@@ -61,7 +61,7 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
         _ => bail!("called with non-pem location"),
     }
 
-    serde_json::to_string(&resource).context("failed to serialize yaml")
+    serde_json::to_string(&resource).context("serializing yaml")
 }
 
 pub(crate) fn encode_resource_data_entry(k8slocation: &YamlLocation, value: &String) -> String {
