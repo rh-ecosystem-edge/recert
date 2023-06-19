@@ -22,8 +22,11 @@ pub(crate) async fn crypto_scan(
     static_dirs: Vec<PathBuf>,
     kubeconfig: Option<PathBuf>,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
+    // Launch separate paralllel long running background tasks
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
     let discovered_filesystem_objects = scan_static_dirs(static_dirs);
+
+    // ... and join them
     let discovered_crypto_objects = discovered_etcd_objects.await??;
     let discovered_filesystem_objects = discovered_filesystem_objects.await??;
 
@@ -34,6 +37,7 @@ pub(crate) async fn crypto_scan(
         vec![]
     };
 
+    // Return all objects discovered as one large vector
     Ok(discovered_crypto_objects
         .into_iter()
         .chain(discovered_filesystem_objects)
