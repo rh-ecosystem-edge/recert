@@ -164,7 +164,7 @@ for kind in machineconfiguration.openshift.io/machineconfigs; do
     done
 done
 
-meld "$CLUSTER_DIR" "$BACKUP_CLUSTER_DIR"
+meld "$BACKUP_CLUSTER_DIR" "$CLUSTER_DIR" 
 ```
 
 ### Run on SNO POC cluster
