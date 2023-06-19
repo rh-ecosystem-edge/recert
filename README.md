@@ -239,3 +239,9 @@ ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl enable kubelet
 ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl enable crio
 ssh $SSH_FLAGS "$SSH_HOST" sudo reboot 
 ```
+
+# Image build
+
+export DOCKER_BUILDKIT=1
+docker build . -t quay.io/otuchfel/recert:latest
+docker push quay.io/otuchfel/recert:latest

@@ -88,7 +88,8 @@ impl PublicKey {
             .arg("-noout")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .context("running openssl")?;
 
         command
             .stdin
@@ -96,7 +97,7 @@ impl PublicKey {
             .context("failed to get openssl stdin pipe")?
             .write_all(cert_bytes)?;
 
-        let output = command.wait_with_output()?;
+        let output = command.wait_with_output().context("waiting for openssl output")?;
         if !output.status.success() {
             return Err(anyhow::anyhow!("openssl failed: {}", String::from_utf8_lossy(&output.stderr)));
         }

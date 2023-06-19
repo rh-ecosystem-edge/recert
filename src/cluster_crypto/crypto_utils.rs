@@ -1,5 +1,5 @@
 use super::{cert_key_pair::CertKeyPair, distributed_jwt, keys};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
 use rsa::{
@@ -79,13 +79,22 @@ pub(crate) fn verify_jwt(
 
 pub(crate) async fn generate_rsa_key_async() -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
-        String::from_utf8_lossy(&Command::new("openssl").args(&["genrsa", "2048"]).output().await?.stdout)
-            .to_string()
-            .as_str(),
-    )?;
+        String::from_utf8(
+            Command::new("openssl")
+                .args(&["genrsa", "2048"])
+                .output()
+                .await
+                .context("openssl genrsa")?
+                .stdout,
+        )
+        .context("converting openssl key to utf-8")?
+        .to_string()
+        .as_str(),
+    )
+    .context("private from pem")?;
 
-    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der()?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes)?;
+    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
 }
 

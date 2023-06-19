@@ -82,7 +82,12 @@ impl InMemoryK8sEtcd {
             }
         }
 
-        let get_result = self.etcd_client.kv_client().get(key.clone(), None).await?;
+        let get_result = self
+            .etcd_client
+            .kv_client()
+            .get(key.clone(), None)
+            .await
+            .context("during etcd get")?;
         let raw_etcd_value = get_result.kvs().first().context("key not found")?.value();
 
         if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
@@ -90,7 +95,7 @@ impl InMemoryK8sEtcd {
             return Ok(result);
         }
 
-        let decoded_value = run_ouger("decode", raw_etcd_value).await?;
+        let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
         self.etcd_keyvalue_hashmap
             .lock()
             .await
