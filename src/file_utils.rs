@@ -21,7 +21,8 @@ pub(crate) fn globvec(location: &Path, globstr: &str) -> Result<Vec<PathBuf>> {
     )?
     .collect::<Result<Vec<_>, _>>()?
     .into_iter()
-    .filter(|x| !x.is_symlink())
+    .filter(|path| !path.is_symlink())
+    .filter(|path| !path.is_dir())
     .collect::<Vec<_>>())
 }
 
