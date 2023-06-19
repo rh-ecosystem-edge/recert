@@ -42,7 +42,7 @@ lazy_static! {
         regex!("CN=root-ca, OU=openshift"),
         // As of OCP 4.14 you can see the private key being dropped here:
         // https://github.com/operator-framework/operator-lifecycle-manager/blob/9ced412f3e263b8827680dc0ad3477327cd9a508/pkg/controller/install/certresources.go#L295
-        regex!("CN=olm-selfsigned-[0-9a-f]{16}, O=Red Hat, Inc."),
+        regex!("CN=olm-selfsigned-[0-9a-f]{10,32}, O=Red Hat, Inc."),
     ].into_iter().collect();
 
     // TODO: Find a better way to identify these rather than maintaining this big list
