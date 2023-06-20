@@ -20,6 +20,7 @@ pub(crate) fn mutate_cert_cn_san(
     cn_san_replace_rules: &CnSanReplaceRules,
 ) -> Result<(), anyhow::Error> {
     mutate_cert_subject_common_name(tbs_certificate, cn_san_replace_rules).context("mutating subject Common Name")?;
+    mutate_cert_issuer_common_name(tbs_certificate, cn_san_replace_rules).context("mutating subject Common Name")?;
     mutate_cert_subject_alternative_name(tbs_certificate, cn_san_replace_rules).context("mutating Subject Alternative Name")?;
     Ok(())
 }
@@ -30,6 +31,24 @@ pub(crate) fn mutate_cert_subject_common_name(
 ) -> Result<()> {
     tbs_certificate
         .subject
+        .iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
+        .map(|common_name| {
+            *common_name = rfc3280::AttributeTypeAndValue::new_utf8_string(
+                Oid(OID_COMMON_NAME.as_ref().into()),
+                cn_san_replace_rules.replace(common_name.to_string()?.as_str()).as_str(),
+            )
+            .ok()
+            .context("failed to generate utf-8 common name")?;
+
+            Ok(())
+        })
+        .collect::<Result<Vec<()>>>()?;
+    Ok(())
+}
+
+pub(crate) fn mutate_cert_issuer_common_name(tbs_certificate: &mut TbsCertificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
+    tbs_certificate
+        .issuer
         .iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
         .map(|common_name| {
             *common_name = rfc3280::AttributeTypeAndValue::new_utf8_string(
