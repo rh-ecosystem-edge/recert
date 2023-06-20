@@ -7,6 +7,7 @@ use super::{
     signee::Signee,
 };
 use crate::{
+    cnsanreplace::CnSanReplaceRules,
     file_utils::{get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
@@ -51,11 +52,16 @@ impl Display for DistributedPrivateKey {
 }
 
 impl DistributedPrivateKey {
-    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool) -> Result<()> {
+    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
         let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().context("RSA pool empty")?;
 
         for signee in &mut self.signees {
-            signee.regenerate(&PublicKey::try_from(&self.key)?, Some(&self_new_key_pair), rsa_key_pool)?;
+            signee.regenerate(
+                &PublicKey::try_from(&self.key)?,
+                Some(&self_new_key_pair),
+                rsa_key_pool,
+                cn_san_replace_rules,
+            )?;
         }
 
         self.key = PrivateKey::Rsa(self_new_rsa_private_key);

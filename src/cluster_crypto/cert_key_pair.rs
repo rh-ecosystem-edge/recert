@@ -11,6 +11,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::locations::LocationValueType,
+    cnsanreplace::CnSanReplaceRules,
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
@@ -25,6 +26,10 @@ use x509_certificate::{
     rfc5280::{self, AlgorithmIdentifier},
     CapturedX509Certificate, InMemorySigningKeyPair, KeyAlgorithm, Sign, X509Certificate,
 };
+
+mod cert_mutations;
+
+const SUBJECT_ALTERNATIVE_NAME_OID: [u8; 3] = [85, 29, 17];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CertKeyPair {
@@ -51,8 +56,13 @@ impl CertKeyPair {
         }
     }
 
-    pub(crate) fn regenerate(&mut self, sign_with: Option<&InMemorySigningKeyPair>, rsa_key_pool: &mut RsaKeyPool) -> Result<()> {
-        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(sign_with, rsa_key_pool)?;
+    pub(crate) fn regenerate(
+        &mut self,
+        sign_with: Option<&InMemorySigningKeyPair>,
+        rsa_key_pool: &mut RsaKeyPool,
+        cn_san_replace_rules: &CnSanReplaceRules,
+    ) -> Result<()> {
+        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(sign_with, rsa_key_pool, cn_san_replace_rules)?;
         (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(new_cert)?;
 
         for signee in &mut self.signees {
@@ -60,6 +70,7 @@ impl CertKeyPair {
                 &(*self.distributed_cert).borrow().certificate.public_key,
                 Some(&new_cert_subject_key_pair),
                 rsa_key_pool,
+                cn_san_replace_rules,
             )?;
         }
 
@@ -69,10 +80,10 @@ impl CertKeyPair {
                 .regenerate(&PrivateKey::Rsa(rsa_private_key.clone()))?;
         }
 
-        // This condition exists because not all certs originally had a private key
-        // associated with them (e.g. some private keys are discarded during install time),
-        // so we only want to write the private key back into the graph incase there was
-        // one there to begin with.
+        // This condition exists because not all certs originally had a private key associated with
+        // them (e.g. some private keys are discarded during install time), so we want to save the
+        // regenerated private key only in case there was one there to begin with. Otherwise we
+        // just discard it just like it was discarded during install time.
         if let Some(distributed_private_key) = &mut self.distributed_private_key {
             (**distributed_private_key).borrow_mut().key = PrivateKey::Rsa(rsa_private_key)
         }
@@ -86,6 +97,7 @@ impl CertKeyPair {
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
+        cn_san_rules: &CnSanReplaceRules,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
         // Generate a new RSA key for this cert
         let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().context("rsa key pool empty")?;
@@ -114,6 +126,9 @@ impl CertKeyPair {
         // we're only forced to change this because we make all certs RSA
         let signature_algorithm: AlgorithmIdentifier = signing_key.signature_algorithm()?.into();
         tbs_certificate.signature = signature_algorithm.clone();
+
+        // Perform all requested mutations on the certificate
+        cert_mutations::mutate_cert(&mut tbs_certificate, cn_san_rules).context("mutating cert")?;
 
         // The to-be-signed ceritifcate, encoded to DER, is the bytes we sign
         let tbs_der = encode_tbs_cert_to_der(&tbs_certificate)?;

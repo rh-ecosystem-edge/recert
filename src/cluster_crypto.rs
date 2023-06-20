@@ -9,6 +9,7 @@ use self::{
 };
 use crate::{
     cluster_crypto::signee::Signee,
+    cnsanreplace::CnSanReplaceRules,
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
@@ -114,17 +115,17 @@ impl ClusterCryptoObjects {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    pub(crate) fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool) -> Result<()> {
+    pub(crate) fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, cn_san_replace_rules: CnSanReplaceRules) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             if (**cert_key_pair).borrow().signer.is_some() {
                 continue;
             }
 
-            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool)?
+            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool, &cn_san_replace_rules)?
         }
 
         for private_key in self.private_keys.values() {
-            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool)?
+            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, &cn_san_replace_rules)?
         }
 
         println!("- Regeneration complete, verifying...");

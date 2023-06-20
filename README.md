@@ -27,7 +27,6 @@ separate from other clusters deployed in the same manner.
 - [ ] Use the same RSA bit size as the original key
 - [ ] Don't use RSA everywhere - EC certs/keys should still be EC
     - [ ] Remove the code to adjust the signature algorithm identifer once we've done that as it's no longer needed
-- [ ] Allow cert modification plugins (e.g. expiration change for testing, CN/SAN adjustment for image-based SNO)
 - [ ] Leave traces everywhere - PEM comments, resource annotations, etc to indicate that the resource has been modified
 - [ ] Create a very informative summary that can be used to debug the cert regen in prod
 - [ ] Give users an option to regenerate pointer ignitions
@@ -139,7 +138,10 @@ cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
     --etcd-endpoint localhost:2379 \
     --static-dir "$CLUSTER_DIR"/kubernetes \
     --static-dir "$CLUSTER_DIR"/kubelet \
-    --static-dir "$CLUSTER_DIR"/machine-config-daemon
+    --static-dir "$CLUSTER_DIR"/machine-config-daemon \
+    --cn-san-replace "api-int.test-cluster.redhat.com api-int.test-cluster2.redhat.com" \
+    --cn-san-replace "api.test-cluster.redhat.com api.test-cluster2.redhat.com" \
+    --cn-san-replace "*.apps.test-cluster.redhat.com *.apps.test-cluster2.redhat.com"
 ```
 
 #### Compare results

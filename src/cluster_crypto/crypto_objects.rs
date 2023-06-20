@@ -187,6 +187,7 @@ pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<Crypto
 /// Given a certificate PEM, record it in the appropriate data structures.
 pub(crate) fn process_pem_cert(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
     let x509_certificate = &x509_certificate::CapturedX509Certificate::from_der(pem.contents()).context("parsing DER")?;
+
     let hashable_cert = certificate::Certificate::try_from(x509_certificate.clone()).context("parsing cert")?;
 
     if rules::EXTERNAL_CERTS.contains(&hashable_cert.subject) {
