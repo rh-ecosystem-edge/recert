@@ -8,6 +8,7 @@ use der::asn1::Ia5String;
 use der::{Decode, Encode};
 use x509_cert::ext::pkix::name::GeneralName::DnsName;
 use x509_cert::ext::pkix::SubjectAltName;
+use x509_certificate::rfc3280::Name;
 use x509_certificate::{rfc3280, rfc4519::OID_COMMON_NAME, rfc5280::TbsCertificate};
 
 pub(crate) fn mutate_cert(tbs_certificate: &mut TbsCertificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
@@ -19,37 +20,14 @@ pub(crate) fn mutate_cert_cn_san(
     tbs_certificate: &mut TbsCertificate,
     cn_san_replace_rules: &CnSanReplaceRules,
 ) -> Result<(), anyhow::Error> {
-    mutate_cert_subject_common_name(tbs_certificate, cn_san_replace_rules).context("mutating subject Common Name")?;
-    mutate_cert_issuer_common_name(tbs_certificate, cn_san_replace_rules).context("mutating subject Common Name")?;
+    mutate_cert_common_name(&mut tbs_certificate.subject, cn_san_replace_rules).context("mutating subject Common Name")?;
+    mutate_cert_common_name(&mut tbs_certificate.issuer, cn_san_replace_rules).context("mutating subject Common Name")?;
     mutate_cert_subject_alternative_name(tbs_certificate, cn_san_replace_rules).context("mutating Subject Alternative Name")?;
     Ok(())
 }
 
-pub(crate) fn mutate_cert_subject_common_name(
-    tbs_certificate: &mut TbsCertificate,
-    cn_san_replace_rules: &CnSanReplaceRules,
-) -> Result<()> {
-    tbs_certificate
-        .subject
-        .iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
-        .map(|common_name| {
-            *common_name = rfc3280::AttributeTypeAndValue::new_utf8_string(
-                Oid(OID_COMMON_NAME.as_ref().into()),
-                cn_san_replace_rules.replace(common_name.to_string()?.as_str()).as_str(),
-            )
-            .ok()
-            .context("failed to generate utf-8 common name")?;
-
-            Ok(())
-        })
-        .collect::<Result<Vec<()>>>()?;
-    Ok(())
-}
-
-pub(crate) fn mutate_cert_issuer_common_name(tbs_certificate: &mut TbsCertificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
-    tbs_certificate
-        .issuer
-        .iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
+pub(crate) fn mutate_cert_common_name(name: &mut Name, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
+    name.iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
         .map(|common_name| {
             *common_name = rfc3280::AttributeTypeAndValue::new_utf8_string(
                 Oid(OID_COMMON_NAME.as_ref().into()),
