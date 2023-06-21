@@ -1,4 +1,4 @@
-use crate::cluster_crypto::scanning;
+use crate::{cluster_crypto::scanning, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters};
 use anyhow::{Context, Result};
 use clap::Parser;
 use cluster_crypto::ClusterCryptoObjects;
@@ -17,53 +17,58 @@ mod rsa_key_pool;
 mod rules;
 
 /// A program to regenerate cluster certificates, keys and tokens
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+struct Cli {
     // etcd endpoint to recertify
-    #[arg(short, long)]
+    #[arg(long)]
     etcd_endpoint: String,
 
     /// Directory to recertifiy, such as /var/lib/kubelet, /etc/kubernetes and /etc/machine-config-daemon. Can specify multiple times
-    #[arg(short, long)]
+    #[arg(long)]
     static_dir: Vec<PathBuf>,
-
-    /// Optionally, your kubeconfig so its cert/keys can be regenerated as well and you can still
-    /// log in after recertification
-    #[arg(short, long)]
-    kubeconfig: Option<PathBuf>,
 
     /// A list of strings to replace in the subject name of all certificates. Can specify multiple.
     /// Must come in pairs of old and new values, separated by a space. For example:
     /// --cn-san-replace "foo bar" --cn-san-replace "baz qux" will replace all instances of "foo"
     /// with "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
-    #[arg(short, long)]
+    #[arg(long)]
     cn_san_replace: Vec<String>,
+
+    /// Comma seperated cluster name and cluster base domain.
+    /// If given, many resources will be modified to use this new information
+    #[arg(long)]
+    cluster_rename: Option<String>,
+
+    /// Deprecated
+    #[arg(long)]
+    kubeconfig: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Cli::parse();
 
     main_internal(args).await
 }
 
-async fn main_internal(args: Args) -> Result<()> {
-    let (kubeconfig, static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules) = init(args).await.context("initializing")?;
+async fn main_internal(args: Cli) -> Result<()> {
+    let (static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules, cluster_rename) = init(args).await.context("initializing")?;
 
     // Scanning and recertification
     recertify(
         Arc::clone(&memory_etcd),
         &mut cluster_crypto,
-        kubeconfig,
-        static_dirs,
+        static_dirs.clone(),
         cn_san_replace_rules,
     )
     .await
     .context("recertification")?;
 
     // Apply changes
-    finalize(memory_etcd, &mut cluster_crypto).await.context("finalization")?;
+    finalize(memory_etcd, &mut cluster_crypto, cluster_rename, static_dirs)
+        .await
+        .context("finalization")?;
 
     // Log
     print_summary(cluster_crypto).await;
@@ -72,42 +77,44 @@ async fn main_internal(args: Args) -> Result<()> {
 }
 
 async fn init(
-    args: Args,
+    cli: Cli,
 ) -> Result<(
-    Option<PathBuf>,
     Vec<PathBuf>,
     ClusterCryptoObjects,
     Arc<InMemoryK8sEtcd>,
     CnSanReplaceRules,
+    Option<ClusterRenameParameters>,
 )> {
-    let etcd_client = EtcdClient::connect([args.etcd_endpoint.as_str()], None).await?;
+    let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None).await?;
 
-    let kubeconfig = args.kubeconfig;
     let cluster_crypto = ClusterCryptoObjects::new();
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
 
-    let cn_san_replace_rules = CnSanReplaceRules::try_from(args.cn_san_replace).context("parsing cli cn-san-replace")?;
+    let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
 
     Ok((
-        kubeconfig,
-        args.static_dir,
+        cli.static_dir,
         cluster_crypto,
         in_memory_etcd_client,
         cn_san_replace_rules,
+        if let Some(cluster_rename) = cli.cluster_rename {
+            Some(ClusterRenameParameters::try_from(cluster_rename)?)
+        } else {
+            None
+        },
     ))
 }
 
 async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
-    kubeconfig: Option<PathBuf>,
     static_dirs: Vec<PathBuf>,
     cn_san_replace_rules: CnSanReplaceRules,
 ) -> Result<()> {
     // Perform parallelizable tasks like generating raw RSA keys to be used later and scanning for
     // crypto objeccts
     println!("Scanning etcd/filesystem... This might take a while");
-    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, kubeconfig));
+    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs));
     let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300));
 
     // Wait for the parallelizable tasks to finish and get their results
@@ -130,10 +137,15 @@ async fn recertify(
     Ok(())
 }
 
-async fn finalize(in_memory_etcd_client: Arc<InMemoryK8sEtcd>, cluster_crypto: &mut ClusterCryptoObjects) -> Result<()> {
+async fn finalize(
+    in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
+    cluster_crypto: &mut ClusterCryptoObjects,
+    cluster_rename: Option<ClusterRenameParameters>,
+    static_dirs: Vec<PathBuf>,
+) -> Result<()> {
     // Commit the cryptographic objects back to memory etcd and to disk
     commit_cryptographic_objects_back(&in_memory_etcd_client, cluster_crypto).await?;
-    ocp_postprocess(&in_memory_etcd_client).await?;
+    ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs).await?;
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done
@@ -156,9 +168,23 @@ async fn commit_cryptographic_objects_back(
 }
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
-async fn ocp_postprocess(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+async fn ocp_postprocess(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    cluster_rename: Option<ClusterRenameParameters>,
+    static_dirs: Vec<PathBuf>,
+) -> Result<()> {
     println!("OCP postprocessing...");
-    ocp_postprocess::fix_olm_secret_hash_annotation(in_memory_etcd_client).await
+    ocp_postprocess::fix_olm_secret_hash_annotation(in_memory_etcd_client)
+        .await
+        .context("fixing olm secret hash annotation")?;
+
+    if let Some(cluster_rename) = cluster_rename {
+        ocp_postprocess::cluster_rename(in_memory_etcd_client, cluster_rename, static_dirs)
+            .await
+            .context("renaming cluster")?;
+    }
+
+    Ok(())
 }
 
 async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) -> Result<()> {
@@ -176,23 +202,24 @@ async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Cli, *};
 
     #[tokio::test]
     async fn test_init() -> Result<()> {
-        let args = super::Args {
+        let args = Cli {
             etcd_endpoint: "http://localhost:2379".to_string(),
             static_dir: vec![
                 PathBuf::from("./cluster-files/kubernetes"),
                 PathBuf::from("./cluster-files/machine-config-daemon"),
                 PathBuf::from("./cluster-files/kubelet"),
             ],
-            kubeconfig: None,
             cn_san_replace: vec![
-                "api-int.test-cluster.redhat.com api-int.test-cluster2.redhat.com".to_string(),
-                "api.test-cluster.redhat.com api.test-cluster2.redhat.com".to_string(),
-                "*.apps.test-cluster.redhat.com *.apps.test-cluster2.redhat.com".to_string(),
+                "api-int.test-cluster.redhat.com api-int.new-name.foo.com".to_string(),
+                "api.test-cluster.redhat.com api.new-name.foo.com".to_string(),
+                "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com".to_string(),
             ],
+            cluster_rename: Some("test-cluster,new-name".to_string()),
+            kubeconfig: None,
         };
 
         main_internal(args).await

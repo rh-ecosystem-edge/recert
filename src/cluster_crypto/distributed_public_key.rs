@@ -16,6 +16,7 @@ pub(crate) struct DistributedPublicKey {
     pub(crate) key: PublicKey,
     pub(crate) locations: Locations,
     pub(crate) regenerated: bool,
+    pub(crate) associated: bool,
 }
 
 impl Display for DistributedPublicKey {

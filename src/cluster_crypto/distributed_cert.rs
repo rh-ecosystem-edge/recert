@@ -5,4 +5,3 @@ pub(crate) struct DistributedCert {
     pub(crate) certificate: certificate::Certificate,
     pub(crate) locations: Locations,
 }
-

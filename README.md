@@ -111,62 +111,7 @@ sudo podman run --network=host -it --authfile ~/repos/bootstrap-in-place-poc/reg
 
 #### Run recert
 
-```bash
-# First dump original etcd
-dumpdir="$BACKUP_CLUSTER_DIR"/etcd_dump
-mkdir -p $dumpdir
-rm -rf $dumpdir
-endpoints="--endpoints=127.0.0.1:2379"
-for kind in $(echo $ETCD_RESOURCES); do
-    for key in $(etcdctl $endpoints get /kubernetes.io/"$kind"/ --prefix --keys-only); do
-        mkdir -p $(dirname "$dumpdir"/$key)
-        (etcdctl $endpoints get --print-value-only $key | head -c -1 | ouger decode > "$dumpdir"/$key.yaml)&
-    done
-done
-for kind in machineconfiguration.openshift.io/machineconfigs; do
-    for key in $(etcdctl $endpoints get /kubernetes.io/"$kind"/ --prefix --keys-only); do
-        mkdir -p $(dirname $dumpdir/$key)
-        (etcdctl $endpoints get --print-value-only $key | head -c -1 | toyaml > "$dumpdir"/$key.yaml)&
-    done
-done
-
-wait
-
-# Run utility
-ulimit -n 999999
-cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
-    --etcd-endpoint localhost:2379 \
-    --static-dir "$CLUSTER_DIR"/kubernetes \
-    --static-dir "$CLUSTER_DIR"/kubelet \
-    --static-dir "$CLUSTER_DIR"/machine-config-daemon \
-    --cn-san-replace "api-int.test-cluster.redhat.com api-int.test-cluster2.redhat.com" \
-    --cn-san-replace "api.test-cluster.redhat.com api.test-cluster2.redhat.com" \
-    --cn-san-replace "*.apps.test-cluster.redhat.com *.apps.test-cluster2.redhat.com"
-```
-
-#### Compare results
-
-```bash
-# Dump etcd after changes
-dumpdir="$CLUSTER_DIR"/etcd_dump
-mkdir -p "$dumpdir"
-rm -rf "$dumpdir"
-endpoints="--endpoints=127.0.0.1:2379"
-for kind in $(echo $ETCD_RESOURCES); do
-    for key in $(etcdctl $endpoints get /kubernetes.io/"$kind"/ --prefix --keys-only); do
-        mkdir -p $(dirname "$dumpdir"/$key)
-        (etcdctl $endpoints get --print-value-only $key | head -c -1 | ouger decode > "$dumpdir"/$key.yaml)&
-    done
-done
-for kind in machineconfiguration.openshift.io/machineconfigs; do
-    for key in $(etcdctl $endpoints get /kubernetes.io/"$kind"/ --prefix --keys-only); do
-        mkdir -p $(dirname $dumpdir/$key)
-        (etcdctl $endpoints get --print-value-only $key | head -c -1 | toyaml > "$dumpdir"/$key.yaml)&
-    done
-done
-
-meld "$BACKUP_CLUSTER_DIR" "$CLUSTER_DIR" 
-```
+See `./run.sh` example
 
 ### Run on SNO POC cluster
 

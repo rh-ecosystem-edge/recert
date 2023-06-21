@@ -1,3 +1,4 @@
+use self::cluster_domain_rename::params::ClusterRenameParameters;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{self, get_etcd_yaml, put_etcd_yaml},
@@ -6,7 +7,9 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+
+pub(crate) mod cluster_domain_rename;
 
 /// The OLM packageserver operator requires that its secret's olmcahash sha256 hash annotation be
 /// set to the sha256 hash of its APIServer's CA cert. Otherwise it makes no effort to reconcile
@@ -51,5 +54,21 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         &package_serving_cert_secret_k8s_resource_location,
         packageserver_serving_cert_secret,
     )
-    .await
+    .await?;
+
+    Ok(())
+}
+
+/// kubeconfigs have a server URL that we should change to the new cluster's API server URL.
+pub(crate) async fn cluster_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    cluster_rename: ClusterRenameParameters,
+    static_dirs: Vec<PathBuf>,
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+    cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
 }

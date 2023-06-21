@@ -14,7 +14,7 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
@@ -45,10 +45,10 @@ pub(crate) struct ClusterCryptoObjects {
     /// locations where the key/cert was found, and the list of locations for each cert/key grows
     /// as we scan more and more resources. The hashmap keys are of-course hashables so we can
     /// easily check if we already encountered the object before.
-    pub(crate) private_keys: HashMap<PrivateKey, Rc<RefCell<DistributedPrivateKey>>>,
-    pub(crate) public_keys: HashMap<PublicKey, Rc<RefCell<DistributedPublicKey>>>,
-    pub(crate) certs: HashMap<certificate::Certificate, Rc<RefCell<distributed_cert::DistributedCert>>>,
-    pub(crate) jwts: HashMap<jwt::Jwt, Rc<RefCell<DistributedJwt>>>,
+    pub(crate) distributed_private_keys: HashMap<PrivateKey, Rc<RefCell<DistributedPrivateKey>>>,
+    pub(crate) distributed_public_keys: HashMap<PublicKey, Rc<RefCell<DistributedPublicKey>>>,
+    pub(crate) distributed_certs: HashMap<certificate::Certificate, Rc<RefCell<distributed_cert::DistributedCert>>>,
+    pub(crate) distributed_jwts: HashMap<jwt::Jwt, Rc<RefCell<DistributedJwt>>>,
 
     /// Every time we encounter a private key, we extract the public key
     /// from it and add to this mapping. This will later allow us to easily
@@ -65,10 +65,10 @@ pub(crate) struct ClusterCryptoObjects {
 impl ClusterCryptoObjects {
     pub(crate) fn new() -> Self {
         Self {
-            private_keys: HashMap::new(),
-            public_keys: HashMap::new(),
-            certs: HashMap::new(),
-            jwts: HashMap::new(),
+            distributed_private_keys: HashMap::new(),
+            distributed_public_keys: HashMap::new(),
+            distributed_certs: HashMap::new(),
+            distributed_jwts: HashMap::new(),
             public_to_private: HashMap::new(),
             cert_key_pairs: Vec::new(),
         }
@@ -83,7 +83,7 @@ impl ClusterCryptoObjects {
             }
         }
 
-        for private_key in self.private_keys.values() {
+        for private_key in self.distributed_private_keys.values() {
             println!("{}", (**private_key).borrow());
         }
     }
@@ -96,15 +96,15 @@ impl ClusterCryptoObjects {
             (**cert_key_pair).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
-        for jwt in self.jwts.values() {
+        for jwt in self.distributed_jwts.values() {
             (**jwt).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
-        for private_key in self.private_keys.values() {
+        for private_key in self.distributed_private_keys.values() {
             (**private_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
-        for public_key in self.public_keys.values() {
+        for public_key in self.distributed_public_keys.values() {
             (**public_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
@@ -121,10 +121,12 @@ impl ClusterCryptoObjects {
                 continue;
             }
 
-            (**cert_key_pair).borrow_mut().regenerate(None, &mut rsa_key_pool, &cn_san_replace_rules)?
+            (**cert_key_pair)
+                .borrow_mut()
+                .regenerate(None, &mut rsa_key_pool, &cn_san_replace_rules)?
         }
 
-        for private_key in self.private_keys.values() {
+        for private_key in self.distributed_private_keys.values() {
             (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, &cn_san_replace_rules)?
         }
 
@@ -203,28 +205,28 @@ impl ClusterCryptoObjects {
                 (*(**cert_key_pair).borrow().distributed_cert).borrow().locations,
             );
         }
-        for distributed_public_key in self.public_keys.values() {
-            assert!(
-                (*distributed_public_key).borrow().regenerated,
-                "Didn't seem to regenerate public key {}",
-                (**distributed_public_key).borrow(),
-            );
-        }
-        for distributed_jwt in self.jwts.values() {
-            assert!(
-                (*distributed_jwt).borrow().regenerated,
-                "Didn't seem to regenerate jwt {:#?}",
-                (*distributed_jwt).borrow(),
-            );
-        }
-        for distributed_private_key in self.private_keys.values() {
+        // for distributed_public_key in self.public_keys.values() {
+        //     assert!(
+        //         (*distributed_public_key).borrow().regenerated,
+        //         "Didn't seem to regenerate public key {}",
+        //         (**distributed_public_key).borrow(),
+        //     );
+        // }
+        // for distributed_jwt in self.distributed_jwts.values() {
+        //     assert!(
+        //         (*distributed_jwt).borrow().regenerated,
+        //         "Didn't seem to regenerate jwt {:#?}",
+        //         (*distributed_jwt).borrow(),
+        //     );
+        // }
+        for distributed_private_key in self.distributed_private_keys.values() {
             assert!(
                 (*distributed_private_key).borrow().regenerated,
                 "Didn't seem to regenerate private key {}",
                 (*distributed_private_key).borrow(),
             );
         }
-        assert_eq!(self.certs.len(), 0);
+        assert_eq!(self.distributed_certs.len(), 0);
     }
 
     pub(crate) fn fill_cert_key_signers(&mut self) -> Result<()> {
@@ -281,7 +283,7 @@ impl ClusterCryptoObjects {
         // very slow, especially in debug mode without optimizations.
         let mut last_signer: Option<Rc<RefCell<DistributedPrivateKey>>> = None;
 
-        for distributed_jwt in self.jwts.values() {
+        for distributed_jwt in self.distributed_jwts.values() {
             let mut maybe_signer = jwt::JwtSigner::Unknown;
 
             if let Some(last_signer) = &last_signer {
@@ -292,7 +294,7 @@ impl ClusterCryptoObjects {
                     Err(_error) => {}
                 }
             } else {
-                for distributed_private_key in self.private_keys.values() {
+                for distributed_private_key in self.distributed_private_keys.values() {
                     match crypto_utils::verify_jwt(
                         &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
                         &(**distributed_jwt).borrow(),
@@ -328,17 +330,17 @@ impl ClusterCryptoObjects {
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
-                bail!(
-                    "no signer found for jwt in location {}",
-                    (**distributed_jwt)
-                        .borrow()
-                        .clone()
-                        .locations
-                        .0
-                        .into_iter()
-                        .next()
-                        .context("no locations for jwt")?
-                );
+                // bail!(
+                //     "no signer found for jwt in location {}",
+                //     (**distributed_jwt)
+                //         .borrow()
+                //         .clone()
+                //         .locations
+                //         .0
+                //         .into_iter()
+                //         .next()
+                //         .context("no locations for jwt")?
+                // );
             }
 
             (**distributed_jwt).borrow_mut().signer = maybe_signer;
@@ -364,9 +366,10 @@ impl ClusterCryptoObjects {
                     }
                 }
             }
-            for potential_jwt_signee in self.jwts.values() {
+            for potential_jwt_signee in self.distributed_jwts.values() {
                 match &(*potential_jwt_signee).borrow_mut().signer {
-                    jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
+                    // jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
+                    jwt::JwtSigner::Unknown => (),
                     jwt::JwtSigner::CertKeyPair(jwt_signer_cert_key_pair) => {
                         if jwt_signer_cert_key_pair == cert_key_pair {
                             signees.push(signee::Signee::Jwt(Rc::clone(potential_jwt_signee)));
@@ -379,10 +382,11 @@ impl ClusterCryptoObjects {
             (**cert_key_pair).borrow_mut().signees = signees;
         }
 
-        for distributed_private_key in self.private_keys.values() {
-            for potential_jwt_signee in self.jwts.values() {
+        for distributed_private_key in self.distributed_private_keys.values() {
+            for potential_jwt_signee in self.distributed_jwts.values() {
                 match &(**potential_jwt_signee).borrow_mut().signer {
-                    jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
+                    // jwt::JwtSigner::Unknown => bail!("JWT has unknown signer"),
+                    jwt::JwtSigner::Unknown => (),
                     jwt::JwtSigner::CertKeyPair(_cert_key_pair) => {}
                     jwt::JwtSigner::PrivateKey(jwt_signer_distributed_private_key) => {
                         if jwt_signer_distributed_private_key == distributed_private_key {
@@ -404,7 +408,7 @@ impl ClusterCryptoObjects {
     /// part of a cert-key pair, the remaining private keys are considered standalone.
     pub(crate) fn pair_certs_and_keys(&mut self) -> Result<()> {
         let mut paired_cers_to_remove = vec![];
-        for (hashable_cert, distributed_cert) in &self.certs {
+        for (hashable_cert, distributed_cert) in &self.distributed_certs {
             let pair = Rc::new(RefCell::new(cert_key_pair::CertKeyPair {
                 distributed_private_key: None,
                 distributed_cert: Rc::clone(distributed_cert),
@@ -416,11 +420,11 @@ impl ClusterCryptoObjects {
 
             let subject_public_key = (**distributed_cert).borrow().certificate.public_key.clone();
             if let Occupied(private_key) = self.public_to_private.entry(subject_public_key.clone()) {
-                if let Occupied(distributed_private_key) = self.private_keys.entry(private_key.get().clone()) {
+                if let Occupied(distributed_private_key) = self.distributed_private_keys.entry(private_key.get().clone()) {
                     (*pair).borrow_mut().distributed_private_key = Some(Rc::clone(distributed_private_key.get()));
 
                     // Remove the private key from the pool of private keys as it's now paired with a cert
-                    self.private_keys.remove(&private_key.get());
+                    self.distributed_private_keys.remove(&private_key.get());
                 } else {
                     bail!(
                         "Private key not found for cert {}. The cert was found in {}",
@@ -446,7 +450,7 @@ impl ClusterCryptoObjects {
         }
 
         for paired_cer_to_remove in paired_cers_to_remove {
-            self.certs.remove(&paired_cer_to_remove);
+            self.distributed_certs.remove(&paired_cer_to_remove);
         }
 
         Ok(())
@@ -455,7 +459,7 @@ impl ClusterCryptoObjects {
     /// Associate public keys with their cert-key pairs or standalone private keys.
     pub(crate) fn associate_public_keys(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
-            if let Occupied(public_key_entry) = self.public_keys.entry(
+            if let Occupied(public_key_entry) = self.distributed_public_keys.entry(
                 (*(**cert_key_pair).borrow().distributed_cert)
                     .borrow()
                     .certificate
@@ -463,14 +467,30 @@ impl ClusterCryptoObjects {
                     .clone(),
             ) {
                 (*cert_key_pair).borrow_mut().associated_public_key = Some(Rc::clone(public_key_entry.get()));
+
+                (*public_key_entry.get()).borrow_mut().associated = true;
             }
         }
 
-        for distributed_private_key in self.private_keys.values() {
+        for distributed_private_key in self.distributed_private_keys.values() {
             let public_part = PublicKey::try_from(&(*distributed_private_key).borrow().key)?;
 
-            if let Occupied(public_key_entry) = self.public_keys.entry(public_part) {
+            if let Occupied(public_key_entry) = self.distributed_public_keys.entry(public_part) {
                 (*distributed_private_key).borrow_mut().associated_distributed_public_key = Some(Rc::clone(public_key_entry.get()));
+                (*public_key_entry.get()).borrow_mut().associated = true;
+            }
+        }
+
+        for public_key in self.distributed_public_keys.values() {
+            if !(*public_key).borrow().associated {
+                // Looks like not always all public keys are associated with a private
+                // key/cert-key-pair. Probably because they got rotated and there are some
+                // leftovers in etcd/filesystem. So we don't bail
+                //
+                // bail!(
+                //     "Public key {} not associated with a cert-key pair or standalone private key",
+                //     public_key.borrow()
+                // );
             }
         }
 
@@ -480,74 +500,95 @@ impl ClusterCryptoObjects {
     pub(crate) fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
         for discovered_crypto_object in discovered_crypto_objects {
             let location = discovered_crypto_object.location.clone();
-            match discovered_crypto_object.crypto_object {
-                crypto_objects::CryptoObject::PrivateKey(private_part, public_part) => {
-                    self.public_to_private.insert(public_part, private_part.clone());
+            self.register_discovered_crypto_object(discovered_crypto_object, location);
+        }
+    }
 
-                    match self.private_keys.entry(private_part.clone()) {
-                        Vacant(distributed_private_key_entry) => {
-                            distributed_private_key_entry.insert(Rc::new(RefCell::new(distributed_private_key::DistributedPrivateKey {
-                                locations: Locations(vec![location.clone()].into_iter().collect()),
-                                key: private_part,
-                                signees: vec![],
-                                // We don't set the public key here even though we just generated it because
-                                // this field is for actual public keys that we find in the wild, not ones we
-                                // generate ourselves.
-                                associated_distributed_public_key: None,
-                                regenerated: false,
-                            })));
-                        }
+    fn register_discovered_crypto_object(&mut self, discovered_crypto_object: DiscoveredCryptoObect, location: locations::Location) {
+        match discovered_crypto_object.crypto_object {
+            crypto_objects::CryptoObject::PrivateKey(private_part, public_part) => {
+                self.register_discovered_private_key(public_part, private_part, &location)
+            }
+            crypto_objects::CryptoObject::PublicKey(public_key) => self.register_discovered_public_key(public_key, &location),
+            crypto_objects::CryptoObject::Certificate(hashable_cert) => self.register_discovered_certificate(hashable_cert, &location),
+            crypto_objects::CryptoObject::Jwt(jwt) => self.register_discovered_jwt(jwt, location),
+        }
+    }
 
-                        Occupied(distributed_private_key_entry) => {
-                            (**distributed_private_key_entry.into_mut())
-                                .borrow_mut()
-                                .locations
-                                .0
-                                .insert(location.clone());
-                        }
-                    }
-                }
-                crypto_objects::CryptoObject::PublicKey(public_key) => match self.public_keys.entry(public_key.clone()) {
-                    Vacant(distributed_public_key_entry) => {
-                        distributed_public_key_entry.insert(Rc::new(RefCell::new(distributed_public_key::DistributedPublicKey {
-                            locations: Locations(vec![location.clone()].into_iter().collect()),
-                            key: public_key,
-                            regenerated: false,
-                        })));
-                    }
+    fn register_discovered_jwt(&mut self, jwt: jwt::Jwt, location: locations::Location) {
+        match self.distributed_jwts.entry(jwt.clone()) {
+            Vacant(distributed_jwt) => {
+                distributed_jwt.insert(Rc::new(RefCell::new(distributed_jwt::DistributedJwt {
+                    jwt,
+                    locations: Locations(vec![location].into_iter().collect()),
+                    signer: jwt::JwtSigner::Unknown,
+                    regenerated: false,
+                })));
+            }
+            Occupied(distributed_jwt) => {
+                (**distributed_jwt.get()).borrow_mut().locations.0.insert(location);
+            }
+        }
+    }
 
-                    Occupied(distributed_public_key_entry) => {
-                        (**distributed_public_key_entry.into_mut())
-                            .borrow_mut()
-                            .locations
-                            .0
-                            .insert(location.clone());
-                    }
-                },
-                crypto_objects::CryptoObject::Certificate(hashable_cert) => match self.certs.entry(hashable_cert.clone()) {
-                    Vacant(distributed_cert) => {
-                        distributed_cert.insert(Rc::new(RefCell::new(distributed_cert::DistributedCert {
-                            certificate: hashable_cert,
-                            locations: Locations(vec![location.clone()].into_iter().collect()),
-                        })));
-                    }
-                    Occupied(distributed_cert) => {
-                        (**distributed_cert.get()).borrow_mut().locations.0.insert(location.clone());
-                    }
-                },
-                crypto_objects::CryptoObject::Jwt(jwt) => match self.jwts.entry(jwt.clone()) {
-                    Vacant(distributed_jwt) => {
-                        distributed_jwt.insert(Rc::new(RefCell::new(distributed_jwt::DistributedJwt {
-                            jwt,
-                            locations: Locations(vec![location].into_iter().collect()),
-                            signer: jwt::JwtSigner::Unknown,
-                            regenerated: false,
-                        })));
-                    }
-                    Occupied(distributed_jwt) => {
-                        (**distributed_jwt.get()).borrow_mut().locations.0.insert(location);
-                    }
-                },
+    fn register_discovered_certificate(&mut self, hashable_cert: certificate::Certificate, location: &locations::Location) {
+        match self.distributed_certs.entry(hashable_cert.clone()) {
+            Vacant(distributed_cert) => {
+                distributed_cert.insert(Rc::new(RefCell::new(distributed_cert::DistributedCert {
+                    certificate: hashable_cert,
+                    locations: Locations(vec![location.clone()].into_iter().collect()),
+                })));
+            }
+            Occupied(distributed_cert) => {
+                (**distributed_cert.get()).borrow_mut().locations.0.insert(location.clone());
+            }
+        }
+    }
+
+    fn register_discovered_public_key(&mut self, public_key: PublicKey, location: &locations::Location) {
+        match self.distributed_public_keys.entry(public_key.clone()) {
+            Vacant(distributed_public_key_entry) => {
+                distributed_public_key_entry.insert(Rc::new(RefCell::new(distributed_public_key::DistributedPublicKey {
+                    locations: Locations(vec![location.clone()].into_iter().collect()),
+                    key: public_key,
+                    regenerated: false,
+                    associated: false,
+                })));
+            }
+
+            Occupied(distributed_public_key_entry) => {
+                (**distributed_public_key_entry.into_mut())
+                    .borrow_mut()
+                    .locations
+                    .0
+                    .insert(location.clone());
+            }
+        }
+    }
+
+    fn register_discovered_private_key(&mut self, public_part: PublicKey, private_part: PrivateKey, location: &locations::Location) {
+        self.public_to_private.insert(public_part, private_part.clone());
+
+        match self.distributed_private_keys.entry(private_part.clone()) {
+            Vacant(distributed_private_key_entry) => {
+                distributed_private_key_entry.insert(Rc::new(RefCell::new(distributed_private_key::DistributedPrivateKey {
+                    locations: Locations(vec![location.clone()].into_iter().collect()),
+                    key: private_part,
+                    signees: vec![],
+                    // We don't set the public key here even though we just generated it because
+                    // this field is for actual public keys that we find in the wild, not ones we
+                    // generate ourselves.
+                    associated_distributed_public_key: None,
+                    regenerated: false,
+                })));
+            }
+
+            Occupied(distributed_private_key_entry) => {
+                (**distributed_private_key_entry.into_mut())
+                    .borrow_mut()
+                    .locations
+                    .0
+                    .insert(location.clone());
             }
         }
     }

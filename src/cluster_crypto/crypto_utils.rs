@@ -1,5 +1,5 @@
 use super::{cert_key_pair::CertKeyPair, distributed_jwt, keys};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
 use rsa::{

@@ -1,10 +1,130 @@
 use crate::json_tools;
-use anyhow::{Context, Result, bail};
-use serde_json::Value;
+use anyhow::{bail, Context, Result};
+use lazy_static::lazy_static;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
 };
+
+lazy_static! {
+    static ref SINGULAR_PLURAL_MAP: HashMap<&'static str, &'static str> = {
+        HashMap::from([
+            ("apiserver", "apiservers"),
+            ("servicemonitor", "servicemonitors"),
+            ("consolelink", "consolelinks"),
+            ("helmchartrepository", "helmchartrepositories"),
+            ("controlplanemachineset", "controlplanemachinesets"),
+            ("performanceprofile", "performanceprofiles"),
+            ("oauth", "oauths"),
+            ("serviceca", "servicecas"),
+            ("metal3remediationtemplate", "metal3remediationtemplates"),
+            ("prometheus", "prometheuses"),
+            ("hostfirmwaresettings", "hostfirmwaresettings"),
+            ("hardwaredata", "hardwaredata"),
+            ("machineset", "machinesets"),
+            ("olmconfig", "olmconfigs"),
+            ("egressrouter", "egressrouters"),
+            ("installplan", "installplans"),
+            ("podnetworkconnectivitycheck", "podnetworkconnectivitychecks"),
+            ("dnsrecord", "dnsrecords"),
+            ("imagepruner", "imagepruners"),
+            ("operatorpki", "operatorpkis"),
+            ("cloudcredential", "cloudcredentials"),
+            ("controllerconfig", "controllerconfigs"),
+            ("imagetagmirrorset", "imagetagmirrorsets"),
+            ("preprovisioningimage", "preprovisioningimages"),
+            ("clustercsidriver", "clustercsidrivers"),
+            ("probe", "probes"),
+            ("subscription", "subscriptions"),
+            ("proxy", "proxies"),
+            ("network", "networks"),
+            ("clusterresourcequota", "clusterresourcequotas"),
+            ("kubeletconfig", "kubeletconfigs"),
+            ("build", "builds"),
+            ("imagecontentpolicy", "imagecontentpolicies"),
+            ("authentication", "authentications"),
+            ("ippool", "ippools"),
+            ("kubescheduler", "kubeschedulers"),
+            ("bmceventsubscription", "bmceventsubscriptions"),
+            ("imagedigestmirrorset", "imagedigestmirrorsets"),
+            ("node", "nodes"),
+            ("openshiftapiserver", "openshiftapiservers"),
+            ("ingresscontroller", "ingresscontrollers"),
+            ("machineconfigpool", "machineconfigpools"),
+            ("openshiftcontrollermanager", "openshiftcontrollermanagers"),
+            ("consoleplugin", "consoleplugins"),
+            ("volumesnapshotcontent", "volumesnapshotcontents"),
+            ("volumesnapshotclass", "volumesnapshotclasses"),
+            ("network", "networks"),
+            ("consolenotification", "consolenotifications"),
+            ("config", "configs"),
+            ("consoleyamlsample", "consoleyamlsamples"),
+            ("machinehealthcheck", "machinehealthchecks"),
+            ("config", "configs"),
+            ("rangeallocation", "rangeallocations"),
+            ("machine", "machines"),
+            ("credentialsrequest", "credentialsrequests"),
+            ("podmonitor", "podmonitors"),
+            ("clusterautoscaler", "clusterautoscalers"),
+            ("overlappingrangeipreservation", "overlappingrangeipreservations"),
+            ("operatorcondition", "operatorconditions"),
+            ("operator", "operators"),
+            ("dns", "dnses"),
+            ("scheduler", "schedulers"),
+            ("storage", "storages"),
+            ("metal3remediation", "metal3remediations"),
+            ("alertmanager", "alertmanagers"),
+            ("insightsoperator", "insightsoperators"),
+            ("egressip", "egressips"),
+            ("consoleexternalloglink", "consoleexternalloglinks"),
+            ("console", "consoles"),
+            ("volumesnapshot", "volumesnapshots"),
+            ("operatorgroup", "operatorgroups"),
+            ("machineautoscaler", "machineautoscalers"),
+            ("containerruntimeconfig", "containerruntimeconfigs"),
+            ("project", "projects"),
+            ("kubestorageversionmigrator", "kubestorageversionmigrators"),
+            ("firmwareschema", "firmwareschemas"),
+            ("config", "configs"),
+            ("prometheusrule", "prometheusrules"),
+            ("apirequestcount", "apirequestcounts"),
+            ("egressqos", "egressqoses"),
+            ("imagecontentsourcepolicy", "imagecontentsourcepolicies"),
+            ("projecthelmchartrepository", "projecthelmchartrepositories"),
+            ("profile", "profiles"),
+            ("catalogsource", "catalogsources"),
+            ("securitycontextconstraints", "securitycontextconstraints"),
+            ("egressfirewall", "egressfirewalls"),
+            ("clusterserviceversion", "clusterserviceversions"),
+            ("kubeapiserver", "kubeapiservers"),
+            ("ingress", "ingresses"),
+            ("operatorhub", "operatorhubs"),
+            ("alertmanagerconfig", "alertmanagerconfigs"),
+            ("featuregate", "featuregates"),
+            ("image", "images"),
+            ("console", "consoles"),
+            ("dns", "dnses"),
+            ("kubecontrollermanager", "kubecontrollermanagers"),
+            ("consolequickstart", "consolequickstarts"),
+            ("machineconfig", "machineconfigs"),
+            ("storageversionmigration", "storageversionmigrations"),
+            ("provisioning", "provisionings"),
+            ("storagestate", "storagestates"),
+            ("rolebindingrestriction", "rolebindingrestrictions"),
+            ("thanosruler", "thanosrulers"),
+            ("baremetalhost", "baremetalhosts"),
+            ("clusteroperator", "clusteroperators"),
+            ("network-attachment-definition", "network-attachment-definitions"),
+            ("infrastructure", "infrastructures"),
+            ("consoleclidownload", "consoleclidownloads"),
+            ("tuned", "tuneds"),
+            ("authentication", "authentications"),
+            ("csisnapshotcontroller", "csisnapshotcontrollers"),
+            ("clusterversion", "clusterversions"),
+            ("etcd", "etcds"),
+        ])
+    };
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locations(pub(crate) HashSet<Location>);
@@ -237,11 +357,38 @@ impl K8sResourceLocation {
             apiversion: apiversion.to_string(),
         }
     }
+
+    pub(crate) fn as_etcd_key(&self) -> String {
+        let apiversion_first_component = self.apiversion.as_str().split('/').next();
+
+        format!(
+            "/kubernetes.io/{}{}/{}{}",
+            match apiversion_first_component {
+                Some(apiversion_first_component_value) => {
+                    match apiversion_first_component_value {
+                        "apiregistration.k8s.io" | "machineconfiguration.openshift.io" | "config.openshift.io" | "console.openshift.io" => {
+                            format!("{}/", apiversion_first_component_value)
+                        }
+                        _ => "".to_string(),
+                    }
+                }
+                None => "".to_string(),
+            },
+            SINGULAR_PLURAL_MAP
+                .get(self.kind.to_lowercase().as_str())
+                .unwrap_or(&format!("{}s", self.kind.to_lowercase()).as_str()),
+            match &self.namespace {
+                Some(namespace) => format!("{}/", namespace),
+                None => "".to_string(),
+            },
+            self.name,
+        )
+    }
 }
 
-impl TryFrom<&Value> for K8sResourceLocation {
+impl TryFrom<&serde_json::Value> for K8sResourceLocation {
     type Error = anyhow::Error;
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &serde_json::Value) -> Result<Self> {
         Ok(Self {
             namespace: json_tools::read_metadata_string_field(value, "namespace"),
             kind: json_tools::read_string_field(value, "kind").context("missing kind field")?,
@@ -275,32 +422,6 @@ impl std::fmt::Display for K8sResourceLocation {
 pub(crate) struct K8sLocation {
     pub(crate) resource_location: K8sResourceLocation,
     pub(crate) yaml_location: YamlLocation,
-}
-
-impl K8sResourceLocation {
-    pub(crate) fn as_etcd_key(&self) -> String {
-        let apiversion_first_component = self.apiversion.as_str().split('/').next();
-
-        format!(
-            "/kubernetes.io/{}{}s/{}{}",
-            match apiversion_first_component {
-                Some(apiversion_first_component_value) => {
-                    match apiversion_first_component_value {
-                        "apiregistration.k8s.io" => format!("{}/", apiversion_first_component_value),
-                        "machineconfiguration.openshift.io" => format!("{}/", apiversion_first_component_value),
-                        _ => "".to_string(),
-                    }
-                }
-                None => "".to_string(),
-            },
-            self.kind.to_lowercase(),
-            match &self.namespace {
-                Some(namespace) => format!("{}/", namespace),
-                None => "".to_string(),
-            },
-            self.name,
-        )
-    }
 }
 
 impl std::fmt::Display for K8sLocation {

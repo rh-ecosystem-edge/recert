@@ -14,4 +14,3 @@ pub(crate) enum JwtSigner {
     CertKeyPair(Rc<RefCell<CertKeyPair>>),
     PrivateKey(Rc<RefCell<DistributedPrivateKey>>),
 }
-

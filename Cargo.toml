@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 serde_json = "1.0.93"
-serde_yaml = "0.9.17"
+serde_yaml = "0.9.22"
 glob = "0.3.1"
 base64 = "0.21.0"
 pem = "2.0.1"
@@ -36,3 +36,4 @@ lazy-regex = "2.5.0"
 thiserror = "1.0.40"
 x509-cert = "0.2.3"
 der = "0.7.6"
+url = "2.4.0"

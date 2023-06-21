@@ -1,9 +1,9 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -18,6 +18,7 @@ pub(crate) struct EtcdResult {
 pub(crate) struct InMemoryK8sEtcd {
     etcd_client: Arc<EtcdClient>,
     etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
+    deleted_keys: Mutex<HashSet<String>>,
 }
 
 // An etcd client wrapper backed by an in-memory hashmap. All reads are served from memory, with
@@ -31,29 +32,28 @@ impl InMemoryK8sEtcd {
         Self {
             etcd_client: Arc::new(etcd_client),
             etcd_keyvalue_hashmap: Mutex::new(HashMap::new()),
+            deleted_keys: Mutex::new(HashSet::new()),
         }
     }
 
     pub(crate) async fn commit_to_actual_etcd(&self) -> Result<()> {
+        self.commit_hashmap().await?;
+        self.commit_deleted_keys().await?;
+
+        Ok(())
+    }
+
+    async fn commit_deleted_keys(&self) -> Result<(), anyhow::Error> {
         join_all(
-            self.etcd_keyvalue_hashmap
+            self.deleted_keys
                 .lock()
                 .await
                 .iter()
-                .map(|(key, value)| {
+                .map(|key| {
                     let key = key.clone();
-                    let value = value.clone();
                     let etcd_client = Arc::clone(&self.etcd_client);
                     tokio::spawn(async move {
-                        // TODO: Find a fancier way to detect CRDs
-                        let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
-                            value.to_vec()
-                        } else {
-                            run_ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
-                        };
-
-                        etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
-
+                        etcd_client.kv_client().delete(key.as_bytes(), None).await?;
                         anyhow::Ok(())
                     })
                 })
@@ -64,6 +64,23 @@ impl InMemoryK8sEtcd {
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
+    }
+
+    async fn commit_hashmap(&self) -> Result<(), anyhow::Error> {
+        for (key, value) in self.etcd_keyvalue_hashmap.lock().await.iter() {
+            let key = key.clone();
+            let value = value.clone();
+            let etcd_client = Arc::clone(&self.etcd_client);
+            // TODO: Find a fancier way to detect CRDs
+            let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
+                value.to_vec()
+            } else {
+                run_ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
+            };
+
+            etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
+        }
 
         Ok(())
     }
@@ -90,11 +107,6 @@ impl InMemoryK8sEtcd {
             .context("during etcd get")?;
         let raw_etcd_value = get_result.kvs().first().context("key not found")?.value();
 
-        if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
-            result.value = raw_etcd_value.to_vec();
-            return Ok(result);
-        }
-
         let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
         self.etcd_keyvalue_hashmap
             .lock()
@@ -107,6 +119,7 @@ impl InMemoryK8sEtcd {
 
     pub(crate) async fn put(&self, key: &str, value: Vec<u8>) {
         self.etcd_keyvalue_hashmap.lock().await.insert(key.to_string(), value.clone());
+        self.deleted_keys.lock().await.remove(key);
     }
 
     pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
@@ -121,6 +134,12 @@ impl InMemoryK8sEtcd {
             .into_iter()
             .map(|k| Ok(k.key_str()?.to_string()))
             .collect::<Result<Vec<String>>>()
+    }
+
+    pub(crate) async fn delete(&self, key: &str) -> Result<()> {
+        self.etcd_keyvalue_hashmap.lock().await.remove(key);
+        self.deleted_keys.lock().await.insert(key.to_string());
+        Ok(())
     }
 }
 
@@ -156,13 +175,18 @@ async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<
 
 pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Value> {
     Ok(serde_yaml::from_str(&String::from_utf8(
-        client.get(k8slocation.as_etcd_key()).await?.value,
+        client.get(k8slocation.as_etcd_key()).await.with_context(|| {
+            format!(
+                "etcd get {}",
+                k8slocation.as_etcd_key()
+            )
+        })?.value
     )?)?)
 }
 
 pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation, value: Value) -> Result<()> {
     client
-        .put(&k8slocation.as_etcd_key(), serde_yaml::to_string(&value)?.as_bytes().into())
+        .put(&k8slocation.as_etcd_key(), serde_json::to_string(&value)?.as_bytes().into())
         .await;
     Ok(())
 }
