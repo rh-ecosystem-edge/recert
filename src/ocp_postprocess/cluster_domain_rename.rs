@@ -176,6 +176,18 @@ async fn fix_etcd_resources(
     etcd_rename::fix_cvo_deployment(&mut etcd_client, &cluster_domain)
         .await
         .context("fixing cvo deployment")?;
+    etcd_rename::fix_multus_daemonsets(&mut etcd_client, &cluster_domain)
+        .await
+        .context("fixing multus daemonsets")?;
+    etcd_rename::fix_ovn_daemonset(&mut etcd_client, &cluster_domain)
+        .await
+        .context("fixing ovn daemonset")?;
+    etcd_rename::fix_router_default(&mut etcd_client, &cluster_domain)
+        .await
+        .context("fixing router default")?;
+    etcd_rename::fix_routes(&mut etcd_client, &cluster_domain)
+        .await
+        .context("fixing routes")?;
     etcd_rename::delete_resources(&mut etcd_client).await.context("fixing kcm pods")?;
     Ok(())
 }

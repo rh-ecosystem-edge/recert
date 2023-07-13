@@ -1,6 +1,6 @@
 use super::{
-    rename_utils::fix_api_server_arguments, rename_utils::fix_apiserver_url_file, rename_utils::fix_cvo_pod,
-    rename_utils::fix_kcm_extended_args, rename_utils::fix_kcm_pod, rename_utils::fix_kubeconfig, rename_utils::fix_oauth_metadata,
+    rename_utils::fix_api_server_arguments, rename_utils::fix_apiserver_url_file, rename_utils::fix_kcm_extended_args,
+    rename_utils::fix_kcm_pod, rename_utils::fix_kubeconfig, rename_utils::fix_oauth_metadata, rename_utils::fix_pod,
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
@@ -952,12 +952,138 @@ pub(crate) async fn fix_cvo_deployment(mut etcd_client: &Arc<InMemoryK8sEtcd>, c
         "apps/v1",
     );
     let mut deployment = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
-
     let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
-
-    fix_cvo_pod(pod, cluster_domain).context("fixing cvo pod")?;
-
+    fix_pod(
+        pod,
+        format!("api-int.{cluster_domain}").as_str(),
+        "cluster-version-operator",
+        "KUBERNETES_SERVICE_HOST",
+    )
+    .context("fixing pod")?;
     put_etcd_yaml(&etcd_client, &k8s_resource_location, deployment).await?;
 
+    Ok(())
+}
+
+pub(crate) async fn fix_multus_daemonsets(mut etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-multus"), "DaemonSet", "multus", "apps/v1");
+    let mut daemonset = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
+    let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
+    fix_pod(
+        pod,
+        format!("api-int.{cluster_domain}").as_str(),
+        "kube-multus",
+        "KUBERNETES_SERVICE_HOST",
+    )
+    .context("fixing pod")?;
+    put_etcd_yaml(&etcd_client, &k8s_resource_location, daemonset).await?;
+
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-multus"), "DaemonSet", "multus-additional-cni-plugins", "apps/v1");
+    let mut daemonset = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
+    let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
+    fix_pod(
+        pod,
+        format!("api-int.{cluster_domain}").as_str(),
+        "whereabouts-cni",
+        "KUBERNETES_SERVICE_HOST",
+    )
+    .context("fixing pod")?;
+    put_etcd_yaml(&etcd_client, &k8s_resource_location, daemonset).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_ovn_daemonset(mut etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ovn-kubernetes"), "DaemonSet", "ovnkube-node", "apps/v1");
+    let mut daemonset = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
+    let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
+    fix_pod(
+        pod,
+        format!("api-int.{cluster_domain}").as_str(),
+        "ovnkube-node",
+        "KUBERNETES_SERVICE_HOST",
+    )
+    .context("fixing pod")?;
+    put_etcd_yaml(&etcd_client, &k8s_resource_location, daemonset).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_router_default(mut etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ingress"), "Deployment", "router-default", "apps/v1");
+    let mut deployment = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
+    let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
+    fix_pod(
+        pod,
+        format!("router-default.apps.{cluster_domain}").as_str(),
+        "router",
+        "ROUTER_CANONICAL_HOSTNAME",
+    )
+    .context("fixing pod")?;
+    fix_pod(pod, format!("apps.{cluster_domain}").as_str(), "router", "ROUTER_DOMAIN").context("fixing pod")?;
+    put_etcd_yaml(&etcd_client, &k8s_resource_location, deployment).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_routes(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(Some("openshift-ingress-canary"), "Route", "canary", "route.openshift.io/v1"),
+        format!("canary-openshift-ingress-canary.apps.{cluster_domain}"),
+    )
+    .await?;
+
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(Some("openshift-monitoring"), "Route", "alertmanager-main", "route.openshift.io/v1"),
+        format!("alertmanager-main-openshift-monitoring.apps.{cluster_domain}"),
+    )
+    .await?;
+
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(Some("openshift-monitoring"), "Route", "prometheus-k8s", "route.openshift.io/v1"),
+        format!("prometheus-k8s-openshift-monitoring.apps.{cluster_domain}"),
+    )
+    .await?;
+
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(
+            Some("openshift-monitoring"),
+            "Route",
+            "prometheus-k8s-federate",
+            "route.openshift.io/v1",
+        ),
+        format!("prometheus-k8s-federate-openshift-monitoring.apps.{cluster_domain}"),
+    )
+    .await?;
+
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(Some("openshift-monitoring"), "Route", "thanos-querier", "route.openshift.io/v1"),
+        format!("thanos-querier-openshift-monitoring.apps.{cluster_domain}"),
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn fix_route(
+    mut etcd_client: &Arc<InMemoryK8sEtcd>,
+    k8s_resource_location: K8sResourceLocation,
+    new_host: String,
+) -> Result<(), anyhow::Error> {
+    let mut route = get_etcd_yaml(&mut etcd_client, &k8s_resource_location).await?;
+    let spec = &mut route
+        .pointer_mut("/spec")
+        .context("no /spec")?
+        .as_object_mut()
+        .context("spec is not an object")?;
+    spec.insert("host".to_string(), serde_json::Value::String(new_host))
+        .context("missing host")?;
+    route.as_object_mut().context("route is not an object")?.remove("status");
+    put_etcd_yaml(&etcd_client, &k8s_resource_location, route).await?;
     Ok(())
 }

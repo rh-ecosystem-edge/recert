@@ -362,7 +362,12 @@ impl K8sResourceLocation {
         let apiversion_first_component = self.apiversion.as_str().split('/').next();
 
         format!(
-            "/kubernetes.io/{}{}/{}{}",
+            "/{}/{}{}/{}{}",
+            if self.apiversion == "route.openshift.io/v1" {
+                "openshift.io"
+            } else {
+                "kubernetes.io"
+            },
             match apiversion_first_component {
                 Some(apiversion_first_component_value) => {
                     match apiversion_first_component_value {

@@ -214,7 +214,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn fix_cvo_pod(pod: &mut Value, cluster_domain: &str) -> Result<()> {
+pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_name: &str) -> Result<()> {
     let containers = &mut pod
         .pointer_mut("/spec/containers")
         .context("clusters not found")?
@@ -227,7 +227,7 @@ pub(crate) fn fix_cvo_pod(pod: &mut Value, cluster_domain: &str) -> Result<()> {
 
     containers
         .into_iter()
-        .filter(|container| container["name"] == "cluster-version-operator")
+        .filter(|container| container["name"] == container_name)
         .map(|container| {
             let env = container
                 .pointer_mut("/env")
@@ -236,17 +236,17 @@ pub(crate) fn fix_cvo_pod(pod: &mut Value, cluster_domain: &str) -> Result<()> {
                 .context("env not an array")?;
 
             if env.len() == 0 {
-                bail!("expected at least one arg in cluster-version-operator");
+                bail!("expected at least one env in container");
             }
 
             env.into_iter()
-                .find_map(|var| (var.get("name")? == "KUBERNETES_SERVICE_HOST").then_some(var))
-                .context("cluster-name not found")?
+                .find_map(|var| (var.get("name")? == env_name).then_some(var))
+                .context("name not found")?
                 .as_object_mut()
-                .context("var not an object")?
+                .context("env var not an object")?
                 .insert(
                     "value".to_string(),
-                    serde_json::Value::String(format!("api-int.{}", cluster_domain)),
+                    serde_json::Value::String(domain.to_string()),
                 )
                 .context("no previous value")?;
 

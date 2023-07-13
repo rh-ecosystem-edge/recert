@@ -76,13 +76,13 @@ We can just delete those
 We should just let it reconcile ?
 
 - [ ] `kubernetes.io/daemonsets/openshift-machine-config-operator/machine-config-server.yaml`
-- [ ] `kubernetes.io/daemonsets/openshift-multus/multus-additional-cni-plugins.yaml`
-- [ ] `kubernetes.io/daemonsets/openshift-multus/multus.yaml`
-- [ ] `kubernetes.io/daemonsets/openshift-ovn-kubernetes/ovnkube-node.yaml`
+- [x] `kubernetes.io/daemonsets/openshift-multus/multus-additional-cni-plugins.yaml`
+- [x] `kubernetes.io/daemonsets/openshift-multus/multus.yaml`
+- [x] `kubernetes.io/daemonsets/openshift-ovn-kubernetes/ovnkube-node.yaml`
 
 # deployments
-- [ ] `kubernetes.io/deployments/openshift-cluster-version/cluster-version-operator.yaml`
-- [ ] `kubernetes.io/deployments/openshift-ingress/router-default.yaml`
+- [x] `kubernetes.io/deployments/openshift-cluster-version/cluster-version-operator.yaml`
+- [x] `kubernetes.io/deployments/openshift-ingress/router-default.yaml`
 
 # machineconfiguration.openshift.io
 - [x] `kubernetes.io/machineconfiguration.openshift.io/controllerconfigs/machine-config-controller.yaml`
@@ -91,6 +91,9 @@ We should just let it reconcile ?
 - [x] `kubernetes.io/machineconfiguration.openshift.io/machineconfigs/rendered-master-e3add8c769db72621a4d3591d59f440f.yaml`
 
 # monitoring.coreos.com
+
+Automatically reconciled
+
 - [ ] `kubernetes.io/monitoring.coreos.com/alertmanagers/openshift-monitoring/main.yaml`
 - [ ] `kubernetes.io/monitoring.coreos.com/prometheuses/openshift-monitoring/k8s.yaml`
 
@@ -105,9 +108,11 @@ Automatically reconciled by CVO
 - [ ] `kubernetes.io/operator.openshift.io/openshiftapiservers/cluster.yaml`
 
 # pods
+
+Automatically reconciled
+
 - [ ] `kubernetes.io/pods/openshift-cluster-version/cluster-version-operator-68c864cbb4-27mn4.yaml`
 - [ ] `kubernetes.io/pods/openshift-ingress/router-default-775775c67f-24zql.yaml`
-- [ ] `kubernetes.io/pods/openshift-kube-controller-manager/kube-controller-manager-master1.yaml`
 - [ ] `kubernetes.io/pods/openshift-machine-config-operator/machine-config-server-lvsjf.yaml`
 - [ ] `kubernetes.io/pods/openshift-monitoring/alertmanager-main-0.yaml`
 - [ ] `kubernetes.io/pods/openshift-monitoring/prometheus-k8s-0.yaml`
@@ -115,7 +120,14 @@ Automatically reconciled by CVO
 - [ ] `kubernetes.io/pods/openshift-multus/multus-r92bd.yaml`
 - [ ] `kubernetes.io/pods/openshift-ovn-kubernetes/ovnkube-node-sxqrk.yaml`
 
+Weirdly missing test-cluster?
+
+- [ ] `kubernetes.io/pods/openshift-kube-controller-manager/kube-controller-manager-master1.yaml`
+
 # replicasets
+
+Automatically reconciled
+
 - [ ] `kubernetes.io/replicasets/openshift-cluster-version/cluster-version-operator-68c864cbb4.yaml`
 - [ ] `kubernetes.io/replicasets/openshift-ingress/router-default-775775c67f.yaml`
 
@@ -124,6 +136,9 @@ Automatically reconciled by CVO
 - [x] `kubernetes.io/secrets/openshift-config-managed/router-certs.yaml`
 - [x] `kubernetes.io/secrets/openshift-kube-apiserver/external-loadbalancer-serving-certkey.yaml`
 - [x] `kubernetes.io/secrets/openshift-kube-apiserver/internal-loadbalancer-serving-certkey.yaml`
+
+Automatically reoconciled
+
 - [ ] `kubernetes.io/secrets/openshift-kube-apiserver/node-kubeconfigs.yaml`
 - [ ] `kubernetes.io/secrets/openshift-machine-api/master-user-data-managed.yaml`
 - [ ] `kubernetes.io/secrets/openshift-machine-api/master-user-data.yaml`
@@ -131,20 +146,32 @@ Automatically reconciled by CVO
 - [ ] `kubernetes.io/secrets/openshift-machine-api/worker-user-data.yaml`
 
 # statefulsets
+
+Automatically reconciled
+
 - [ ] `kubernetes.io/statefulsets/openshift-monitoring/alertmanager-main.yaml`
 - [ ] `kubernetes.io/statefulsets/openshift-monitoring/prometheus-k8s.yaml`
 
 # oauth
+
+Automatically reconciled
+
 - [ ] `openshift.io/oauth/clients/console.yaml`
 - [ ] `openshift.io/oauth/clients/openshift-browser-client.yaml`
 - [ ] `openshift.io/oauth/clients/openshift-challenging-client.yaml`
 
 # routes
+
+Automatically reconciled
+
 - [ ] `openshift.io/routes/openshift-authentication/oauth-openshift.yaml`
 - [ ] `openshift.io/routes/openshift-console/console.yaml`
 - [ ] `openshift.io/routes/openshift-console/downloads.yaml`
-- [ ] `openshift.io/routes/openshift-ingress-canary/canary.yaml`
-- [ ] `openshift.io/routes/openshift-monitoring/alertmanager-main.yaml`
-- [ ] `openshift.io/routes/openshift-monitoring/prometheus-k8s-federate.yaml`
-- [ ] `openshift.io/routes/openshift-monitoring/prometheus-k8s.yaml`
-- [ ] `openshift.io/routes/openshift-monitoring/thanos-querier.yaml`
+
+Needs reconciliation
+
+- [x] `openshift.io/routes/openshift-ingress-canary/canary.yaml`
+- [x] `openshift.io/routes/openshift-monitoring/alertmanager-main.yaml`
+- [x] `openshift.io/routes/openshift-monitoring/prometheus-k8s-federate.yaml`
+- [x] `openshift.io/routes/openshift-monitoring/prometheus-k8s.yaml`
+- [x] `openshift.io/routes/openshift-monitoring/thanos-querier.yaml`
