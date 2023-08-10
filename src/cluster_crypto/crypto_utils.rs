@@ -8,6 +8,7 @@ use rsa::{
     RsaPrivateKey,
 };
 use serde_json::{Map, Value};
+use std::process::Command as StdCommand;
 use std::{cell::RefCell, io::Write, rc::Rc};
 use tokio::process::Command;
 use x509_certificate::{rfc5280, InMemorySigningKeyPair};
@@ -77,13 +78,33 @@ pub(crate) fn verify_jwt(
     .verify_token::<Map<String, Value>>(&distributed_jwt.jwt.str, None)
 }
 
-pub(crate) async fn generate_rsa_key_async() -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
         String::from_utf8(
             Command::new("openssl")
-                .args(&["genrsa", "2048"])
+                .args(&["genrsa", &key_size.to_string()])
                 .output()
                 .await
+                .context("openssl genrsa")?
+                .stdout,
+        )
+        .context("converting openssl key to utf-8")?
+        .to_string()
+        .as_str(),
+    )
+    .context("private from pem")?;
+
+    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    Ok((rsa_private_key, key_pair))
+}
+
+pub(crate) fn generate_rsa_key(key_size: usize) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+    let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
+        String::from_utf8(
+            StdCommand::new("openssl")
+                .args(&["genrsa", &key_size.to_string()])
+                .output()
                 .context("openssl genrsa")?
                 .stdout,
         )

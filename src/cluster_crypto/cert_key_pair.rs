@@ -99,13 +99,18 @@ impl CertKeyPair {
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_rules: &CnSanReplaceRules,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
-        // Generate a new RSA key for this cert
-        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().context("rsa key pool empty")?;
-
         // Copy the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;
         let certificate: &rfc5280::Certificate = cert.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
+
+        // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
+        // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
+        // key too large
+        let rsa_key_size = tbs_certificate.subject_public_key_info.subject_public_key.bit_len() - 112;
+
+        // Generate a new RSA key for this cert
+        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get(rsa_key_size).context("getting rsa key")?;
 
         // Replace just the public key info in the to-be-signed part with the newly generated RSA
         // key

@@ -53,11 +53,18 @@ impl Display for DistributedPrivateKey {
 
 impl DistributedPrivateKey {
     pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
-        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get().context("RSA pool empty")?;
+        let original_signing_public_key = PublicKey::try_from(&self.key)?;
+
+        let num_bits = match &original_signing_public_key {
+            PublicKey::Rsa(bytes) => bytes.len() * 8 - 304,
+            PublicKey::Ec(_) => 0,
+        };
+
+        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
 
         for signee in &mut self.signees {
             signee.regenerate(
-                &PublicKey::try_from(&self.key)?,
+                &original_signing_public_key,
                 Some(&self_new_key_pair),
                 rsa_key_pool,
                 cn_san_replace_rules,
