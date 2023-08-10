@@ -24,7 +24,7 @@ struct Cli {
     #[arg(long)]
     etcd_endpoint: String,
 
-    /// Directory to recertifiy, such as /var/lib/kubelet, /etc/kubernetes and /etc/machine-config-daemon. Can specify multiple times
+    /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and /etc/machine-config-daemon. Can specify multiple times
     #[arg(long)]
     static_dir: Vec<PathBuf>,
 
@@ -35,7 +35,7 @@ struct Cli {
     #[arg(long)]
     cn_san_replace: Vec<String>,
 
-    /// Comma seperated cluster name and cluster base domain.
+    /// Comma separated cluster name and cluster base domain.
     /// If given, many resources will be modified to use this new information
     #[arg(long)]
     cluster_rename: Option<String>,
@@ -112,7 +112,7 @@ async fn recertify(
     cn_san_replace_rules: CnSanReplaceRules,
 ) -> Result<()> {
     // Perform parallelizable tasks like generating raw RSA keys to be used later and scanning for
-    // crypto objeccts
+    // crypto objects
     println!("Scanning etcd/filesystem... This might take a while");
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs));
     let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300, 20));

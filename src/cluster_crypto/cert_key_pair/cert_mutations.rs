@@ -50,7 +50,7 @@ pub(crate) fn mutate_cert_subject_alternative_name(
         extensions
             .iter_mut()
             .filter(|ext| ext.id == Oid(&SUBJECT_ALTERNATIVE_NAME_OID))
-            .map(|mut ext| {
+            .map(|ext| {
                 let san_extension = SubjectAltName::from_der(ext.value.as_slice().context("empty SAN extension")?)?;
                 let new_san_extension = SubjectAltName(
                     san_extension

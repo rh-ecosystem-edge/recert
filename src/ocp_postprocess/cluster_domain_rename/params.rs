@@ -35,4 +35,3 @@ impl TryFrom<String> for ClusterRenameParameters {
         Ok(Self::new(cluster_name, cluster_base_domain))
     }
 }
-

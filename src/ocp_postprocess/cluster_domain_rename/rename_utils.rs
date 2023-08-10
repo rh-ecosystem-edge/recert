@@ -244,10 +244,7 @@ pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_n
                 .context("name not found")?
                 .as_object_mut()
                 .context("env var not an object")?
-                .insert(
-                    "value".to_string(),
-                    serde_json::Value::String(domain.to_string()),
-                )
+                .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
                 .context("no previous value")?;
 
             Ok(())

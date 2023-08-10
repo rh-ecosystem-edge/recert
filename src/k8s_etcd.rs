@@ -175,12 +175,11 @@ async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<
 
 pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Value> {
     Ok(serde_yaml::from_str(&String::from_utf8(
-        client.get(k8slocation.as_etcd_key()).await.with_context(|| {
-            format!(
-                "etcd get {}",
-                k8slocation.as_etcd_key()
-            )
-        })?.value
+        client
+            .get(k8slocation.as_etcd_key())
+            .await
+            .with_context(|| format!("etcd get {}", k8slocation.as_etcd_key()))?
+            .value,
     )?)?)
 }
 
