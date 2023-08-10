@@ -438,11 +438,11 @@ impl ClusterCryptoObjects {
                 // This is a known missing private key cert, so we don't need to worry about it not
                 // having a private key.
             } else {
-                bail!(
-                    "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
-                    (**distributed_cert).borrow().certificate.subject,
-                    (**distributed_cert).borrow().locations,
-                );
+                // bail!(
+                //     "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
+                //     (**distributed_cert).borrow().certificate.subject,
+                //     (**distributed_cert).borrow().locations,
+                // );
             }
 
             paired_cers_to_remove.push(hashable_cert.clone());
