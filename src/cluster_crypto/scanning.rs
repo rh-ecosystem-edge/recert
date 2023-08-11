@@ -168,7 +168,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
                         if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?.ends_with("kubeconfig")
                             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
                         {
-                            process_static_resource_yaml(contents, &file_path)?
+                            process_static_resource_yaml(contents, &file_path)
+                                .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
                         } else {
                             crypto_objects::process_pem_bundle(
                                 &contents,
@@ -176,7 +177,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
                                     path: file_path.to_string_lossy().to_string(),
                                     content_location: FileContentLocation::Raw(LocationValueType::Unknown),
                                 }),
-                            )?
+                            )
+                            .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
                         },
                     )
                 })
