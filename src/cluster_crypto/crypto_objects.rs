@@ -131,6 +131,7 @@ pub(crate) fn process_pem_bundle(value: &str, location: &Location) -> Result<Vec
 pub(crate) fn process_single_pem(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
     match pem.tag() {
         "CERTIFICATE" => process_pem_cert(pem).context("processing pem cert"),
+        "TRUSTED CERTIFICATE" => process_pem_cert(pem).context("processing trusted pem cert"), // TODO: we'll have to save it back as TRUSTED
         "RSA PRIVATE KEY" => process_pem_rsa_private_key(pem).context("processing pem rsa private key"),
         "EC PRIVATE KEY" => process_pem_ec_private_key(pem).context("processing pem ec private key"),
         "PRIVATE KEY" => Err(anyhow!("private pkcs8 unsupported")),
