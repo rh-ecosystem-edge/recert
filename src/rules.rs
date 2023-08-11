@@ -24,6 +24,14 @@ lazy_static! {
         .map(str::to_string)
         .collect();
 
+    pub(crate) static ref IGNORE_LIST_MACHINE_CONFIG: HashSet<String> = vec![
+        "/etc/pki/entitlement/entitlement.pem",
+        "/etc/pki/entitlement/entitlement-key.pem"
+    ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+
     // It's okay for some certs to not have a private key, as it's used to sign a few certs and
     // then dropped by its creator. For us it just means we still have to temporarily recreate them
     // in order to regenerate their signees, we just don't have to record them back to the

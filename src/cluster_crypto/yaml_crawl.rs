@@ -149,6 +149,10 @@ pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
                     for (file_index, file) in files.iter().enumerate() {
                         if let Value::Object(file) = file {
                             if let Some(Value::String(path)) = file.get("path") {
+                                if rules::IGNORE_LIST_MACHINE_CONFIG.contains(path.as_str()) {
+                                    continue;
+                                }
+
                                 if path.ends_with(".pem") || path.ends_with(".crt") {
                                     if let Some(Value::Object(contents)) = file.get("contents") {
                                         if let Some(source) = contents.get("source") {
