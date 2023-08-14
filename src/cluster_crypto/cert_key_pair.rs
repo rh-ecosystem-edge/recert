@@ -99,7 +99,7 @@ impl CertKeyPair {
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_rules: &CnSanReplaceRules,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
-        // Copy the to-be-signed part of the certificate from the original certificate
+        // Clone the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;
         let certificate: &rfc5280::Certificate = cert.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
