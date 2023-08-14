@@ -132,7 +132,6 @@ RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 SSH_FLAGS="-o IdentityFile=./ssh-key/key -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no core@192.168.126.10"
 SSH_HOST="core@192.168.126.10"
 ETCD_IMAGE="$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"
-"
 ```
 
 #### Compile for platform
