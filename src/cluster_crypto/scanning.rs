@@ -8,7 +8,7 @@ use crate::{
     file_utils::{self, read_file_to_string},
     k8s_etcd::InMemoryK8sEtcd,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
 use std::{
@@ -86,7 +86,11 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
         ]
     };
 
-    let all_keys = key_lists.into_iter().flatten();
+    let all_keys = key_lists.into_iter().flatten().collect::<Vec<_>>();
+
+    if all_keys.is_empty() {
+        bail!("No keys found in etcd - is the etcd database empty/corrupt?")
+    }
 
     Ok(join_all(
         all_keys
