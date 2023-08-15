@@ -57,8 +57,6 @@ impl RsaKeyPool {
             }
         }
 
-        println!("Cache miss for RSA key of size {}", size);
-
         Ok(generate_rsa_key(size)?)
     }
 }
