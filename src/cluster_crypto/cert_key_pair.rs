@@ -17,9 +17,13 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
 };
 use anyhow::{bail, Context, Result};
-use bcder::BitString;
+use bcder::OctetString;
+use bcder::{BitString, Oid};
 use bytes::Bytes;
+use der::Encode;
+use fn_error_context::context;
 use rsa::{signature::Signer, RsaPrivateKey};
+use sha1::{Digest, Sha1};
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
 use x509_certificate::{
@@ -30,6 +34,7 @@ use x509_certificate::{
 mod cert_mutations;
 
 const SUBJECT_ALTERNATIVE_NAME_OID: [u8; 3] = [85, 29, 17];
+const SUBJECT_KEY_IDENTIFIER_OID: [u8; 3] = [85, 29, 14];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CertKeyPair {
@@ -133,6 +138,9 @@ impl CertKeyPair {
         let signature_algorithm: AlgorithmIdentifier = signing_key.signature_algorithm()?.into();
         tbs_certificate.signature = signature_algorithm.clone();
 
+        // Fix SKID
+        fix_skid(&mut tbs_certificate)?;
+
         // Perform all requested mutations on the certificate
         cert_mutations::mutate_cert(&mut tbs_certificate, cn_san_rules).context("mutating cert")?;
 
@@ -232,6 +240,33 @@ impl CertKeyPair {
         )
         .await?)
     }
+}
+
+fn fix_skid(tbs_certificate: &mut rfc5280::TbsCertificate) -> Result<()> {
+    if let Some(extensions) = &mut tbs_certificate.extensions {
+        extensions
+            .iter_mut()
+            .filter(|ext| ext.id == Oid(&SUBJECT_KEY_IDENTIFIER_OID))
+            .map(|ext| {
+                let mut hasher = Sha1::new();
+                hasher.update(tbs_certificate.subject_public_key_info.subject_public_key.octet_bytes());
+                let skid = hasher.finalize();
+                let new_skid_extension = x509_cert::ext::pkix::SubjectKeyIdentifier(x509_cert::der::asn1::OctetString::new(&*skid)?);
+
+                ext.value = OctetString::new(bytes::Bytes::copy_from_slice(
+                    new_skid_extension
+                        .to_der()
+                        .context("failed to generate SAN extension")
+                        .ok()
+                        .context("failed to generate SAN extension")?
+                        .as_slice(),
+                ));
+                Ok(())
+            })
+            .collect::<Result<Vec<()>>>()
+            .context("fixing skid")?;
+    }
+    Ok(())
 }
 
 impl Display for CertKeyPair {
