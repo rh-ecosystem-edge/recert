@@ -93,6 +93,7 @@ impl CertKeyPair {
         Ok(())
     }
 
+    #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
