@@ -100,7 +100,9 @@ pub(crate) fn calculate_skid(
 /// Given a certificate, return the key identifier method that was used to generate the SKID
 /// extension.
 ///
-/// This is used to determine how to generate the SKID extension when regenerating the certificate.
+/// We find the method by using brute force through all methods until we have a match. If the cert
+/// doesn't have any SKID extension, we return None. But if it has one, and we can't find a method
+/// match, we return an error.
 pub(crate) fn get_cert_key_skid_method(tbs_certificate: &mut rfc5280::TbsCertificate) -> Option<Result<SubjectKeyIdentifierMethod>> {
     if let Some(all_extensions) = &mut tbs_certificate.extensions {
         let skid_extensions = all_extensions
