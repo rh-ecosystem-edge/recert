@@ -68,6 +68,8 @@ impl DistributedPrivateKey {
                 Some(&self_new_key_pair),
                 rsa_key_pool,
                 cn_san_replace_rules,
+                None,
+                None,
             )?;
         }
 

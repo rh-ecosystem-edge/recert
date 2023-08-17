@@ -1,3 +1,5 @@
+use self::key_identifiers::{HashableKeyID, HashableSerialNumber};
+
 use super::{
     certificate::Certificate,
     crypto_utils::encode_tbs_cert_to_der,
@@ -21,15 +23,16 @@ use bcder::BitString;
 use bytes::Bytes;
 use fn_error_context::context;
 use rsa::{signature::Signer, RsaPrivateKey};
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
+use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
 use x509_certificate::{
-    rfc5280::{self, AlgorithmIdentifier},
+    rfc5280::{self, AlgorithmIdentifier, CertificateSerialNumber},
     CapturedX509Certificate, InMemorySigningKeyPair, KeyAlgorithm, Sign, X509Certificate,
 };
 
 mod cert_mutations;
-mod skid;
+mod key_identifiers;
 
 const SUBJECT_ALTERNATIVE_NAME_OID: [u8; 3] = [85, 29, 17];
 const SUBJECT_KEY_IDENTIFIER_OID: [u8; 3] = [85, 29, 14];
@@ -51,6 +54,9 @@ pub(crate) struct CertKeyPair {
     pub(crate) regenerated: bool,
 }
 
+pub(crate) type SkidEdits = HashMap<key_identifiers::HashableKeyID, SubjectKeyIdentifier>;
+pub(crate) type SerialNumberEdits = HashMap<key_identifiers::HashableSerialNumber, CertificateSerialNumber>;
+
 impl CertKeyPair {
     pub(crate) fn num_parents(&self) -> usize {
         if let Some(signer) = self.signer.as_ref() {
@@ -65,8 +71,12 @@ impl CertKeyPair {
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
+        skid_edits: &mut SkidEdits,
+        serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
-        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(sign_with, rsa_key_pool, cn_san_replace_rules)?;
+        let (new_cert_subject_key_pair, rsa_private_key, new_cert) =
+            self.re_sign_cert(sign_with, rsa_key_pool, cn_san_replace_rules, skid_edits, serial_number_edits)?;
+
         (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(new_cert)?;
 
         for signee in &mut self.signees {
@@ -75,6 +85,8 @@ impl CertKeyPair {
                 Some(&new_cert_subject_key_pair),
                 rsa_key_pool,
                 cn_san_replace_rules,
+                Some(skid_edits),
+                Some(serial_number_edits),
             )?;
         }
 
@@ -97,21 +109,37 @@ impl CertKeyPair {
         Ok(())
     }
 
+    /// Re-signs the certificate with the given signing key. If the signing key is None, then the
+    /// certificate will be self-signed.
+    ///
+    /// Returns the signing keys, the new certificate, and if the certificate had a subject iden
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
     #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_rules: &CnSanReplaceRules,
+        skid_edits: &mut SkidEdits,
+        serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
         // Clone the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;
         let certificate: &rfc5280::Certificate = cert.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
 
+        let skid = key_identifiers::get_skid(&mut tbs_certificate)?;
+
         // Check which method was used to calculate the SKID. We call this early because
         // determining the method relies on the cert keys before they're regenerated
-        let skid_method = skid::get_cert_key_skid_method(&mut tbs_certificate);
+        let skid_method = if let Some(skid) = &skid {
+            Some(key_identifiers::get_cert_skid_method(&mut tbs_certificate, skid)?)
+        } else {
+            None
+        };
 
         // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
         // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
@@ -143,7 +171,42 @@ impl CertKeyPair {
 
         // Fix SKID
         if let Some(skid_method) = skid_method {
-            skid::fix_skid(&mut tbs_certificate, skid_method?)?;
+            if let Some(skid) = skid {
+                let new_skid = key_identifiers::calculate_and_set_skid(&mut tbs_certificate, skid_method)?;
+
+                let insert_result = skid_edits.insert(key_identifiers::HashableKeyID(skid.0), new_skid.clone());
+
+                if let Some(old_skid) = insert_result {
+                    bail!("duplicate SKID found: {:?} and {:?}", old_skid, new_skid);
+                }
+            } else {
+                bail!("should never happen");
+            }
+        }
+
+        // This must happen after the SKID is calculated because for self-signed certs, the SKID is
+        // equal to the AKID and so the skid_edits map must be populated with our own SKID before
+        // fix_akid looks it up
+        let akid = key_identifiers::get_akid(&mut tbs_certificate).context("getting akid")?;
+        if let Some(mut akid) = akid {
+            fix_akid(&mut akid, skid_edits, serial_number_edits)?;
+
+            key_identifiers::set_akid(&mut tbs_certificate, akid).context("setting akid")?;
+        }
+
+        // regenerate serial number
+        let serial_number = tbs_certificate.serial_number.clone();
+        let new_serial_number = serial_number.clone(); // TODO: Generate new serial number
+
+        println!("serial number: {:?}", serial_number);
+
+        let insert_result = serial_number_edits.insert(
+            key_identifiers::HashableSerialNumber(serial_number.into_bytes().into()),
+            new_serial_number.clone(),
+        );
+
+        if let Some(old_serial_number) = insert_result {
+            bail!("duplicate serial number found: {:?} and {:?}", old_serial_number, new_serial_number);
         }
 
         // Perform all requested mutations on the certificate
@@ -254,6 +317,27 @@ impl CertKeyPair {
         )
         .await?)
     }
+}
+
+fn fix_akid(
+    akid: &mut x509_cert::ext::pkix::AuthorityKeyIdentifier,
+    skids: &mut SkidEdits,
+    serial_numbers: &mut SerialNumberEdits,
+) -> Result<(), anyhow::Error> {
+    if let Some(key_identifier) = &akid.key_identifier {
+        let matching_skid = skids
+            .get(&HashableKeyID(key_identifier.clone()))
+            .context("could not find matching akid key identifier in chain")?;
+
+        akid.key_identifier = Some(matching_skid.0.clone());
+    }
+    Ok(if let Some(serial_number) = &akid.authority_cert_serial_number {
+        let matching_sn = serial_numbers
+            .get(&HashableSerialNumber(serial_number.as_bytes().into()))
+            .context("could not find matching akid serial number in chain")?;
+
+        akid.authority_cert_serial_number = Some(SerialNumber::new(&matching_sn.clone().into_bytes())?);
+    })
 }
 
 impl Display for CertKeyPair {
