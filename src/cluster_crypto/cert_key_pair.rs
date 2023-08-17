@@ -239,7 +239,16 @@ impl CertKeyPair {
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let resource = get_filesystem_yaml(filelocation).await?;
-                    recreate_yaml_at_location_with_new_pem(resource, yaml_location, &newpem, crate::file_utils::RecreateYamlEncoding::Yaml)?
+                    recreate_yaml_at_location_with_new_pem(
+                        resource,
+                        yaml_location,
+                        &newpem,
+                        if filelocation.path.ends_with("currentconfig") {
+                            crate::file_utils::RecreateYamlEncoding::Json
+                        } else {
+                            crate::file_utils::RecreateYamlEncoding::Yaml
+                        },
+                    )?
                 }
             },
         )

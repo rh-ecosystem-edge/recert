@@ -28,9 +28,16 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
             },
             _ => Ok(Vec::new()),
         },
-        // Not all kubeconfigs have a kind field, so we try to process any YAML without a kind as
-        // if it were a kubeconfig
-        None => scan_kubeconfig(&yaml_value),
+        // Not all kubeconfigs and machineconfigs have a kind field, so we try to process any YAML
+        // without a kind as if it were a kubeconfig/machineconfig
+        None => {
+            let kubeconfig_scan_result = scan_kubeconfig(&yaml_value)?;
+            if kubeconfig_scan_result.len() > 0 {
+                Ok(kubeconfig_scan_result)
+            } else {
+                scan_machineconfig(&yaml_value)
+            }
+        }
     }
 }
 
