@@ -8,7 +8,10 @@ use self::{
     locations::Locations,
 };
 use crate::{
-    cluster_crypto::signee::Signee,
+    cluster_crypto::{
+        cert_key_pair::{SerialNumberEdits, SkidEdits},
+        signee::Signee,
+    },
     cnsanreplace::CnSanReplaceRules,
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
@@ -116,14 +119,21 @@ impl ClusterCryptoObjects {
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
     pub(crate) fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, cn_san_replace_rules: CnSanReplaceRules) -> Result<()> {
+        let mut skid_edits = SkidEdits::new();
+        let mut serial_number_edits = SerialNumberEdits::new();
+
         for cert_key_pair in &self.cert_key_pairs {
             if (**cert_key_pair).borrow().signer.is_some() {
                 continue;
             }
 
-            (**cert_key_pair)
-                .borrow_mut()
-                .regenerate(None, &mut rsa_key_pool, &cn_san_replace_rules)?
+            (**cert_key_pair).borrow_mut().regenerate(
+                None,
+                &mut rsa_key_pool,
+                &cn_san_replace_rules,
+                &mut skid_edits,
+                &mut serial_number_edits,
+            )?
         }
 
         for private_key in self.distributed_private_keys.values() {
@@ -263,7 +273,10 @@ impl ClusterCryptoObjects {
                 }
 
                 if true_signing_cert.is_none() {
-                    bail!("no signing cert found for cert in {}", (*(**cert_key_pair).borrow().distributed_cert).borrow().locations);
+                    bail!(
+                        "no signing cert found for cert in {}",
+                        (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
+                    );
                 }
             }
 

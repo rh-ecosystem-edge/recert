@@ -1,6 +1,10 @@
-use super::{cert_key_pair::CertKeyPair, distributed_jwt::DistributedJwt, keys};
+use super::{
+    cert_key_pair::{CertKeyPair, SerialNumberEdits, SkidEdits},
+    distributed_jwt::DistributedJwt,
+    keys,
+};
 use crate::{cnsanreplace::CnSanReplaceRules, rsa_key_pool::RsaKeyPool};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::{
     self,
     cell::RefCell,
@@ -33,12 +37,18 @@ impl Signee {
         new_signing_key: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
+        skid_edits: Option<&mut SkidEdits>,
+        serial_number_edits: Option<&mut SerialNumberEdits>,
     ) -> Result<()> {
         match self {
             Self::CertKeyPair(cert_key_pair) => {
-                (**cert_key_pair)
-                    .borrow_mut()
-                    .regenerate(new_signing_key, rsa_key_pool, cn_san_replace_rules)?;
+                (**cert_key_pair).borrow_mut().regenerate(
+                    new_signing_key,
+                    rsa_key_pool,
+                    cn_san_replace_rules,
+                    skid_edits.context("cert regeneration requires skid edits")?,
+                    serial_number_edits.context("cert regeneration requires serial number edits")?,
+                )?;
             }
             Self::Jwt(jwt) => match new_signing_key {
                 Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair)?,
