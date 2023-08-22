@@ -12,11 +12,12 @@ use super::{
     signee::Signee,
 };
 use crate::{
-    cluster_crypto::locations::LocationValueType,
+    cluster_crypto::{crypto_utils::rsa_key_from_file, locations::LocationValueType},
     cnsanreplace::CnSanReplaceRules,
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
+    use_key::{self, UseKeyRules},
 };
 use anyhow::{bail, Context, Result};
 use bcder::BitString;
@@ -71,11 +72,18 @@ impl CertKeyPair {
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
+        use_key_rules: &UseKeyRules,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
-        let (new_cert_subject_key_pair, rsa_private_key, new_cert) =
-            self.re_sign_cert(sign_with, rsa_key_pool, cn_san_replace_rules, skid_edits, serial_number_edits)?;
+        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(
+            sign_with,
+            rsa_key_pool,
+            cn_san_replace_rules,
+            use_key_rules,
+            skid_edits,
+            serial_number_edits,
+        )?;
 
         (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(new_cert)?;
 
@@ -85,6 +93,7 @@ impl CertKeyPair {
                 Some(&new_cert_subject_key_pair),
                 rsa_key_pool,
                 cn_san_replace_rules,
+                use_key_rules,
                 Some(skid_edits),
                 Some(serial_number_edits),
             )?;
@@ -123,6 +132,7 @@ impl CertKeyPair {
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_rules: &CnSanReplaceRules,
+        use_key_rules: &use_key::UseKeyRules,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
@@ -141,13 +151,21 @@ impl CertKeyPair {
             None
         };
 
-        // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
-        // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
-        // key too large
-        let rsa_key_size = tbs_certificate.subject_public_key_info.subject_public_key.bit_len() - 112;
+        let (self_new_rsa_private_key, self_new_key_pair) = if let Some(use_key_path) = use_key_rules
+            .key_file(tbs_certificate.subject.clone())
+            .context("getting use key file from cert")?
+        {
+            println!("Using key from file: {:?} because CN rules match", use_key_path);
+            rsa_key_from_file(&use_key_path).context("getting rsa key from file")?
+        } else {
+            // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
+            // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
+            // key too large
+            let rsa_key_size = tbs_certificate.subject_public_key_info.subject_public_key.bit_len() - 112;
 
-        // Generate a new RSA key for this cert
-        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get(rsa_key_size).context("getting rsa key")?;
+            // Generate a new RSA key for this cert
+            rsa_key_pool.get(rsa_key_size).context("getting rsa key")?
+        };
 
         // Replace just the public key info in the to-be-signed part with the newly generated RSA
         // key
