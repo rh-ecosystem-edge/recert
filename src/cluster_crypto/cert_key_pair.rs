@@ -198,8 +198,6 @@ impl CertKeyPair {
         let serial_number = tbs_certificate.serial_number.clone();
         let new_serial_number = serial_number.clone(); // TODO: Generate new serial number
 
-        println!("serial number: {:?}", serial_number);
-
         let insert_result = serial_number_edits.insert(
             key_identifiers::HashableSerialNumber(serial_number.into_bytes().into()),
             new_serial_number.clone(),
