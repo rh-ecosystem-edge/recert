@@ -14,6 +14,7 @@ use crate::{
     },
     cnsanreplace::CnSanReplaceRules,
     k8s_etcd::{self, InMemoryK8sEtcd},
+    use_key::UseKeyRules,
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
@@ -118,7 +119,12 @@ impl ClusterCryptoObjects {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    pub(crate) fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, cn_san_replace_rules: CnSanReplaceRules) -> Result<()> {
+    pub(crate) fn regenerate_crypto(
+        &mut self,
+        mut rsa_key_pool: RsaKeyPool,
+        cn_san_replace_rules: CnSanReplaceRules,
+        use_key_rules: UseKeyRules,
+    ) -> Result<()> {
         let mut skid_edits = SkidEdits::new();
         let mut serial_number_edits = SerialNumberEdits::new();
 
@@ -131,13 +137,16 @@ impl ClusterCryptoObjects {
                 None,
                 &mut rsa_key_pool,
                 &cn_san_replace_rules,
+                &use_key_rules,
                 &mut skid_edits,
                 &mut serial_number_edits,
             )?
         }
 
         for private_key in self.distributed_private_keys.values() {
-            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, &cn_san_replace_rules)?
+            (**private_key)
+                .borrow_mut()
+                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules)?
         }
 
         println!("- Regeneration complete, verifying...");

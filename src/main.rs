@@ -15,6 +15,7 @@ mod k8s_etcd;
 mod ocp_postprocess;
 mod rsa_key_pool;
 mod rules;
+mod use_key;
 
 /// A program to regenerate cluster certificates, keys and tokens
 #[derive(Parser)]
@@ -40,6 +41,16 @@ struct Cli {
     #[arg(long)]
     cluster_rename: Option<String>,
 
+    /// A list of CNs and the private keys to use for their certs.
+    /// By default, new keys will be generated for all CNs, this option allows you to use existing
+    /// keys instead.
+    /// Must come in pairs of CN and private key file path, separated by a space. For example:
+    /// --use-key "foo /etc/foo.key" --use-key "bar /etc/bar.key" will use the key in /etc/foo.key
+    /// for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
+    /// If more than one cert has the same CN, an error will occur and no certs will be regenerated.
+    #[arg(long)]
+    use_key: Vec<String>,
+
     /// Deprecated
     #[arg(long)]
     kubeconfig: Option<String>,
@@ -53,7 +64,8 @@ async fn main() -> Result<()> {
 }
 
 async fn main_internal(args: Cli) -> Result<()> {
-    let (static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules, cluster_rename) = init(args).await.context("initializing")?;
+    let (static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules, use_key_rules, cluster_rename) =
+        init(args).await.context("initializing")?;
 
     // Scanning and recertification
     recertify(
@@ -61,6 +73,7 @@ async fn main_internal(args: Cli) -> Result<()> {
         &mut cluster_crypto,
         static_dirs.clone(),
         cn_san_replace_rules,
+        use_key_rules,
     )
     .await
     .context("recertification")?;
@@ -83,6 +96,7 @@ async fn init(
     ClusterCryptoObjects,
     Arc<InMemoryK8sEtcd>,
     CnSanReplaceRules,
+    use_key::UseKeyRules,
     Option<ClusterRenameParameters>,
 )> {
     let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None).await?;
@@ -91,12 +105,14 @@ async fn init(
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
 
     let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
+    let use_key_rules = use_key::UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
 
     Ok((
         cli.static_dir,
         cluster_crypto,
         in_memory_etcd_client,
         cn_san_replace_rules,
+        use_key_rules,
         if let Some(cluster_rename) = cli.cluster_rename {
             Some(ClusterRenameParameters::try_from(cluster_rename)?)
         } else {
@@ -110,6 +126,7 @@ async fn recertify(
     cluster_crypto: &mut ClusterCryptoObjects,
     static_dirs: Vec<PathBuf>,
     cn_san_replace_rules: CnSanReplaceRules,
+    use_key_rules: use_key::UseKeyRules,
 ) -> Result<()> {
     // Perform parallelizable tasks like generating raw RSA keys to be used later and scanning for
     // crypto objects
@@ -131,7 +148,7 @@ async fn recertify(
 
     println!("Regenerating cryptographic objects...");
     cluster_crypto
-        .regenerate_crypto(rsa_pool, cn_san_replace_rules)
+        .regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules)
         .context("regeneration")?;
 
     Ok(())
@@ -219,6 +236,7 @@ mod tests {
                 "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com".to_string(),
             ],
             cluster_rename: Some("test-cluster,new-name".to_string()),
+            use_key: vec![],
             kubeconfig: None,
         };
 

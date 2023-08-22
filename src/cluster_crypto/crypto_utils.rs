@@ -2,14 +2,15 @@ use super::{cert_key_pair::CertKeyPair, distributed_jwt, keys};
 use anyhow::{bail, Context, Result};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
+use pkcs1::DecodeRsaPrivateKey;
 use rsa::{
     self,
     pkcs8::{DecodePrivateKey, EncodePrivateKey},
     RsaPrivateKey,
 };
 use serde_json::{Map, Value};
-use std::process::Command as StdCommand;
 use std::{cell::RefCell, io::Write, rc::Rc};
+use std::{path::PathBuf, process::Command as StdCommand};
 use tokio::process::Command;
 use x509_certificate::{rfc5280, InMemorySigningKeyPair};
 
@@ -117,6 +118,35 @@ pub(crate) fn generate_rsa_key(key_size: usize) -> Result<(RsaPrivateKey, InMemo
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
     let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
+}
+
+pub(crate) fn rsa_key_from_pkcs8_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+    let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
+        .context("private from pem")?;
+
+    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    Ok((rsa_private_key, key_pair))
+}
+
+pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+    let rsa_private_key = RsaPrivateKey::from_pkcs1_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
+        .context("private from pem")?;
+
+    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    Ok((rsa_private_key, key_pair))
+}
+
+pub(crate) fn rsa_key_from_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+    let parsed_pem = pem::parse(std::fs::read(path).context("reading private key file")?).context("parsing private key file")?;
+    let pem_tag = parsed_pem.tag();
+
+    match pem_tag {
+        "RSA PRIVATE KEY" => rsa_key_from_pkcs1_file(path),
+        "PRIVATE KEY" => rsa_key_from_pkcs8_file(path),
+        _ => bail!("unknown private key format"),
+    }
 }
 
 pub(crate) fn encode_tbs_cert_to_der(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Vec<u8>> {
