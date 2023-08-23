@@ -16,11 +16,11 @@ pub(crate) struct EtcdResult {
 }
 
 /// An etcd client wrapper backed by an in-memory hashmap. All reads are served from memory, with
-/// fallback to actual etcd. All writes are strictly to memory. Also supports eventually committing
-/// to an actual etcd instance of kubernetes, transparently encoding and decoding YAMLs with ouger.
-/// Used by recert as a cache to dramatically speed up the process of certificate and key
-/// regeneration, as we we don't have to go through ouger and etcd for every single certificate and
-/// key access.
+/// fallback to actual etcd for misses. All writes are strictly to memory, but supports eventually
+/// committing to an actual etcd instance of kubernetes, transparently encoding and decoding YAMLs
+/// with ouger. Used by recert as a cache to dramatically speed up the process of certificate and
+/// key regeneration, as we we don't have to go through ouger and etcd for every single certificate
+/// and key access.
 pub(crate) struct InMemoryK8sEtcd {
     etcd_client: Arc<EtcdClient>,
     etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
