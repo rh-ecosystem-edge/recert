@@ -6,12 +6,14 @@ use cnsanreplace::CnSanReplaceRules;
 use etcd_client::Client as EtcdClient;
 use k8s_etcd::InMemoryK8sEtcd;
 use std::{path::PathBuf, sync::Arc};
+use use_key::UseKeyRules;
 
 mod cluster_crypto;
 mod cnsanreplace;
 mod file_utils;
 mod json_tools;
 mod k8s_etcd;
+
 mod ocp_postprocess;
 mod rsa_key_pool;
 mod rules;
@@ -83,8 +85,8 @@ async fn main_internal(args: Cli) -> Result<()> {
         .await
         .context("finalization")?;
 
-    // Log
-    print_summary(cluster_crypto).await;
+    // Print summary
+    cluster_crypto.display();
 
     Ok(())
 }
@@ -96,16 +98,25 @@ async fn init(
     ClusterCryptoObjects,
     Arc<InMemoryK8sEtcd>,
     CnSanReplaceRules,
-    use_key::UseKeyRules,
+    UseKeyRules,
     Option<ClusterRenameParameters>,
 )> {
-    let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None).await?;
+    let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None)
+        .await
+        .context("connecting to etcd")?;
 
+    // The main data structure for recording all crypto objects
     let cluster_crypto = ClusterCryptoObjects::new();
+
+    // The in-memory etcd client, used for performance through caching etcd access
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
 
+    // User provided certificate CN/SAN domain name replacement rules
     let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
-    let use_key_rules = use_key::UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
+
+    // User provided keys for particular CNs, when the user wants to use existing keys instead of
+    // generating new ones
+    let use_key_rules = UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
 
     Ok((
         cli.static_dir,
@@ -126,30 +137,26 @@ async fn recertify(
     cluster_crypto: &mut ClusterCryptoObjects,
     static_dirs: Vec<PathBuf>,
     cn_san_replace_rules: CnSanReplaceRules,
-    use_key_rules: use_key::UseKeyRules,
+    use_key_rules: UseKeyRules,
 ) -> Result<()> {
-    // Perform parallelizable tasks like generating raw RSA keys to be used later and scanning for
-    // crypto objects
-    println!("Scanning etcd/filesystem... This might take a while");
+    // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
+    // a long time and are independent
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs));
     let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300, 20));
 
     // Wait for the parallelizable tasks to finish and get their results
-    let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning")?;
-    println!("Scanning complete, waiting for random key generation to complete...");
-    let rsa_pool = rsa_keys.await?.context("rsa key generation")?;
-    println!("Key generation complete");
+    let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning etcd/filesystem")?;
+    let rsa_pool = rsa_keys.await?.context("generating rsa keys")?;
 
-    println!("Registering discovered crypto objects...");
     cluster_crypto.register_discovered_crypto_objects(all_discovered_crypto_objects);
 
-    println!("Establishing relationships...");
-    establish_relationships(cluster_crypto).await.context("relationships")?;
+    establish_relationships(cluster_crypto)
+        .await
+        .context("establishing relationships")?;
 
-    println!("Regenerating cryptographic objects...");
     cluster_crypto
         .regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules)
-        .context("regeneration")?;
+        .context("regenerating cryptographic objects")?;
 
     Ok(())
 }
@@ -160,28 +167,22 @@ async fn finalize(
     cluster_rename: Option<ClusterRenameParameters>,
     static_dirs: Vec<PathBuf>,
 ) -> Result<()> {
-    // Commit the cryptographic objects back to memory etcd and to disk
-    commit_cryptographic_objects_back(&in_memory_etcd_client, cluster_crypto).await?;
-    ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs).await?;
+    cluster_crypto
+        .commit_to_etcd_and_disk(&in_memory_etcd_client)
+        .await
+        .context("commiting the cryptographic objects back to memory etcd and to disk")?;
+    ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs)
+        .await
+        .context("performing ocp specific post-processing")?;
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done
-    println!("Committing to etcd...");
-    in_memory_etcd_client.commit_to_actual_etcd().await
-}
+    in_memory_etcd_client
+        .commit_to_actual_etcd()
+        .await
+        .context("commiting etcd cache to actual etcd")?;
 
-async fn print_summary(cluster_crypto: ClusterCryptoObjects) {
-    println!("Crypto graph...");
-    cluster_crypto.display();
-}
-
-async fn commit_cryptographic_objects_back(
-    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_crypto: &mut ClusterCryptoObjects,
-) -> Result<()> {
-    println!("Committing changes...");
-    let etcd_client = in_memory_etcd_client;
-    cluster_crypto.commit_to_etcd_and_disk(&etcd_client).await
+    Ok(())
 }
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
@@ -205,41 +206,13 @@ async fn ocp_postprocess(
 }
 
 async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) -> Result<()> {
-    println!("- Pairing certs and keys...");
-    cluster_crypto.pair_certs_and_keys()?;
-    println!("- Calculating cert signers...");
-    cluster_crypto.fill_cert_key_signers()?;
-    println!("- Calculating jwt signers...");
-    cluster_crypto.fill_jwt_signers()?;
-    println!("- Calculating signees...");
-    cluster_crypto.fill_signees()?;
-    println!("- Associating standalone public keys...");
-    cluster_crypto.associate_public_keys()
+    cluster_crypto.pair_certs_and_keys().context("pairing certs and keys")?;
+    cluster_crypto.fill_cert_key_signers().context("filling cert signers")?;
+    cluster_crypto.fill_jwt_signers().context("filling JWT signers")?;
+    cluster_crypto.fill_signees().context("filling signees")?;
+    cluster_crypto.associate_public_keys().context("associating public keys")?;
+    Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Cli, *};
-
-    #[tokio::test]
-    async fn test_init() -> Result<()> {
-        let args = Cli {
-            etcd_endpoint: "http://localhost:2379".to_string(),
-            static_dir: vec![
-                PathBuf::from("./cluster-files/kubernetes"),
-                PathBuf::from("./cluster-files/machine-config-daemon"),
-                PathBuf::from("./cluster-files/kubelet"),
-            ],
-            cn_san_replace: vec![
-                "api-int.test-cluster.redhat.com api-int.new-name.foo.com".to_string(),
-                "api.test-cluster.redhat.com api.new-name.foo.com".to_string(),
-                "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com".to_string(),
-            ],
-            cluster_rename: Some("test-cluster,new-name".to_string()),
-            use_key: vec![],
-            kubeconfig: None,
-        };
-
-        main_internal(args).await
-    }
-}
+mod tests;

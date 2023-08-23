@@ -29,6 +29,7 @@ impl TryFrom<String> for CnSanReplace {
     }
 }
 
+/// A collection of CnSanReplace, see cn_san_replace CLI argument for more information
 pub(crate) struct CnSanReplaceRules(Vec<CnSanReplace>);
 
 impl CnSanReplaceRules {
