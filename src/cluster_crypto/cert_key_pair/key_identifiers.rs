@@ -83,7 +83,7 @@ fn calculate_skid(tbs_certificate: &rfc5280::TbsCertificate, method: SubjectKeyI
                                             _ => bail!("invalid modulus sign"),
                                         };
 
-                                        ensure!(bytes.len() != 0, "modulus is zero {:?}", key_bytes);
+                                        ensure!(!bytes.is_empty(), "modulus is zero {:?}", key_bytes);
 
                                         hasher.update(&bytes);
                                     }
@@ -115,7 +115,7 @@ pub(crate) fn get_skid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Opti
             .filter(|ext| ext.id == Oid(&SUBJECT_KEY_IDENTIFIER_OID))
             .collect::<Vec<_>>();
 
-        if skid_extensions.len() == 0 {
+        if skid_extensions.is_empty() {
             return Ok(None);
         }
 
@@ -126,7 +126,7 @@ pub(crate) fn get_skid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Opti
         );
 
         Some(
-            SubjectKeyIdentifier::from_der((&skid_extensions[0]).value.as_slice().context("SKID has slice")?)
+            SubjectKeyIdentifier::from_der(skid_extensions[0].value.as_slice().context("SKID has slice")?)
                 .context("Creating SKID from DER")?,
         )
     } else {
@@ -141,7 +141,7 @@ pub(crate) fn get_akid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Opti
             .filter(|ext| ext.id == Oid(&AUTHORITY_KEY_IDENTIFIER_OID))
             .collect::<Vec<_>>();
 
-        if akid_extensions.len() == 0 {
+        if akid_extensions.is_empty() {
             return Ok(None);
         }
 
@@ -152,7 +152,7 @@ pub(crate) fn get_akid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Opti
         );
 
         Some(
-            AuthorityKeyIdentifier::from_der((&akid_extensions[0]).value.as_slice().context("AKID has slice")?)
+            AuthorityKeyIdentifier::from_der(akid_extensions[0].value.as_slice().context("AKID has slice")?)
                 .context("creating AKID from DER")?,
         )
     } else {

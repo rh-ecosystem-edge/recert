@@ -27,7 +27,7 @@ impl DistributedJwt {
         let new_key = match &self.signer {
             JwtSigner::Unknown => bail!("cannot regenerate jwt with unknown signer"),
             JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key)?,
-            JwtSigner::PrivateKey(_private_key) => self.resign(&original_signing_key, new_signing_key)?,
+            JwtSigner::PrivateKey(_private_key) => self.resign(original_signing_key, new_signing_key)?,
         };
         self.jwt.str = new_key;
         self.regenerated = true;
@@ -44,7 +44,7 @@ impl DistributedJwt {
                 bail!("ed unsupported");
             }
             InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => Ok(jwt_simple::prelude::RS256KeyPair::from_der(bytes)?
-                .sign(verify_jwt(&original_public_key, self)?)?
+                .sign(verify_jwt(original_public_key, self)?)?
                 .to_string()),
         }
     }
@@ -53,10 +53,10 @@ impl DistributedJwt {
         for location in &self.locations.0 {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_to_etcd(etcd_client, &k8slocation).await?;
+                    self.commit_to_etcd(etcd_client, k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_to_filesystem(&filelocation).await?;
+                    self.commit_to_filesystem(filelocation).await?;
                 }
             }
         }

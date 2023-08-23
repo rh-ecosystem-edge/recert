@@ -16,13 +16,13 @@ pub(crate) mod cluster_domain_rename;
 /// it. This method does that. Ideally we should get OLM to be more tolerant of this and remove
 /// this post-processing step.
 pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
-    let mut etcd_client = in_memory_etcd_client;
+    let etcd_client = in_memory_etcd_client;
     let mut hasher = sha2::Sha256::new();
 
     hasher.update(
         base64_standard.decode(
             get_etcd_yaml(
-                &mut etcd_client,
+                etcd_client,
                 &K8sResourceLocation::new(None, "APIService", "v1.packages.operators.coreos.com", "apiregistration.k8s.io/v1"),
             )
             .await?
@@ -41,7 +41,7 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         "v1",
     );
 
-    let mut packageserver_serving_cert_secret = get_etcd_yaml(&mut etcd_client, &package_serving_cert_secret_k8s_resource_location).await?;
+    let mut packageserver_serving_cert_secret = get_etcd_yaml(etcd_client, &package_serving_cert_secret_k8s_resource_location).await?;
     packageserver_serving_cert_secret
         .pointer_mut("/metadata/annotations")
         .context("no .metadata.annotations")?
@@ -50,7 +50,7 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         .insert("olmcahash".to_string(), serde_json::Value::String(format!("{:x}", hash)));
 
     put_etcd_yaml(
-        &etcd_client,
+        etcd_client,
         &package_serving_cert_secret_k8s_resource_location,
         packageserver_serving_cert_secret,
     )

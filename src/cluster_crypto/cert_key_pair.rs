@@ -141,7 +141,7 @@ impl CertKeyPair {
         let certificate: &rfc5280::Certificate = cert.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
 
-        let skid = key_identifiers::get_skid(&mut tbs_certificate)?;
+        let skid = key_identifiers::get_skid(&tbs_certificate)?;
 
         // Check which method was used to calculate the SKID. We call this early because
         // determining the method relies on the cert keys before they're regenerated
@@ -205,7 +205,7 @@ impl CertKeyPair {
         // This must happen after the SKID is calculated because for self-signed certs, the SKID is
         // equal to the AKID and so the skid_edits map must be populated with our own SKID before
         // fix_akid looks it up
-        let akid = key_identifiers::get_akid(&mut tbs_certificate).context("getting akid")?;
+        let akid = key_identifiers::get_akid(&tbs_certificate).context("getting akid")?;
         if let Some(mut akid) = akid {
             fix_akid(&mut akid, skid_edits, serial_number_edits)?;
 
@@ -254,7 +254,9 @@ impl CertKeyPair {
     }
 
     pub(crate) async fn commit_pair_certificate(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
-        for location in (*self.distributed_cert).borrow().locations.0.iter() {
+        let locations = (*self.distributed_cert).borrow().locations.0.clone();
+
+        for location in locations {
             match location {
                 Location::K8s(k8slocation) => {
                     self.commit_k8s_cert(etcd_client, &k8slocation).await?;
@@ -271,13 +273,15 @@ impl CertKeyPair {
     pub(crate) async fn commit_k8s_cert(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
         let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
 
+        let cert_pem = pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?;
+
         etcd_client
             .put(
                 &k8slocation.resource_location.as_etcd_key(),
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?,
+                    &cert_pem,
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
@@ -288,6 +292,7 @@ impl CertKeyPair {
         Ok(())
     }
 
+    #[allow(clippy::await_holding_refcell_ref)]
     pub(crate) async fn commit_pair_key(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         if let Some(private_key) = &self.distributed_private_key {
             (*private_key).borrow_mut().commit_to_etcd_and_disk(etcd_client).await?;
@@ -347,13 +352,16 @@ fn fix_akid(
 
         akid.key_identifier = Some(matching_skid.0.clone());
     }
-    Ok(if let Some(serial_number) = &akid.authority_cert_serial_number {
+
+    if let Some(serial_number) = &akid.authority_cert_serial_number {
         let matching_sn = serial_numbers
             .get(&HashableSerialNumber(serial_number.as_bytes().into()))
             .context("could not find matching akid serial number in chain")?;
 
         akid.authority_cert_serial_number = Some(SerialNumber::new(&matching_sn.clone().into_bytes())?);
-    })
+    }
+
+    Ok(())
 }
 
 impl Display for CertKeyPair {
@@ -389,8 +397,8 @@ impl Display for CertKeyPair {
         )?;
         write!(f, " | {}", (*self.distributed_cert).borrow().certificate.subject,)?;
 
-        if self.signees.len() > 0 {
-            writeln!(f, "")?;
+        if !self.signees.is_empty() {
+            writeln!(f)?;
         }
 
         for signee in &self.signees {

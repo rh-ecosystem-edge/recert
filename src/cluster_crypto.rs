@@ -104,6 +104,7 @@ impl ClusterCryptoObjects {
     /// Commit all the crypto objects to etcd and disk. This is called after all the crypto
     /// objects have been regenerated so that the newly generated objects are persisted in
     /// etcd and on disk.
+    #[allow(clippy::await_holding_refcell_ref)]
     pub(crate) async fn commit_to_etcd_and_disk(&mut self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             (**cert_key_pair).borrow().commit_to_etcd_and_disk(etcd_client).await?;
@@ -167,7 +168,7 @@ impl ClusterCryptoObjects {
     fn assert_regeneration(&mut self) {
         // Assert all known objects have been regenerated.
         for cert_key_pair in &self.cert_key_pairs {
-            let signer = &(*(**cert_key_pair).borrow()).signer;
+            let signer = &(**cert_key_pair).borrow().signer;
             if let Some(signer) = signer {
                 assert!(
                     (**signer).borrow().regenerated,
@@ -187,7 +188,7 @@ impl ClusterCryptoObjects {
                 );
 
                 assert!(
-                    (**signer).borrow().signees.len() > 0,
+                    !(**signer).borrow().signees.is_empty(),
                     "Zero signees signer with cert at {} and keys at {}",
                     (*(**signer).borrow().distributed_cert).borrow().locations,
                     if let Some(key) = &(**signer).borrow().distributed_private_key {
@@ -277,13 +278,13 @@ impl ClusterCryptoObjects {
                                 .certificate
                                 .original,
                         ) {
-                        Ok(_) => true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair)),
+                        Ok(_) => true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair)),
                         Err(X509CertificateError::CertificateSignatureVerificationFailed) => {}
                         Err(X509CertificateError::UnsupportedSignatureVerification(..)) => {
                             // This is a hack to get around the fact this lib doesn't support
                             // all signature algorithms yet.
-                            if crypto_utils::openssl_is_signed(&potential_signing_cert_key_pair, &cert_key_pair)? {
-                                true_signing_cert = Some(Rc::clone(&potential_signing_cert_key_pair));
+                            if crypto_utils::openssl_is_signed(potential_signing_cert_key_pair, cert_key_pair)? {
+                                true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair));
                             }
                         }
                         unknown_err => unknown_err?,
@@ -320,7 +321,7 @@ impl ClusterCryptoObjects {
             if let Some(last_signer) = &last_signer {
                 match crypto_utils::verify_jwt(&PublicKey::try_from(&(*last_signer).borrow().key)?, &(**distributed_jwt).borrow()) {
                     Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
-                        maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(&last_signer));
+                        maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(last_signer));
                     }
                     Err(_error) => {}
                 }
@@ -332,7 +333,7 @@ impl ClusterCryptoObjects {
                     ) {
                         Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
                             maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(distributed_private_key));
-                            last_signer = Some(Rc::clone(&distributed_private_key));
+                            last_signer = Some(Rc::clone(distributed_private_key));
                             break;
                         }
                         Err(_error) => {}
@@ -340,24 +341,21 @@ impl ClusterCryptoObjects {
                 }
             }
 
-            match &maybe_signer {
-                jwt::JwtSigner::Unknown => {
-                    for cert_key_pair in &self.cert_key_pairs {
-                        if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
-                            match crypto_utils::verify_jwt(
-                                &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
-                                &(**distributed_jwt).borrow(),
-                            ) {
-                                Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
-                                    maybe_signer = jwt::JwtSigner::CertKeyPair(Rc::clone(cert_key_pair));
-                                    break;
-                                }
-                                Err(_error) => {}
+            if let jwt::JwtSigner::Unknown = &maybe_signer {
+                for cert_key_pair in &self.cert_key_pairs {
+                    if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
+                        match crypto_utils::verify_jwt(
+                            &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
+                            &(**distributed_jwt).borrow(),
+                        ) {
+                            Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
+                                maybe_signer = jwt::JwtSigner::CertKeyPair(Rc::clone(cert_key_pair));
+                                break;
                             }
+                            Err(_error) => {}
                         }
                     }
                 }
-                _ => {}
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
@@ -393,7 +391,7 @@ impl ClusterCryptoObjects {
                         .original
                         == (*(**cert_key_pair).borrow().distributed_cert).borrow().certificate.original
                     {
-                        signees.push(signee::Signee::CertKeyPair(Rc::clone(&potential_signee)));
+                        signees.push(signee::Signee::CertKeyPair(Rc::clone(potential_signee)));
                     }
                 }
             }
@@ -450,12 +448,13 @@ impl ClusterCryptoObjects {
             }));
 
             let subject_public_key = (**distributed_cert).borrow().certificate.public_key.clone();
+
             if let Occupied(private_key) = self.public_to_private.entry(subject_public_key.clone()) {
                 if let Occupied(distributed_private_key) = self.distributed_private_keys.entry(private_key.get().clone()) {
                     (*pair).borrow_mut().distributed_private_key = Some(Rc::clone(distributed_private_key.get()));
 
                     // Remove the private key from the pool of private keys as it's now paired with a cert
-                    self.distributed_private_keys.remove(&private_key.get());
+                    self.distributed_private_keys.remove(private_key.get());
                 } else {
                     bail!(
                         "Private key not found for cert {}. The cert was found in {}",
@@ -468,13 +467,14 @@ impl ClusterCryptoObjects {
             }) {
                 // This is a known missing private key cert, so we don't need to worry about it not
                 // having a private key.
-            } else {
-                // bail!(
-                //     "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
-                //     (**distributed_cert).borrow().certificate.subject,
-                //     (**distributed_cert).borrow().locations,
-                // );
             }
+            // else {
+            //         // bail!(
+            //         //     "Private key not found for cert not in KNOWN_MISSING_PRIVATE_KEY_CERTS, cannot continue, {}. The cert was found in {}",
+            //         //     (**distributed_cert).borrow().certificate.subject,
+            //         //     (**distributed_cert).borrow().locations,
+            //         // );
+            //     }
 
             paired_cers_to_remove.push(hashable_cert.clone());
             self.cert_key_pairs.push(pair);

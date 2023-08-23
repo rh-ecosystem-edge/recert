@@ -1,6 +1,5 @@
 use super::SUBJECT_ALTERNATIVE_NAME_OID;
 use crate::cnsanreplace::CnSanReplaceRules;
-use anyhow;
 use anyhow::{Context, Result};
 use bcder::OctetString;
 use bcder::Oid;
@@ -58,7 +57,7 @@ pub(crate) fn mutate_cert_subject_alternative_name(
                         .iter()
                         .map(|san| {
                             Ok(match san {
-                                DnsName(name) => DnsName(Ia5String::new(&cn_san_replace_rules.replace(&name.to_string()))?),
+                                DnsName(name) => DnsName(Ia5String::new(&cn_san_replace_rules.replace(name.as_ref()))?),
                                 san_name => san_name.clone(),
                             })
                         })

@@ -23,7 +23,7 @@ impl TryFrom<String> for ClusterRenameParameters {
     type Error = anyhow::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let mut parts = value.split(",");
+        let mut parts = value.split(',');
 
         if parts.clone().count() != 2 {
             bail!("cluster rename must be comma seperated cluster name and cluster base domain");

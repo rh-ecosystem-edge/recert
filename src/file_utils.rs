@@ -55,9 +55,9 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
             let newbundle = pem_utils::pem_bundle_replace_pem_at_index(
                 decode_resource_data_entry(yaml_location, value_at_json_pointer.as_str().context("value no longer string")?)?,
                 pem_location_info.pem_bundle_index,
-                &new_pem,
+                new_pem,
             )?;
-            let encoded = encode_resource_data_entry(&yaml_location, &newbundle);
+            let encoded = encode_resource_data_entry(yaml_location, &newbundle);
 
             if let Value::String(value_at_json_pointer) = value_at_json_pointer {
                 *value_at_json_pointer = encoded;

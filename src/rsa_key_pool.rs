@@ -57,6 +57,6 @@ impl RsaKeyPool {
             }
         }
 
-        Ok(generate_rsa_key(size)?)
+        generate_rsa_key(size)
     }
 }

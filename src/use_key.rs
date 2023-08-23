@@ -46,7 +46,7 @@ impl UseKeyRules {
     pub(crate) fn key_file(&self, subject: Name) -> Result<Option<PathBuf>> {
         let common_names = subject.iter_by_oid(Oid(OID_COMMON_NAME.as_ref().into())).collect::<Vec<_>>();
 
-        if common_names.len() == 0 {
+        if common_names.is_empty() {
             Ok(None)
         } else {
             ensure!(common_names.len() == 1, "expected exactly one common name, found more");
@@ -68,7 +68,7 @@ impl TryFrom<Vec<String>> for UseKeyRules {
         Ok(Self(
             value
                 .into_iter()
-                .map(|pair| UseKey::try_from(pair))
+                .map(UseKey::try_from)
                 .collect::<Result<Vec<_>>>()
                 .context("parsing use-key")?,
         ))

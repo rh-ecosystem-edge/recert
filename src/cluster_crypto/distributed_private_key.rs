@@ -36,8 +36,8 @@ impl Display for DistributedPrivateKey {
             // "<>",
         )?;
 
-        if self.signees.len() > 0 || self.associated_distributed_public_key.is_some() {
-            writeln!(f, "")?;
+        if !self.signees.is_empty() || self.associated_distributed_public_key.is_some() {
+            writeln!(f)?;
         }
 
         for signee in &self.signees {
@@ -94,10 +94,10 @@ impl DistributedPrivateKey {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_k8s_private_key(etcd_client, &k8slocation).await?;
+                    self.commit_k8s_private_key(etcd_client, k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_private_key(&filelocation).await?;
+                    self.commit_filesystem_private_key(filelocation).await?;
                 }
             }
         }

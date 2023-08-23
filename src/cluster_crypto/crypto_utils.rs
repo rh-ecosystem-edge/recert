@@ -38,7 +38,7 @@ pub(crate) fn openssl_is_signed(potential_signer: &Rc<RefCell<CertKeyPair>>, sig
 
     let mut signing_cert_file = tempfile::NamedTempFile::new()?;
     signing_cert_file.write_all(
-        &(*(**potential_signer).borrow().distributed_cert)
+        (*(**potential_signer).borrow().distributed_cert)
             .borrow()
             .certificate
             .original
@@ -47,7 +47,7 @@ pub(crate) fn openssl_is_signed(potential_signer: &Rc<RefCell<CertKeyPair>>, sig
     )?;
     let mut signed_cert_file = tempfile::NamedTempFile::new()?;
     signed_cert_file.write_all(
-        &(*(**signee).borrow().distributed_cert)
+        (*(**signee).borrow().distributed_cert)
             .borrow()
             .certificate
             .original
@@ -83,7 +83,7 @@ pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<(RsaPrivat
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
         String::from_utf8(
             Command::new("openssl")
-                .args(&["genrsa", &key_size.to_string()])
+                .args(["genrsa", &key_size.to_string()])
                 .output()
                 .await
                 .context("openssl genrsa")?
@@ -96,7 +96,7 @@ pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<(RsaPrivat
     .context("private from pem")?;
 
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
 }
 
@@ -104,7 +104,7 @@ pub(crate) fn generate_rsa_key(key_size: usize) -> Result<(RsaPrivateKey, InMemo
     let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
         String::from_utf8(
             StdCommand::new("openssl")
-                .args(&["genrsa", &key_size.to_string()])
+                .args(["genrsa", &key_size.to_string()])
                 .output()
                 .context("openssl genrsa")?
                 .stdout,
@@ -116,7 +116,7 @@ pub(crate) fn generate_rsa_key(key_size: usize) -> Result<(RsaPrivateKey, InMemo
     .context("private from pem")?;
 
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn rsa_key_from_pkcs8_file(path: &PathBuf) -> Result<(RsaPrivateKey, 
         .context("private from pem")?;
 
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
 }
 
@@ -134,7 +134,7 @@ pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<(RsaPrivateKey, 
         .context("private from pem")?;
 
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(&rsa_pkcs8_der_bytes).context("pair from der")?;
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
     Ok((rsa_private_key, key_pair))
 }
 

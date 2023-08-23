@@ -32,7 +32,7 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
         // without a kind as if it were a kubeconfig/machineconfig
         None => {
             let kubeconfig_scan_result = scan_kubeconfig(&yaml_value)?;
-            if kubeconfig_scan_result.len() > 0 {
+            if !kubeconfig_scan_result.is_empty() {
                 Ok(kubeconfig_scan_result)
             } else {
                 scan_machineconfig(&yaml_value)
@@ -44,22 +44,20 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
 pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
     let mut ret = Vec::new();
 
-    if let Some(data) = value.as_object().context("configmap is not object")?.get("data") {
-        if let Value::Object(data) = data {
-            for (key, value) in data.iter() {
-                if IGNORE_LIST_CONFIGMAP.contains(key) {
-                    continue;
-                }
-
-                ret.push(YamlValue {
-                    location: YamlLocation {
-                        json_pointer: format!("/data/{key}"),
-                        value: LocationValueType::Unknown,
-                        encoding: FieldEncoding::None,
-                    },
-                    value: value.clone(),
-                });
+    if let Some(Value::Object(data)) = value.as_object().context("configmap is not object")?.get("data") {
+        for (key, value) in data.iter() {
+            if IGNORE_LIST_CONFIGMAP.contains(key) {
+                continue;
             }
+
+            ret.push(YamlValue {
+                location: YamlLocation {
+                    json_pointer: format!("/data/{key}"),
+                    value: LocationValueType::Unknown,
+                    encoding: FieldEncoding::None,
+                },
+                value: value.clone(),
+            });
         }
     }
 
@@ -68,32 +66,26 @@ pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
 
 pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
-    if let Some(data) = value.as_object().context("not object")?.get("data") {
-        if let Value::Object(data) = data {
-            for (key, value) in data.iter() {
-                if rules::IGNORE_LIST_SECRET.contains(key) {
-                    continue;
-                }
-
-                res.push(YamlValue {
-                    location: YamlLocation::new("/data", key, FieldEncoding::Base64),
-                    value: value.clone(),
-                })
+    if let Some(Value::Object(data)) = value.as_object().context("not object")?.get("data") {
+        for (key, value) in data.iter() {
+            if rules::IGNORE_LIST_SECRET.contains(key) {
+                continue;
             }
+
+            res.push(YamlValue {
+                location: YamlLocation::new("/data", key, FieldEncoding::Base64),
+                value: value.clone(),
+            })
         }
     }
 
-    if let Some(metadata) = value.as_object().context("not object")?.get("metadata") {
-        if let Value::Object(metadata) = metadata {
-            if let Some(annotations) = metadata.get("annotations") {
-                if let Value::Object(annotations) = annotations {
-                    for (key, value) in annotations.iter() {
-                        res.push(YamlValue {
-                            location: YamlLocation::new("/metadata/annotations", key, FieldEncoding::None),
-                            value: value.clone(),
-                        })
-                    }
-                }
+    if let Some(Value::Object(metadata)) = value.as_object().context("not object")?.get("metadata") {
+        if let Some(Value::Object(annotations)) = metadata.get("annotations") {
+            for (key, value) in annotations.iter() {
+                res.push(YamlValue {
+                    location: YamlLocation::new("/metadata/annotations", key, FieldEncoding::None),
+                    value: value.clone(),
+                })
             }
         }
     }
@@ -129,18 +121,16 @@ pub(crate) fn scan_validatingwebhookconfiguration(value: &Value) -> Result<Vec<Y
 
 pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
-    if let Some(spec_object) = value.as_object().context("non-object ValidatingWebhookConfiguration")?.get("spec") {
-        if let Value::Object(spec) = spec_object {
-            if let Some(ca_bundle) = spec.get("caBundle") {
-                res.push(YamlValue {
-                    location: YamlLocation {
-                        json_pointer: format!("/spec/caBundle"),
-                        value: LocationValueType::Unknown,
-                        encoding: FieldEncoding::Base64,
-                    },
-                    value: ca_bundle.clone(),
-                });
-            }
+    if let Some(Value::Object(spec)) = value.as_object().context("non-object ValidatingWebhookConfiguration")?.get("spec") {
+        if let Some(ca_bundle) = spec.get("caBundle") {
+            res.push(YamlValue {
+                location: YamlLocation {
+                    json_pointer: "/spec/caBundle".to_string(),
+                    value: LocationValueType::Unknown,
+                    encoding: FieldEncoding::Base64,
+                },
+                value: ca_bundle.clone(),
+            });
         }
     }
 
@@ -184,7 +174,7 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
 
     if let Some(Value::Array(users)) = value.get("users") {
-        for (i, user) in users.into_iter().enumerate() {
+        for (i, user) in users.iter().enumerate() {
             for user_field in ["client-certificate-data", "client-key-data"].iter() {
                 if let Some(field_value) = user.as_object().context("non-object user")?["user"]
                     .as_object()
@@ -201,7 +191,7 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
     }
 
     if let Some(Value::Array(clusters)) = value.get("clusters") {
-        for (i, cluster) in clusters.into_iter().enumerate() {
+        for (i, cluster) in clusters.iter().enumerate() {
             if let Some(cluster_cert) = cluster.as_object().context("non-object cluster")?["cluster"]
                 .as_object()
                 .context("non-object cluster")?
@@ -229,11 +219,7 @@ pub(crate) fn decode_yaml_value(yaml_value: &YamlValue) -> Result<Option<(YamlLo
         FieldEncoding::DataUrl => process_data_url_value(&yaml_value.value)?,
     };
 
-    Ok(if let Some(decoded) = decoded {
-        Some((yaml_value.location.clone(), decoded))
-    } else {
-        None
-    })
+    Ok(decoded.map(|decoded| (yaml_value.location.clone(), decoded)))
 }
 
 /// Given a data-url-encoded value taken from a YAML field, decode it and scan it for

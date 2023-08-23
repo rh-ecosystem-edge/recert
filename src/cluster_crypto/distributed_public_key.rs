@@ -45,10 +45,10 @@ impl DistributedPublicKey {
         for location in self.locations.0.iter() {
             match location {
                 Location::K8s(k8slocation) => {
-                    self.commit_k8s_public_key(etcd_client, &k8slocation).await?;
+                    self.commit_k8s_public_key(etcd_client, k8slocation).await?;
                 }
                 Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_public_key(&filelocation).await?;
+                    self.commit_filesystem_public_key(filelocation).await?;
                 }
             }
         }

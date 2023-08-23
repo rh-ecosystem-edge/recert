@@ -131,7 +131,7 @@ impl InMemoryK8sEtcd {
             .await?;
 
         keys.kvs()
-            .into_iter()
+            .iter()
             .map(|k| Ok(k.key_str()?.to_string()))
             .collect::<Result<Vec<String>>>()
     }

@@ -53,7 +53,7 @@ impl TryFrom<Vec<String>> for CnSanReplaceRules {
         Ok(Self(
             value
                 .into_iter()
-                .map(|pair| CnSanReplace::try_from(pair))
+                .map(CnSanReplace::try_from)
                 .collect::<Result<Vec<_>>>()
                 .context("parsing cn-san-replace")?,
         ))

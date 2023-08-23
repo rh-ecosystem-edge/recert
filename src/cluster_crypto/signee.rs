@@ -31,6 +31,7 @@ impl Display for Signee {
 }
 
 impl Signee {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn regenerate(
         &mut self,
         original_signing_public_key: &keys::PublicKey,
@@ -53,7 +54,7 @@ impl Signee {
                 )?;
             }
             Self::Jwt(jwt) => match new_signing_key {
-                Some(key_pair) => (**jwt).borrow_mut().regenerate(&original_signing_public_key, key_pair)?,
+                Some(key_pair) => (**jwt).borrow_mut().regenerate(original_signing_public_key, key_pair)?,
                 None => {
                     bail!("Cannot regenerate a jwt without a signing key, regenerate may only be called on a signee that is a root cert-key-pair")
                 }

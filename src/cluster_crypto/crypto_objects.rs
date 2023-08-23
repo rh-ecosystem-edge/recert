@@ -62,7 +62,7 @@ impl DiscoveredCryptoObect {
 /// record them in the appropriate data structures.
 pub(crate) fn process_yaml_value(value: String, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
     let pem_bundle_objects = process_pem_bundle(&value, location).context("processing pem bundle")?;
-    if pem_bundle_objects.len() > 0 {
+    if !pem_bundle_objects.is_empty() {
         return Ok(pem_bundle_objects);
     }
 
@@ -87,13 +87,13 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Result<Option<Dis
     let payload = parts[1];
     let signature = parts[2];
 
-    if let Err(_) = URL_SAFE_NO_PAD.decode(header.as_bytes()) {
+    if URL_SAFE_NO_PAD.decode(header.as_bytes()).is_err() {
         return Ok(None);
     }
-    if let Err(_) = URL_SAFE_NO_PAD.decode(payload.as_bytes()) {
+    if URL_SAFE_NO_PAD.decode(payload.as_bytes()).is_err() {
         return Ok(None);
     }
-    if let Err(_) = URL_SAFE_NO_PAD.decode(signature.as_bytes()) {
+    if URL_SAFE_NO_PAD.decode(signature.as_bytes()).is_err() {
         return Ok(None);
     }
 

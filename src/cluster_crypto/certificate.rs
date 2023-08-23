@@ -37,7 +37,7 @@ impl TryFrom<CapturedX509Certificate> for Certificate {
             subject: cert.subject_name().user_friendly_str().unwrap_or("undecodable".to_string()),
             public_key: match cert.key_algorithm().context("failed to get cert key algorithm")? {
                 x509_certificate::KeyAlgorithm::Rsa => PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(
-                    &cert.to_public_key_der().context("parsing public key")?.as_bytes(),
+                    cert.to_public_key_der().context("parsing public key")?.as_bytes(),
                 )),
                 x509_certificate::KeyAlgorithm::Ecdsa(_) => {
                     PublicKey::from_ec_cert_bytes(&bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes()))

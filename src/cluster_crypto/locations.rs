@@ -323,7 +323,7 @@ pub(crate) struct YamlLocation {
 impl YamlLocation {
     pub fn new(prefix: &str, key: &str, encoding: FieldEncoding) -> Self {
         YamlLocation {
-            json_pointer: format!("{}/{}", prefix, key.to_string().replace("/", "~1")),
+            json_pointer: format!("{}/{}", prefix, key.to_string().replace('/', "~1")),
             value: LocationValueType::Unknown,
             encoding,
         }
@@ -347,11 +347,7 @@ pub(crate) struct K8sResourceLocation {
 impl K8sResourceLocation {
     pub(crate) fn new(namespace: Option<&str>, kind: &str, name: &str, apiversion: &str) -> Self {
         Self {
-            namespace: if let Some(namespace) = namespace {
-                Some(namespace.to_string())
-            } else {
-                None
-            },
+            namespace: namespace.map(|namespace| namespace.to_string()),
             kind: kind.to_string(),
             name: name.to_string(),
             apiversion: apiversion.to_string(),

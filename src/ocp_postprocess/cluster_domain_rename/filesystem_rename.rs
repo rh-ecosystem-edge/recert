@@ -6,9 +6,9 @@ use crate::file_utils::{self, read_file_to_string};
 use anyhow::{self, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::Path};
 
-pub(crate) async fn fix_filesystem_kcm_pods(generated_infra_id: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_kcm_pods(generated_infra_id: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/kube-controller-manager-pod.yaml")?
             .into_iter()
@@ -48,7 +48,7 @@ pub(crate) async fn fix_filesystem_kcm_pods(generated_infra_id: &str, dir: &Path
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_kcm_configs(generated_infra_id: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_kcm_configs(generated_infra_id: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/kube-controller-manager-pod*/configmaps/config/config.yaml")?
             .into_iter()
@@ -87,7 +87,7 @@ pub(crate) async fn fix_filesystem_kcm_configs(generated_infra_id: &str, dir: &P
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_kube_apiserver_configs(cluster_domain: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_kube_apiserver_configs(cluster_domain: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/kube-apiserver-pod*/configmaps/config/config.yaml")?
             .into_iter()
@@ -126,7 +126,7 @@ pub(crate) async fn fix_filesystem_kube_apiserver_configs(cluster_domain: &str, 
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/kube-apiserver-pod*/configmaps/oauth-metadata/oauthMetadata")?
             .into_iter()
@@ -165,7 +165,7 @@ pub(crate) async fn fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain:
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str, dir: &Path) -> Result<()> {
     join_all(file_utils::globvec(dir, "**/apiserver-url.env")?.into_iter().map(|file_path| {
         let cluster_domain = cluster_domain.to_string();
         let kubeconfig_path = file_path.clone();
@@ -193,7 +193,7 @@ pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str,
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &PathBuf) -> Result<()> {
+pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/*kubeconfig")?
             .into_iter()

@@ -199,9 +199,9 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
     .collect::<Vec<_>>())
 }
 
-pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &PathBuf) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
     Ok(
-        yaml_crawl::crawl_yaml((&serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
+        yaml_crawl::crawl_yaml((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
             .iter()
             .map(yaml_crawl::decode_yaml_value)
             .collect::<Result<Vec<_>>>()?
@@ -212,7 +212,7 @@ pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &PathBuf
             .map(|(yaml_location, decoded_yaml_value)| {
                 process_yaml_value(
                     decoded_yaml_value,
-                    &Location::file_yaml(&yaml_path.to_string_lossy().to_string(), &yaml_location),
+                    &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
                 )
             })
             .collect::<Result<Vec<_>>>()?

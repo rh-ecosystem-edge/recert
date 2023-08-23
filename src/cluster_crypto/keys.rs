@@ -13,6 +13,7 @@ use std::{
 };
 
 #[derive(Hash, Eq, PartialEq, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum PrivateKey {
     Rsa(RsaPrivateKey),
     Ec(Bytes),

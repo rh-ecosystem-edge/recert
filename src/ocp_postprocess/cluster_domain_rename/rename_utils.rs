@@ -75,11 +75,11 @@ pub(crate) fn generate_infra_id(cluster_name: String) -> Result<String> {
     const CLUSTER_INFRA_ID_MAX_LEN: usize = 27;
     const MAX_NORMALIZED_CLUSTER_NAME_LEN: usize = CLUSTER_INFRA_ID_MAX_LEN - (CLUSTER_INFRA_ID_RANDOM_LEN + 1);
 
-    const NON_ALPHANUM: &str = &r"[^A-Za-z0-9-]";
-    const REPEATED_DASH_SEQUENCES: &str = &r"-{2,}";
+    const NON_ALPHANUM: &str = r"[^A-Za-z0-9-]";
+    const REPEATED_DASH_SEQUENCES: &str = r"-{2,}";
 
     let normalized_cluster_name = regex::Regex::new(REPEATED_DASH_SEQUENCES)?
-        .replace_all(&regex::Regex::new(NON_ALPHANUM)?.replace_all(&cluster_name, "-").to_string(), "-")
+        .replace_all(&regex::Regex::new(NON_ALPHANUM)?.replace_all(&cluster_name, "-"), "-")
         .to_string();
 
     let truncated_cluster_name = normalized_cluster_name
@@ -122,47 +122,44 @@ pub(crate) async fn fix_kubeconfig(cluster_domain: &str, kubeconfig: &mut Value)
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if clusters.len() == 0 {
+    if clusters.is_empty() {
         bail!("expected at least one cluster in kubeconfig");
     }
 
-    clusters
-        .into_iter()
-        .map(|cluster| {
-            let cluster = cluster
-                .pointer_mut("/cluster")
-                .context("cluster not found")?
-                .as_object_mut()
-                .context("cluster not an object")?;
+    clusters.iter_mut().try_for_each(|cluster| {
+        let cluster = cluster
+            .pointer_mut("/cluster")
+            .context("cluster not found")?
+            .as_object_mut()
+            .context("cluster not an object")?;
 
-            let previous_server = cluster
-                .get_mut("server")
-                .context("server not found")?
-                .as_str()
-                .context("server not a string")?;
+        let previous_server = cluster
+            .get_mut("server")
+            .context("server not found")?
+            .as_str()
+            .context("server not a string")?;
 
-            if previous_server.starts_with("https://api.") {
-                cluster.insert(
-                    "server".to_string(),
-                    serde_json::Value::String(format!("https://api.{}:6443", cluster_domain)),
-                );
-            } else if previous_server.starts_with("https://api-int.") {
-                cluster.insert(
-                    "server".to_string(),
-                    serde_json::Value::String(format!("https://api-int.{}:6443", cluster_domain)),
-                );
-            } else if previous_server.starts_with("https://[api-int.") {
-                cluster.insert(
-                    "server".to_string(),
-                    serde_json::Value::String(format!("https://[api-int.{}]:6443", cluster_domain)),
-                );
-            } else {
-                // Could be something like `https://localhost:6443`, ignore
-            }
+        if previous_server.starts_with("https://api.") {
+            cluster.insert(
+                "server".to_string(),
+                serde_json::Value::String(format!("https://api.{}:6443", cluster_domain)),
+            );
+        } else if previous_server.starts_with("https://api-int.") {
+            cluster.insert(
+                "server".to_string(),
+                serde_json::Value::String(format!("https://api-int.{}:6443", cluster_domain)),
+            );
+        } else if previous_server.starts_with("https://[api-int.") {
+            cluster.insert(
+                "server".to_string(),
+                serde_json::Value::String(format!("https://[api-int.{}]:6443", cluster_domain)),
+            );
+        } else {
+            // Could be something like `https://localhost:6443`, ignore
+        }
 
-            Ok(())
-        })
-        .collect::<Result<()>>()?;
+        anyhow::Ok(())
+    })?;
 
     Ok(())
 }
@@ -174,26 +171,26 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.len() == 0 {
+    if containers.is_empty() {
         bail!("expected at least one container in pod.yaml");
     }
 
     containers
-        .into_iter()
+        .iter_mut()
         .filter(|container| container["name"] == "kube-controller-manager")
-        .map(|container| {
+        .try_for_each(|container| {
             let args = container
                 .pointer_mut("/args")
                 .context("args not found")?
                 .as_array_mut()
                 .context("args not an array")?;
 
-            if args.len() == 0 {
+            if args.is_empty() {
                 bail!("expected at least one arg in kube-controller-manager");
             }
 
             let arg = args
-                .into_iter()
+                .iter_mut()
                 .find_map(|arg| arg.as_str()?.contains("--cluster-name=").then_some(arg))
                 .context("cluster-name not found")?;
 
@@ -208,8 +205,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
             );
 
             Ok(())
-        })
-        .collect::<Result<()>>()?;
+        })?;
 
     Ok(())
 }
@@ -221,25 +217,25 @@ pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_n
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.len() == 0 {
+    if containers.is_empty() {
         bail!("expected at least one container in pod.yaml");
     }
 
     containers
-        .into_iter()
+        .iter_mut()
         .filter(|container| container["name"] == container_name)
-        .map(|container| {
+        .try_for_each(|container| {
             let env = container
                 .pointer_mut("/env")
                 .context("env not found")?
                 .as_array_mut()
                 .context("env not an array")?;
 
-            if env.len() == 0 {
+            if env.is_empty() {
                 bail!("expected at least one env in container");
             }
 
-            env.into_iter()
+            env.iter_mut()
                 .find_map(|var| (var.get("name")? == env_name).then_some(var))
                 .context("name not found")?
                 .as_object_mut()
@@ -248,8 +244,7 @@ pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_n
                 .context("no previous value")?;
 
             Ok(())
-        })
-        .collect::<Result<()>>()?;
+        })?;
 
     Ok(())
 }
