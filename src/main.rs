@@ -8,22 +8,23 @@ use k8s_etcd::InMemoryK8sEtcd;
 use std::{path::PathBuf, sync::Arc};
 use use_key::UseKeyRules;
 
+mod cli;
 mod cluster_crypto;
 mod cnsanreplace;
 mod file_utils;
 mod json_tools;
 mod k8s_etcd;
-
 mod ocp_postprocess;
 mod rsa_key_pool;
 mod rules;
 mod use_key;
-mod cli;
+
+#[cfg(test)]
+mod tests;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
-
     main_internal(args).await
 }
 
@@ -31,7 +32,6 @@ async fn main_internal(args: cli::Cli) -> Result<()> {
     let (static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules, use_key_rules, cluster_rename) =
         init(args).await.context("initializing")?;
 
-    // Scanning and recertification
     recertify(
         Arc::clone(&memory_etcd),
         &mut cluster_crypto,
@@ -40,14 +40,12 @@ async fn main_internal(args: cli::Cli) -> Result<()> {
         use_key_rules,
     )
     .await
-    .context("recertification")?;
+    .context("scanning and recertification")?;
 
-    // Apply changes
     finalize(memory_etcd, &mut cluster_crypto, cluster_rename, static_dirs)
         .await
-        .context("finalization")?;
+        .context("finalizing")?;
 
-    // Print summary
     cluster_crypto.display();
 
     Ok(())
@@ -110,15 +108,10 @@ async fn recertify(
     let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning etcd/filesystem")?;
     let rsa_pool = rsa_keys.await?.context("generating rsa keys")?;
 
-    cluster_crypto.register_discovered_crypto_objects(all_discovered_crypto_objects);
-
-    establish_relationships(cluster_crypto)
-        .await
-        .context("establishing relationships")?;
-
+    // We discovered all crypto objects, process them
     cluster_crypto
-        .regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules)
-        .context("regenerating cryptographic objects")?;
+        .process_objects(all_discovered_crypto_objects, cn_san_replace_rules, use_key_rules, rsa_pool)
+        .context("processing discovered objects")?;
 
     Ok(())
 }
@@ -165,15 +158,3 @@ async fn ocp_postprocess(
 
     Ok(())
 }
-
-async fn establish_relationships(cluster_crypto: &mut ClusterCryptoObjects) -> Result<()> {
-    cluster_crypto.pair_certs_and_keys().context("pairing certs and keys")?;
-    cluster_crypto.fill_cert_key_signers().context("filling cert signers")?;
-    cluster_crypto.fill_jwt_signers().context("filling JWT signers")?;
-    cluster_crypto.fill_signees().context("filling signees")?;
-    cluster_crypto.associate_public_keys().context("associating public keys")?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests;

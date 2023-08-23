@@ -14,30 +14,30 @@ use crate::{
     },
     cnsanreplace::CnSanReplaceRules,
     k8s_etcd::{self, InMemoryK8sEtcd},
-    use_key::UseKeyRules,
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
+    use_key::UseKeyRules,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
 
-pub(crate) mod cert_key_pair;
-pub(crate) mod certificate;
-pub(crate) mod crypto_objects;
+pub(self) mod cert_key_pair;
+pub(self) mod certificate;
+pub(self) mod crypto_objects;
 pub(crate) mod crypto_utils;
-pub(crate) mod distributed_cert;
-pub(crate) mod distributed_jwt;
-pub(crate) mod distributed_private_key;
-pub(crate) mod distributed_public_key;
-pub(crate) mod jwt;
-pub(crate) mod keys;
+pub(self) mod distributed_cert;
+pub(self) mod distributed_jwt;
+pub(self) mod distributed_private_key;
+pub(self) mod distributed_public_key;
+pub(self) mod jwt;
+pub(self) mod keys;
 pub(crate) mod locations;
 pub(crate) mod pem_utils;
 pub(crate) mod scanning;
-pub(crate) mod signee;
-pub(crate) mod yaml_crawl;
+pub(self) mod signee;
+pub(self) mod yaml_crawl;
 
 /// This is the main struct that holds all the crypto objects we've found in the cluster and the
 /// locations where we found them, and how they relate to each other.
@@ -76,6 +76,15 @@ impl ClusterCryptoObjects {
             public_to_private: HashMap::new(),
             cert_key_pairs: Vec::new(),
         }
+    }
+
+    fn establish_relationships(&mut self) -> Result<()> {
+        self.pair_certs_and_keys().context("pairing certs and keys")?;
+        self.fill_cert_key_signers().context("filling cert signers")?;
+        self.fill_jwt_signers().context("filling JWT signers")?;
+        self.fill_signees().context("filling signees")?;
+        self.associate_public_keys().context("associating public keys")?;
+        Ok(())
     }
 
     /// Convenience function to display all the crypto objects in the cluster,
@@ -119,7 +128,7 @@ impl ClusterCryptoObjects {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    pub(crate) fn regenerate_crypto(
+    fn regenerate_crypto(
         &mut self,
         mut rsa_key_pool: RsaKeyPool,
         cn_san_replace_rules: CnSanReplaceRules,
@@ -248,7 +257,7 @@ impl ClusterCryptoObjects {
         assert_eq!(self.distributed_certs.len(), 0);
     }
 
-    pub(crate) fn fill_cert_key_signers(&mut self) -> Result<()> {
+    fn fill_cert_key_signers(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             let mut true_signing_cert: Option<Rc<RefCell<CertKeyPair>>> = None;
             if !(*(**cert_key_pair).borrow().distributed_cert)
@@ -298,7 +307,7 @@ impl ClusterCryptoObjects {
     /// For every jwt, find the private key that signed it (or certificate key pair that signed it,
     /// although rare in OCP) and record it. This will later be used to know how to regenerate the
     /// jwt.
-    pub(crate) fn fill_jwt_signers(&mut self) -> Result<()> {
+    fn fill_jwt_signers(&mut self) -> Result<()> {
         // Usually it's just one private key signing all the jwts, so to speed things up, we record
         // the last signer and use that as the first guess for the next jwt. This dramatically
         // speeds up the process of finding the signer for each jwt, as trying all private keys is
@@ -373,7 +382,7 @@ impl ClusterCryptoObjects {
 
     /// For every cert-key pair or private key, find all the crypto objects that depend on it and
     /// record them. This will later be used to know how to regenerate the crypto objects.
-    pub(crate) fn fill_signees(&mut self) -> Result<()> {
+    fn fill_signees(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             let mut signees = Vec::new();
             for potential_signee in &self.cert_key_pairs {
@@ -428,7 +437,7 @@ impl ClusterCryptoObjects {
     /// Find the private key associated with the subject of each certificate and combine them into
     /// a cert-key pair. Also remove the private key from the list of private keys as it is now
     /// part of a cert-key pair, the remaining private keys are considered standalone.
-    pub(crate) fn pair_certs_and_keys(&mut self) -> Result<()> {
+    fn pair_certs_and_keys(&mut self) -> Result<()> {
         let mut paired_cers_to_remove = vec![];
         for (hashable_cert, distributed_cert) in &self.distributed_certs {
             let pair = Rc::new(RefCell::new(cert_key_pair::CertKeyPair {
@@ -479,7 +488,7 @@ impl ClusterCryptoObjects {
     }
 
     /// Associate public keys with their cert-key pairs or standalone private keys.
-    pub(crate) fn associate_public_keys(&mut self) -> Result<()> {
+    fn associate_public_keys(&mut self) -> Result<()> {
         for cert_key_pair in &self.cert_key_pairs {
             if let Occupied(public_key_entry) = self.distributed_public_keys.entry(
                 (*(**cert_key_pair).borrow().distributed_cert)
@@ -519,7 +528,22 @@ impl ClusterCryptoObjects {
         Ok(())
     }
 
-    pub(crate) fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
+    pub(crate) fn process_objects(
+        &mut self,
+        discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
+        cn_san_replace_rules: CnSanReplaceRules,
+        use_key_rules: UseKeyRules,
+        rsa_pool: RsaKeyPool,
+    ) -> Result<()> {
+        self.register_discovered_crypto_objects(discovered_crypto_objects);
+        self.establish_relationships().context("establishing relationships")?;
+        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules)
+            .context("regenerating crypto")?;
+
+        Ok(())
+    }
+
+    fn register_discovered_crypto_objects(&mut self, discovered_crypto_objects: Vec<DiscoveredCryptoObect>) {
         for discovered_crypto_object in discovered_crypto_objects {
             let location = discovered_crypto_object.location.clone();
             self.register_discovered_crypto_object(discovered_crypto_object, location);
