@@ -105,7 +105,7 @@ sudo chown -R $USER:$USER "$BACKUP_CLUSTER_DIR"/
 rm -rf "$CLUSTER_DIR/" 
 cp -r "$BACKUP_CLUSTER_DIR/" "$CLUSTER_DIR/" 
 ETCD_IMAGE="$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"
-sudo podman run --network=host -it --authfile ~/repos/bootstrap-in-place-poc/registry-config.json --entrypoint etcd -v $CLUSTER_DIR/etcd:/store ${ETCD_IMAGE} --name editor --data-dir /store
+sudo podman run --network=host -it --authfile ~/repos/bootstrap-in-place-poc/registry-config.json --entrypoint etcd -v $CLUSTER_DIR/etcd:/store:Z ${ETCD_IMAGE} --name editor --data-dir /store
 ```
 
 #### Run recert
