@@ -95,7 +95,7 @@ See `./run.sh` example
 
 See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
-<details>
+</details>
 
 # Image build
 
