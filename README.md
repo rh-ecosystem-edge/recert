@@ -38,6 +38,7 @@ separate from other clusters deployed in the same manner.
 * podman
 * [ouger](https://github.com/omertuc/ouger)
 * a qcow2 image of a fully installed SNO cluster
+* meld
 
 #### Config
 
