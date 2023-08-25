@@ -32,6 +32,9 @@ that are separate from other clusters deployed in the same manner.
 
 ### Local Development
 
+<details>
+  <summary>Click here for more information</summary>
+
 #### Requirements
 
 * qemu-nbd
@@ -92,9 +95,11 @@ See `./run.sh` example
 
 See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
+<details>
 
 # Image build
 
 export DOCKER_BUILDKIT=1
 docker build . -t quay.io/otuchfel/recert:latest
 docker push quay.io/otuchfel/recert:latest
+
