@@ -10,9 +10,9 @@ modifications.
 
 The motivation for creating this tool was the effort to allow users to install
 a SNO cluster once in a lab, then copy its disk image for immediate deployment
-in many different sites. By running the tool during the first boot of the host,
-the new cluster will thus have its own independent secret keys that are
-separate from other clusters deployed in the same manner.
+in many different sites. By running the tool during the first boot of a host
+from said image, the new cluster will then have its own independent secret keys
+that are separate from other clusters deployed in the same manner.
 
 # TODO
 
@@ -90,75 +90,8 @@ See `./run.sh` example
 
 ### Run on SNO POC cluster
 
-#### Requirements
+See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
-* [ouger](https://github.com/omertuc/ouger)
-* [bootstrap-in-place-poc](https://github.com/eranco74/bootstrap-in-place-poc)
-
-#### Config
-
-```bash
-# !! Don't forget to change these !!
-REPO_DIR=/home/$USER/repos/recert
-POC_DIR=/home/$USER/repos/bootstrap-in-place-poc
-RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
-#####################################
-
-SSH_FLAGS="-o IdentityFile=./ssh-key/key -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no core@192.168.126.10"
-SSH_HOST="core@192.168.126.10"
-ETCD_IMAGE="$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"
-```
-
-#### Compile for platform
-```bash
-RUSTFLAGS='-C target-feature=+crt-static' cargo --manifest-path "$REPO_DIR"/Cargo.toml build --release --target x86_64-unknown-linux-gnu
-```
-
-#### Disable control plane & reboot
-
-```bash
-ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl disable kubelet
-ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl disable crio
-ssh $SSH_FLAGS "$SSH_HOST" sudo reboot 
-sleep 60
-```
-
-#### Run etcd
-
-```bash
-ssh $SSH_FLAGS "$SSH_HOST" sudo podman run --network=host --privileged --entrypoint etcd -v /var/lib/etcd:/store ${ETCD_IMAGE} --name editor --data-dir /store
-```
-
-#### Copy things
-
-```bash
-ssh $SSH_FLAGS "$SSH_HOST" sudo mkdir -p /root/.local/bin
-scp $SSH_FLAGS $RECERT/target/x86_64-unknown-linux-gnu/release/recert "$SSH_HOST":recert
-scp $SSH_FLAGS $(which ouger) "$SSH_HOST":
-scp $SSH_FLAGS "$POC_DIR"/sno-workdir/auth/kubeconfig "$SSH_HOST":
-
-ssh $SSH_FLAGS "$SSH_HOST" sudo cp /home/core/ouger /root/.local/bin/
-ssh $SSH_FLAGS "$SSH_HOST" sudo cp /home/core/recert /root/.local/bin/
-```
-
-#### Run utility
-
-```bash
-ssh $SSH_FLAGS "$SSH_HOST" sudo ulimit -n 999999
-ssh $SSH_FLAGS "$SSH_HOST" sudo bash -ic "'recert --etcd-endpoint localhost:2379 --static-dir /etc/kubernetes --static-dir /var/lib/kubelet --static-dir /etc/machine-config-daemon --kubeconfig /home/core/kubeconfig'"
-```
-
-#### Copy regenerated kubeconfig back to your machine
-```bash
-scp $SSH_FLAGS "$SSH_HOST":kubeconfig "$POC_DIR"/sno-workdir/auth/kubeconfig2
-```
-
-#### Reboot
-```bash
-ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl enable kubelet
-ssh $SSH_FLAGS "$SSH_HOST" sudo systemctl enable crio
-ssh $SSH_FLAGS "$SSH_HOST" sudo reboot 
-```
 
 # Image build
 
