@@ -3,7 +3,7 @@ use super::{
     distributed_jwt::DistributedJwt,
     keys,
 };
-use crate::{cnsanreplace::CnSanReplaceRules, use_key::UseKeyRules, rsa_key_pool::RsaKeyPool};
+use crate::{cnsanreplace::CnSanReplaceRules, use_key::UseKeyRules, rsa_key_pool::RsaKeyPool, use_cert::UseCertRules};
 use anyhow::{bail, Context, Result};
 use std::{
     self,
@@ -39,6 +39,7 @@ impl Signee {
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
         use_key_rules: &UseKeyRules,
+        use_cert_rules: &UseCertRules,
         skid_edits: Option<&mut SkidEdits>,
         serial_number_edits: Option<&mut SerialNumberEdits>,
     ) -> Result<()> {
@@ -49,6 +50,7 @@ impl Signee {
                     rsa_key_pool,
                     cn_san_replace_rules,
                     use_key_rules,
+                    use_cert_rules,
                     skid_edits.context("cert regeneration requires skid edits")?,
                     serial_number_edits.context("cert regeneration requires serial number edits")?,
                 )?;

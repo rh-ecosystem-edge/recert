@@ -17,9 +17,10 @@ use crate::{
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
+    use_cert::UseCertRules,
     use_key::{self, UseKeyRules},
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use bcder::BitString;
 use bytes::Bytes;
 use fn_error_context::context;
@@ -67,50 +68,77 @@ impl CertKeyPair {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn regenerate(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
         use_key_rules: &UseKeyRules,
+        use_cert_rules: &UseCertRules,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
-        let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(
-            sign_with,
-            rsa_key_pool,
-            cn_san_replace_rules,
-            use_key_rules,
-            skid_edits,
-            serial_number_edits,
-        )?;
+        let alternative_certificate = use_cert_rules
+            .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.original.subject_name())
+            .context("evaluating replacement cert")?;
 
-        (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(new_cert)?;
+        match alternative_certificate {
+            // This is the classic case, user has not provided any replacement cert for this cert,
+            // so simply regenerate the cert and all of its children
+            None => {
+                let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(
+                    sign_with,
+                    rsa_key_pool,
+                    cn_san_replace_rules,
+                    use_key_rules,
+                    skid_edits,
+                    serial_number_edits,
+                )?;
+                (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(&new_cert)?;
 
-        for signee in &mut self.signees {
-            signee.regenerate(
-                &(*self.distributed_cert).borrow().certificate.public_key,
-                Some(&new_cert_subject_key_pair),
-                rsa_key_pool,
-                cn_san_replace_rules,
-                use_key_rules,
-                Some(skid_edits),
-                Some(serial_number_edits),
-            )?;
-        }
+                for signee in &mut self.signees {
+                    signee.regenerate(
+                        &(*self.distributed_cert).borrow().certificate.public_key,
+                        Some(&new_cert_subject_key_pair),
+                        rsa_key_pool,
+                        cn_san_replace_rules,
+                        use_key_rules,
+                        use_cert_rules,
+                        Some(skid_edits),
+                        Some(serial_number_edits),
+                    )?;
+                }
 
-        if let Some(associated_public_key) = &mut self.associated_public_key {
-            (*associated_public_key)
-                .borrow_mut()
-                .regenerate(&PrivateKey::Rsa(rsa_private_key.clone()))?;
-        }
+                if let Some(associated_public_key) = &mut self.associated_public_key {
+                    (*associated_public_key)
+                        .borrow_mut()
+                        .regenerate(&PrivateKey::Rsa(rsa_private_key.clone()))?;
+                }
 
-        // This condition exists because not all certs originally had a private key associated with
-        // them (e.g. some private keys are discarded during install time), so we want to save the
-        // regenerated private key only in case there was one there to begin with. Otherwise we
-        // just discard it just like it was discarded during install time.
-        if let Some(distributed_private_key) = &mut self.distributed_private_key {
-            (**distributed_private_key).borrow_mut().key = PrivateKey::Rsa(rsa_private_key)
+                // This condition exists because not all certs originally had a private key associated with
+                // them (e.g. some private keys are discarded during install time), so we want to save the
+                // regenerated private key only in case there was one there to begin with. Otherwise we
+                // just discard it just like it was discarded during install time.
+                if let Some(distributed_private_key) = &mut self.distributed_private_key {
+                    (**distributed_private_key).borrow_mut().key = PrivateKey::Rsa(rsa_private_key)
+                }
+            }
+            // User asked us to use their provided cert instead of this one, so we simply replace
+            // it. If the cert has any children, we can't continue as we don't have the private
+            // key for the user-provided cert to use to regenerate the children, so we error
+            // out.
+            Some(replacement_cert) => {
+                ensure!(self.signees.is_empty(), "replacement cert cannot be used with signees");
+
+                if let Some(associated_public_key) = &mut self.associated_public_key {
+                    (*associated_public_key)
+                        .borrow_mut()
+                        .regenerate_from_public(&replacement_cert.public_key)?;
+                }
+
+                (*self.distributed_cert).borrow_mut().certificate = replacement_cert;
+            }
         }
 
         self.regenerated = true;

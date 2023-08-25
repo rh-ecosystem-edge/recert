@@ -28,10 +28,10 @@ impl Hash for Certificate {
     }
 }
 
-impl TryFrom<CapturedX509Certificate> for Certificate {
+impl TryFrom<&CapturedX509Certificate> for Certificate {
     type Error = anyhow::Error;
 
-    fn try_from(cert: CapturedX509Certificate) -> Result<Self> {
+    fn try_from(cert: &CapturedX509Certificate) -> Result<Self> {
         Ok(Certificate {
             issuer: cert.issuer_name().user_friendly_str().unwrap_or("undecodable".to_string()),
             subject: cert.subject_name().user_friendly_str().unwrap_or("undecodable".to_string()),
@@ -45,7 +45,7 @@ impl TryFrom<CapturedX509Certificate> for Certificate {
                 }
                 x509_certificate::KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
             },
-            original: cert,
+            original: cert.clone(),
         })
     }
 }

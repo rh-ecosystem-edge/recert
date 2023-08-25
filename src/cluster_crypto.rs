@@ -16,6 +16,7 @@ use crate::{
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
+    use_cert::UseCertRules,
     use_key::UseKeyRules,
 };
 use anyhow::{bail, Context, Result};
@@ -24,7 +25,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
 
 pub(self) mod cert_key_pair;
-pub(self) mod certificate;
+pub(crate) mod certificate;
 pub(self) mod crypto_objects;
 pub(crate) mod crypto_utils;
 pub(self) mod distributed_cert;
@@ -134,6 +135,7 @@ impl ClusterCryptoObjects {
         mut rsa_key_pool: RsaKeyPool,
         cn_san_replace_rules: CnSanReplaceRules,
         use_key_rules: UseKeyRules,
+        use_cert_rules: UseCertRules,
     ) -> Result<()> {
         let mut skid_edits = SkidEdits::new();
         let mut serial_number_edits = SerialNumberEdits::new();
@@ -148,6 +150,7 @@ impl ClusterCryptoObjects {
                 &mut rsa_key_pool,
                 &cn_san_replace_rules,
                 &use_key_rules,
+                &use_cert_rules,
                 &mut skid_edits,
                 &mut serial_number_edits,
             )?
@@ -156,10 +159,9 @@ impl ClusterCryptoObjects {
         for private_key in self.distributed_private_keys.values() {
             (**private_key)
                 .borrow_mut()
-                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules)?
+                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules, &use_cert_rules)?
         }
 
-        println!("- Regeneration complete, verifying...");
         self.assert_regeneration();
 
         Ok(())
@@ -533,11 +535,12 @@ impl ClusterCryptoObjects {
         discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
         cn_san_replace_rules: CnSanReplaceRules,
         use_key_rules: UseKeyRules,
+        use_cert_rules: UseCertRules,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);
         self.establish_relationships().context("establishing relationships")?;
-        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules)
+        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules, use_cert_rules)
             .context("regenerating crypto")?;
 
         Ok(())
