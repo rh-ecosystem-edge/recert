@@ -41,6 +41,13 @@ impl DistributedPublicKey {
         Ok(())
     }
 
+    pub(crate) fn regenerate_from_public(&mut self, new_public: &PublicKey) -> Result<()> {
+        self.key = new_public.clone();
+        self.regenerated = true;
+
+        Ok(())
+    }
+
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in self.locations.0.iter() {
             match location {

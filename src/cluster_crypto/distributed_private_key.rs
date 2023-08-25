@@ -10,8 +10,9 @@ use crate::{
     cnsanreplace::CnSanReplaceRules,
     file_utils::{get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::InMemoryK8sEtcd,
-    use_key::UseKeyRules,
     rsa_key_pool::RsaKeyPool,
+    use_cert::UseCertRules,
+    use_key::UseKeyRules,
 };
 use anyhow::{bail, Context, Result};
 use pkcs1::EncodeRsaPrivateKey;
@@ -58,6 +59,7 @@ impl DistributedPrivateKey {
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_replace_rules: &CnSanReplaceRules,
         use_key_rules: &UseKeyRules,
+        use_cert_rules: &UseCertRules,
     ) -> Result<()> {
         let original_signing_public_key = PublicKey::try_from(&self.key)?;
 
@@ -75,6 +77,7 @@ impl DistributedPrivateKey {
                 rsa_key_pool,
                 cn_san_replace_rules,
                 use_key_rules,
+                use_cert_rules,
                 None,
                 None,
             )?;

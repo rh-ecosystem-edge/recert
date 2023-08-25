@@ -16,6 +16,7 @@ async fn test_init() -> Result<()> {
         ],
         cluster_rename: Some("test-cluster,new-name".to_string()),
         use_key: vec![],
+        use_cert: vec![],
         kubeconfig: None,
     };
 

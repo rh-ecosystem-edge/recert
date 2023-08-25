@@ -26,18 +26,24 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) cluster_rename: Option<String>,
 
-    /// A list of CNs and the private keys to use for their certs.
-    /// By default, new keys will be generated for all CNs, this option allows you to use existing
-    /// keys instead.
-    /// Must come in pairs of CN and private key file path, separated by a space. For example:
-    /// --use-key "foo /etc/foo.key" --use-key "bar /etc/bar.key" will use the key in /etc/foo.key
-    /// for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
-    /// If more than one cert has the same CN, an error will occur and no certs will be regenerated.
+    /// A list of CNs and the private keys to use for their certs. By default, new keys will be
+    /// generated for all regenerated certificates, this option allows you to use existing keys
+    /// instead. Must come in pairs of CN and private key file path, separated by a space. For
+    /// example: --use-key "foo /etc/foo.key" --use-key "bar /etc/bar.key" will use the key in
+    /// /etc/foo.key for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
+    /// If more than one cert has the same CN, an error will occur and no certs will be
+    /// regenerated.
     #[arg(long)]
     pub(crate) use_key: Vec<String>,
+
+    /// Same as --use-key, but for when a cert needs to be replaced in its entirety, rather than
+    /// just being re-signed with a known private key. Certs replaced in this manner must not have
+    /// any children, as no private key is available to re-sign them. This is useful for certs that
+    /// we don't have the private key for, such admin-kubeconfig-signer.
+    #[arg(long)]
+    pub(crate) use_cert: Vec<String>,
 
     /// Deprecated
     #[arg(long)]
     pub(crate) kubeconfig: Option<String>,
 }
-
