@@ -14,20 +14,6 @@ in many different sites. By running the tool during the first boot of a host
 from said image, the new cluster will then have its own independent secret keys
 that are separate from other clusters deployed in the same manner.
 
-# TODO
-
-<details>
-  <summary>TODO List</summary>
-
-## Nice to have
-- [ ] Remove OLM package server hack
-- [ ] Convert from resource YAML to etcd key-value key more gracefuly
-- [ ] Find proof that root-ca private key is actually missing
-- [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
-- [ ] Fix all code TODO comments
-
-</details>
-
 ## Usage examples
 
 ### Local Development
@@ -91,11 +77,12 @@ sudo podman run --network=host -it --authfile ~/repos/bootstrap-in-place-poc/reg
 
 See `./run.sh` example
 
+</details>
+
 ### Run on SNO POC cluster
 
 See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
-</details>
 
 # Image build
 
@@ -104,3 +91,17 @@ export DOCKER_BUILDKIT=1
 docker build . -t quay.io/otuchfel/recert:latest
 docker push quay.io/otuchfel/recert:latest
 ```
+
+# TODO
+
+<details>
+  <summary>TODO List</summary>
+
+- [ ] Remove OLM package server hack
+- [ ] Convert from resource YAML to etcd key-value key more gracefuly
+- [ ] Find proof that root-ca private key is actually missing
+- [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
+- [ ] Fix all code TODO comments
+
+</details>
+
