@@ -1,5 +1,3 @@
-# Work in progress #
-
 # Design
 
 This document will give a description of how the recert tool works, along with
