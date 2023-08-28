@@ -730,7 +730,7 @@ only contain the cryptographic objects themselves in PEM format.
 
 Every time we encounter a cryptographic object during a scan, we note down
 where we found it. The reason for that is that we later, after regenerating the
-cryptographic object, have to write it back in where we found it.
+cryptographic object, have to write it back to where we found it.
 
 We do that using a rather involved `Location` type which encodes where a
 cryptographic object was found.
