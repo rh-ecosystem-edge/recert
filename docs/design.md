@@ -671,7 +671,7 @@ kubelet starts. As input, recert receives a list of directories and an etcd
 endpoint.
 
 The list of directories is where recert will look for cryptographic objects
-that it you want it to regenerate. The etcd endpoint is for the cluster's etcd
+that you want it to regenerate. The etcd endpoint is for the cluster's etcd
 database, where recert will look for Kubernetes resources that it knows might
 contain cryptographic objects.
 
