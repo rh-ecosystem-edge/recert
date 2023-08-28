@@ -573,7 +573,7 @@ the following ASN.1 struct definition:
 
 In other words, they're simply a sequence of two numbers.
 
-We usually find public keys in 2 forms:
+We usually find public keys in 3 forms:
 
 #### Certificate public key
 
@@ -588,7 +588,7 @@ applies to RSA.
 Their PEM tag is "RSA PUBLIC KEY", and their contents are simply the DER
 encoded RSAPublicKey struct above.
 
-### SPKI 
+#### SPKI 
 
 These are public keys encoded similarly to how they're included in
 certificates, which supports many different key algorithms.
