@@ -910,10 +910,11 @@ demonstrates why parents must be regenerated before children).
 
 ### Stage 4 - Commit
 
-All of our cryptographic objects have been regenerated, but we've only done this
-to their logical representation in our memory. We need to go object by object and
-re-write it back to etcd / filesystem, in all the locations we found it. There's not
-much else to say about this part, it's pretty straight-forward.
+All of our cryptographic objects have been regenerated, but we've only done
+this to their logical representation in our memory. We need to go object by
+object and re-write it back to etcd / filesystem, in all the locations we
+originally found it in. There's not much else to say about this part, it's
+pretty straight-forward.
 
 ### Stage 5 - OCP postprocessing 
 
