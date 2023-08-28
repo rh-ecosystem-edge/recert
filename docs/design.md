@@ -375,10 +375,10 @@ All certificates actually have an "issuer" field that tells you which
 certificate signed them, and a "subject" field, which tells you who the
 certificate was issued for. For non-root certificates, the issuer would usually
 be a root-certificate and the subject would usually be a domain name. For
-root-certificates, the "issuer" and "subject" fields are equal to the name of
-the CA. 
+root-certificates, the "issuer" and "subject" fields are both equal. Their
+value is simply the name of the CA. 
 
-Once you trust a bunch of root certificate, any time you're presented with a
+Once you trust a bunch of root certificates, any time you're presented with a
 non-root certificate, you can see check which other certificate issued (signed)
 that non-root certificate, and if that non-root certificate has been signed by
 a root certificate which you already trust, then you can also trust that the
