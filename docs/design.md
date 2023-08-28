@@ -168,8 +168,8 @@ of the private key associated with the known public key, has surely created
 this signature yourself. 
 
 No one else in the world can create a signature that successfully transforms
-without error into a valid piece of data when operated on with your public
-key.(although of course if you were uncareful and somehow let your private key
+without error into a valid piece of data when operated on with your public key.
+(although of course if you were uncareful and somehow let your private key
 leak, none of this is true).
 
 And so, in a way, you, the only person in the world who knows your private key,
