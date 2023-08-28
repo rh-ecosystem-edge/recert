@@ -379,7 +379,7 @@ root-certificates, the "issuer" and "subject" fields are both equal. Their
 value is simply the name of the CA. 
 
 Once you trust a bunch of root certificates, any time you're presented with a
-non-root certificate, you can see check which other certificate issued (signed)
+non-root certificate, you can check which other certificate issued (signed)
 that non-root certificate, and if that non-root certificate has been signed by
 a root certificate which you already trust, then you can also trust that the
 non-root certificate is telling the truth (since you know and trust your root
