@@ -920,7 +920,7 @@ pretty straight-forward.
 
 OLM has some annotation which for some reason contains the hash of one of the
 certificates, and because we changed the certificate, the hash no longer
-matches and so OLM becomes unhappy (and don't reconcile). We have specialized
+matches and so OLM becomes unhappy (and doesn't reconcile). We have specialized
 code to handle this little quirk and re-calculate that hash to make OLM happy.
 
 ## Customizations
