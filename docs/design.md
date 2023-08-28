@@ -595,7 +595,7 @@ certificates, which supports many different key algorithms.
 
 Their PEM tag is simply "PUBLIC KEY", and their contents are actually just the
 SubjectPublicKeyInfo (mentioned above. sometimes shortened to SPKI) struct
-(taken from the X.509 standard) encoded as DER.
+encoded as DER.
 
 As you can see, this struct also contains the algorithm identifier, and so it
 can be used to describe keys of other algorithms.
