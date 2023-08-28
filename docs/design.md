@@ -1005,3 +1005,7 @@ about the way we modify raw certs - but we received assurance that since
 certificates are just encoding+metadata for cryptographic keys, they are of no
 concern to FIPS. So as long as the keys/signatures themselves are created with
 OpenSSL, the certificate editing can be done with Rust.
+
+# SKID/AKID regeneration
+
+TODO: Document how we re-generate SKID/AKID fields
