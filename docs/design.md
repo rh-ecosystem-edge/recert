@@ -175,7 +175,7 @@ leak, none of this is true).
 And so, in a way, you, the only person in the world who knows your private key,
 have "vouched" for the string `I vote Foo for president!` by signing it with
 your private key. And anyone in the world who knows your public key can safely
-assume that you have vouched for "I vote Foo for president!", after verifying
+assume that you have vouched for `I vote Foo for president!`, after verifying
 the signature with your public key.
 
 The usefulness of such digital signatures will be made apparent later in the
