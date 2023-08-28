@@ -715,7 +715,7 @@ dataurl values, and so on.
 
 A lot of cryptographic objects reside on the filesystem itself instead of
 inside etcd, so recert supports scanning there as well. Currently known
-directories of interest for include `/etc/kubernetes`, `/var/lib/kubelet` and
+directories of interest include `/etc/kubernetes`, `/var/lib/kubelet` and
 `/etc/machine-config-daemon`.
 
 For every directory given as input, recert will recursively search for files
