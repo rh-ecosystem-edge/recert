@@ -2,7 +2,6 @@ use super::SUBJECT_ALTERNATIVE_NAME_OID;
 use crate::cnsanreplace::CnSanReplaceRules;
 use anyhow::bail;
 use anyhow::{Context, Result};
-use bcder::decode::DecodeError;
 use bcder::OctetString;
 use bcder::Oid;
 use bcder::Tag;
