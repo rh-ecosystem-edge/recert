@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::{crypto_utils::key_from_file, locations::LocationValueType},
-    file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
+    file_utils::{add_recert_edited_annotation, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     Customizations,
@@ -308,7 +308,8 @@ impl CertKeyPair {
     }
 
     pub(crate) async fn commit_k8s_cert(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;
 
         let cert_pem = pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?;
 
