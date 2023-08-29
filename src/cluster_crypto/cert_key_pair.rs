@@ -13,12 +13,10 @@ use super::{
 };
 use crate::{
     cluster_crypto::{crypto_utils::rsa_key_from_file, locations::LocationValueType},
-    cnsanreplace::CnSanReplaceRules,
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
-    use_cert::UseCertRules,
-    use_key::{self, UseKeyRules},
+    Customizations,
 };
 use anyhow::{bail, ensure, Context, Result};
 use bcder::BitString;
@@ -68,19 +66,16 @@ impl CertKeyPair {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn regenerate(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
-        cn_san_replace_rules: &CnSanReplaceRules,
-        use_key_rules: &UseKeyRules,
-        use_cert_rules: &UseCertRules,
-        extend_expiration: bool,
+        customizations: &Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
-        let alternative_certificate = use_cert_rules
+        let alternative_certificate = customizations
+            .use_cert_rules
             .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.original.subject_name())
             .context("evaluating replacement cert")?;
 
@@ -88,15 +83,8 @@ impl CertKeyPair {
             // This is the classic case, user has not provided any replacement cert for this cert,
             // so simply regenerate the cert and all of its children
             None => {
-                let (new_cert_subject_key_pair, rsa_private_key, new_cert) = self.re_sign_cert(
-                    sign_with,
-                    rsa_key_pool,
-                    cn_san_replace_rules,
-                    use_key_rules,
-                    extend_expiration,
-                    skid_edits,
-                    serial_number_edits,
-                )?;
+                let (new_cert_subject_key_pair, rsa_private_key, new_cert) =
+                    self.re_sign_cert(sign_with, rsa_key_pool, customizations, skid_edits, serial_number_edits)?;
                 (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(&new_cert)?;
 
                 for signee in &mut self.signees {
@@ -104,10 +92,7 @@ impl CertKeyPair {
                         &(*self.distributed_cert).borrow().certificate.public_key,
                         Some(&new_cert_subject_key_pair),
                         rsa_key_pool,
-                        cn_san_replace_rules,
-                        use_key_rules,
-                        use_cert_rules,
-                        extend_expiration,
+                        customizations,
                         Some(skid_edits),
                         Some(serial_number_edits),
                     )?;
@@ -158,14 +143,11 @@ impl CertKeyPair {
     ///
     /// This function will return an error if .
     #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
-        cn_san_rules: &CnSanReplaceRules,
-        use_key_rules: &use_key::UseKeyRules,
-        extend_expiration: bool,
+        customizations: &Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
@@ -184,7 +166,8 @@ impl CertKeyPair {
             None
         };
 
-        let (self_new_rsa_private_key, self_new_key_pair) = if let Some(use_key_path) = use_key_rules
+        let (self_new_rsa_private_key, self_new_key_pair) = if let Some(use_key_path) = customizations
+            .use_key_rules
             .key_file(tbs_certificate.subject.clone())
             .context("getting use key file from cert")?
         {
@@ -259,7 +242,12 @@ impl CertKeyPair {
         }
 
         // Perform all requested mutations on the certificate
-        cert_mutations::mutate_cert(&mut tbs_certificate, cn_san_rules, extend_expiration).context("mutating cert")?;
+        cert_mutations::mutate_cert(
+            &mut tbs_certificate,
+            &customizations.cn_san_replace_rules,
+            customizations.extend_expiration,
+        )
+        .context("mutating cert")?;
 
         // The to-be-signed ceritifcate, encoded to DER, is the bytes we sign
         let tbs_der = encode_tbs_cert_to_der(&tbs_certificate)?;

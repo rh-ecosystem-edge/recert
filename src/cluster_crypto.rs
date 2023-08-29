@@ -12,12 +12,10 @@ use crate::{
         cert_key_pair::{SerialNumberEdits, SkidEdits},
         signee::Signee,
     },
-    cnsanreplace::CnSanReplaceRules,
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
-    use_cert::UseCertRules,
-    use_key::UseKeyRules,
+    Customizations,
 };
 use anyhow::{bail, Context, Result};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
@@ -130,14 +128,7 @@ impl ClusterCryptoObjects {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    fn regenerate_crypto(
-        &mut self,
-        mut rsa_key_pool: RsaKeyPool,
-        cn_san_replace_rules: CnSanReplaceRules,
-        use_key_rules: UseKeyRules,
-        use_cert_rules: UseCertRules,
-        extend_expiration: bool,
-    ) -> Result<()> {
+    fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, customizations: Customizations) -> Result<()> {
         let mut skid_edits = SkidEdits::new();
         let mut serial_number_edits = SerialNumberEdits::new();
 
@@ -149,19 +140,14 @@ impl ClusterCryptoObjects {
             (**cert_key_pair).borrow_mut().regenerate(
                 None,
                 &mut rsa_key_pool,
-                &cn_san_replace_rules,
-                &use_key_rules,
-                &use_cert_rules,
-                extend_expiration,
+                &customizations,
                 &mut skid_edits,
                 &mut serial_number_edits,
             )?
         }
 
         for private_key in self.distributed_private_keys.values() {
-            (**private_key)
-                .borrow_mut()
-                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules, &use_cert_rules, extend_expiration)?
+            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, &customizations)?
         }
 
         self.assert_regeneration();
@@ -535,16 +521,12 @@ impl ClusterCryptoObjects {
     pub(crate) fn process_objects(
         &mut self,
         discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
-        cn_san_replace_rules: CnSanReplaceRules,
-        use_key_rules: UseKeyRules,
-        use_cert_rules: UseCertRules,
-        extend_expiration: bool,
+        customizations: Customizations,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);
         self.establish_relationships().context("establishing relationships")?;
-        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules, use_cert_rules, extend_expiration)
-            .context("regenerating crypto")?;
+        self.regenerate_crypto(rsa_pool, customizations).context("regenerating crypto")?;
 
         Ok(())
     }

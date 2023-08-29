@@ -31,28 +31,11 @@ async fn main() -> Result<()> {
 }
 
 async fn main_internal(args: cli::Cli) -> Result<()> {
-    let (
-        static_dirs,
-        mut cluster_crypto,
-        memory_etcd,
-        cn_san_replace_rules,
-        use_key_rules,
-        use_cert_rules,
-        cluster_rename,
-        extend_expiration,
-    ) = init(args).await.context("initializing")?;
+    let (static_dirs, mut cluster_crypto, memory_etcd, customizations, cluster_rename) = init(args).await.context("initializing")?;
 
-    recertify(
-        Arc::clone(&memory_etcd),
-        &mut cluster_crypto,
-        static_dirs.clone(),
-        cn_san_replace_rules,
-        use_key_rules,
-        use_cert_rules,
-        extend_expiration
-    )
-    .await
-    .context("scanning and recertification")?;
+    recertify(Arc::clone(&memory_etcd), &mut cluster_crypto, static_dirs.clone(), customizations)
+        .await
+        .context("scanning and recertification")?;
 
     finalize(memory_etcd, &mut cluster_crypto, cluster_rename, static_dirs)
         .await
@@ -63,17 +46,21 @@ async fn main_internal(args: cli::Cli) -> Result<()> {
     Ok(())
 }
 
+pub(crate) struct Customizations {
+    cn_san_replace_rules: CnSanReplaceRules,
+    use_key_rules: UseKeyRules,
+    use_cert_rules: UseCertRules,
+    extend_expiration: bool,
+}
+
 async fn init(
     cli: cli::Cli,
 ) -> Result<(
     Vec<PathBuf>,
     ClusterCryptoObjects,
     Arc<InMemoryK8sEtcd>,
-    CnSanReplaceRules,
-    UseKeyRules,
-    UseCertRules,
+    Customizations,
     Option<ClusterRenameParameters>,
-    bool,
 )> {
     let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None)
         .await
@@ -96,19 +83,27 @@ async fn init(
     // generating new ones
     let use_cert_rules = UseCertRules::try_from(cli.use_cert).context("parsing cli use-key")?;
 
+    let cluster_rename = if let Some(cluster_rename) = cli.cluster_rename {
+        Some(ClusterRenameParameters::try_from(cluster_rename)?)
+    } else {
+        None
+    };
+
+    let extend_expiration = cli.extend_expiration;
+
+    let customizations = Customizations {
+        cn_san_replace_rules,
+        use_key_rules,
+        use_cert_rules,
+        extend_expiration,
+    };
+
     Ok((
         cli.static_dir,
         cluster_crypto,
         in_memory_etcd_client,
-        cn_san_replace_rules,
-        use_key_rules,
-        use_cert_rules,
-        if let Some(cluster_rename) = cli.cluster_rename {
-            Some(ClusterRenameParameters::try_from(cluster_rename)?)
-        } else {
-            None
-        },
-        cli.extend_expiration,
+        customizations,
+        cluster_rename,
     ))
 }
 
@@ -116,10 +111,7 @@ async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     static_dirs: Vec<PathBuf>,
-    cn_san_replace_rules: CnSanReplaceRules,
-    use_key_rules: UseKeyRules,
-    use_cert_rules: UseCertRules,
-    extend_expiration: bool,
+    customizations: Customizations,
 ) -> Result<()> {
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
@@ -132,14 +124,7 @@ async fn recertify(
 
     // We discovered all crypto objects, process them
     cluster_crypto
-        .process_objects(
-            all_discovered_crypto_objects,
-            cn_san_replace_rules,
-            use_key_rules,
-            use_cert_rules,
-            extend_expiration,
-            rsa_pool,
-        )
+        .process_objects(all_discovered_crypto_objects, customizations, rsa_pool)
         .context("processing discovered objects")?;
 
     Ok(())

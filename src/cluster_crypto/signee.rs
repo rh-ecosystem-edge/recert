@@ -3,7 +3,7 @@ use super::{
     distributed_jwt::DistributedJwt,
     keys,
 };
-use crate::{cnsanreplace::CnSanReplaceRules, rsa_key_pool::RsaKeyPool, use_cert::UseCertRules, use_key::UseKeyRules};
+use crate::{rsa_key_pool::RsaKeyPool, Customizations};
 use anyhow::{bail, Context, Result};
 use std::{
     self,
@@ -31,16 +31,12 @@ impl Display for Signee {
 }
 
 impl Signee {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn regenerate(
         &mut self,
         original_signing_public_key: &keys::PublicKey,
         new_signing_key: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
-        cn_san_replace_rules: &CnSanReplaceRules,
-        use_key_rules: &UseKeyRules,
-        use_cert_rules: &UseCertRules,
-        extend_expiration: bool,
+        customizations: &Customizations,
         skid_edits: Option<&mut SkidEdits>,
         serial_number_edits: Option<&mut SerialNumberEdits>,
     ) -> Result<()> {
@@ -49,10 +45,7 @@ impl Signee {
                 (**cert_key_pair).borrow_mut().regenerate(
                     new_signing_key,
                     rsa_key_pool,
-                    cn_san_replace_rules,
-                    use_key_rules,
-                    use_cert_rules,
-                    extend_expiration,
+                    customizations,
                     skid_edits.context("cert regeneration requires skid edits")?,
                     serial_number_edits.context("cert regeneration requires serial number edits")?,
                 )?;
