@@ -2,33 +2,32 @@ use self::key_identifiers::{HashableKeyID, HashableSerialNumber};
 
 use super::{
     certificate::Certificate,
-    crypto_utils::encode_tbs_cert_to_der,
+    crypto_utils::{self, encode_tbs_cert_to_der},
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
-    keys::PrivateKey,
     locations::{FileContentLocation, FileLocation, K8sLocation, Location},
     pem_utils,
     signee::Signee,
 };
 use crate::{
-    cluster_crypto::{crypto_utils::rsa_key_from_file, locations::LocationValueType},
+    cluster_crypto::{crypto_utils::key_from_file, locations::LocationValueType},
     file_utils::{get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     Customizations,
 };
 use anyhow::{bail, ensure, Context, Result};
-use bcder::BitString;
+use bcder::{BitString, Oid};
 use bytes::Bytes;
 use fn_error_context::context;
-use rsa::{signature::Signer, RsaPrivateKey};
+use rsa::signature::Signer;
 use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
 use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
 use x509_certificate::{
     rfc5280::{self, AlgorithmIdentifier, CertificateSerialNumber},
-    CapturedX509Certificate, InMemorySigningKeyPair, KeyAlgorithm, Sign, X509Certificate,
+    CapturedX509Certificate, EcdsaCurve, InMemorySigningKeyPair, KeyAlgorithm, Sign, X509Certificate,
 };
 
 mod cert_mutations;
@@ -83,7 +82,7 @@ impl CertKeyPair {
             // This is the classic case, user has not provided any replacement cert for this cert,
             // so simply regenerate the cert and all of its children
             None => {
-                let (new_cert_subject_key_pair, rsa_private_key, new_cert) =
+                let (new_cert_subject_key_pair, new_cert) =
                     self.re_sign_cert(sign_with, rsa_key_pool, customizations, skid_edits, serial_number_edits)?;
                 (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(&new_cert)?;
 
@@ -101,7 +100,7 @@ impl CertKeyPair {
                 if let Some(associated_public_key) = &mut self.associated_public_key {
                     (*associated_public_key)
                         .borrow_mut()
-                        .regenerate(&PrivateKey::Rsa(rsa_private_key.clone()))?;
+                        .regenerate((&new_cert_subject_key_pair).try_into()?)?;
                 }
 
                 // This condition exists because not all certs originally had a private key associated with
@@ -109,7 +108,7 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
-                    (**distributed_private_key).borrow_mut().key = PrivateKey::Rsa(rsa_private_key)
+                    (**distributed_private_key).borrow_mut().key = (&new_cert_subject_key_pair).try_into()?;
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
@@ -150,7 +149,7 @@ impl CertKeyPair {
         customizations: &Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
-    ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
+    ) -> Result<(InMemorySigningKeyPair, CapturedX509Certificate)> {
         // Clone the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;
         let certificate: &rfc5280::Certificate = cert.as_ref();
@@ -166,21 +165,38 @@ impl CertKeyPair {
             None
         };
 
-        let (self_new_rsa_private_key, self_new_key_pair) = if let Some(use_key_path) = customizations
+        // mkoid 1.2.840.113549.1.1.1
+        let rsa_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 134, 247, 13, 1, 1, 1]));
+
+        // mkoid 1.2.840.10045.2.1
+        let ec_public_key_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 206, 61, 2, 1]));
+
+        let self_new_key_pair = if let Some(use_key_path) = customizations
             .use_key_rules
             .key_file(tbs_certificate.subject.clone())
             .context("getting use key file from cert")?
         {
             println!("Using key from file: {:?} because CN rules match", use_key_path);
-            rsa_key_from_file(&use_key_path).context("getting rsa key from file")?
-        } else {
+            key_from_file(&use_key_path).context("getting rsa key from file")?
+        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid.clone() {
             // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
             // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
             // key too large
             let rsa_key_size = tbs_certificate.subject_public_key_info.subject_public_key.bit_len() - 112;
 
-            // Generate a new RSA key for this cert
+            // Draw an new RSA key from the pool for this cert
             rsa_key_pool.get(rsa_key_size).context("getting rsa key")?
+        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ec_public_key_oid.clone() {
+            if let Some(params) = &tbs_certificate.subject_public_key_info.algorithm.parameters {
+                let curve_oid = params.decode_oid()?;
+                let curve = EcdsaCurve::try_from(&curve_oid)?;
+
+                crypto_utils::generate_ec_key(curve).context("generating ec key")?
+            } else {
+                bail!("ECDSA key missing parameters");
+            }
+        } else {
+            bail!("unsupported key type");
         };
 
         // Replace just the public key info in the to-be-signed part with the newly generated RSA
@@ -266,7 +282,7 @@ impl CertKeyPair {
         // type we use in our structs
         let cert = CapturedX509Certificate::from_der(X509Certificate::from(cert).encode_der()?)?;
 
-        Ok((self_new_key_pair, self_new_rsa_private_key, cert))
+        Ok((self_new_key_pair, cert))
     }
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {

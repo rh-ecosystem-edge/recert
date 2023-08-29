@@ -3,16 +3,13 @@ use anyhow::{bail, Context, Result};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
 use pkcs1::DecodeRsaPrivateKey;
-use rsa::{
-    self,
-    pkcs8::{DecodePrivateKey, EncodePrivateKey},
-    RsaPrivateKey,
-};
+use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
 use serde_json::{Map, Value};
+use std::process::Stdio;
 use std::{cell::RefCell, io::Write, rc::Rc};
 use std::{path::PathBuf, process::Command as StdCommand};
 use tokio::process::Command;
-use x509_certificate::{rfc5280, InMemorySigningKeyPair};
+use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair};
 
 /// Shell out to openssl to verify that a certificate is signed by a given signing certificate. We
 /// use this when our certificate lib doesn't support the signature algorithm used by the
@@ -79,72 +76,85 @@ pub(crate) fn verify_jwt(
     .verify_token::<Map<String, Value>>(&distributed_jwt.jwt.str, None)
 }
 
-pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
-    let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
-        String::from_utf8(
-            Command::new("openssl")
-                .args(["genrsa", &key_size.to_string()])
-                .output()
-                .await
-                .context("openssl genrsa")?
-                .stdout,
-        )
-        .context("converting openssl key to utf-8")?
-        .to_string()
-        .as_str(),
+pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<InMemorySigningKeyPair> {
+    let private_key_parsed_pem = &pem::parse(
+        Command::new("openssl")
+            .args(["genrsa", &key_size.to_string()])
+            .output()
+            .await
+            .context("openssl genrsa")?
+            .stdout,
     )
     .context("private from pem")?;
 
-    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
-    Ok((rsa_private_key, key_pair))
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(private_key_parsed_pem.contents()).context("pair from der")?;
+    Ok(key_pair)
 }
 
-pub(crate) fn generate_rsa_key(key_size: usize) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
-    let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(
-        String::from_utf8(
-            StdCommand::new("openssl")
-                .args(["genrsa", &key_size.to_string()])
-                .output()
-                .context("openssl genrsa")?
-                .stdout,
-        )
-        .context("converting openssl key to utf-8")?
-        .to_string()
-        .as_str(),
+pub(crate) fn generate_rsa_key(key_size: usize) -> Result<InMemorySigningKeyPair> {
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_pem(
+        StdCommand::new("openssl")
+            .args(["genrsa", &key_size.to_string()])
+            .output()
+            .context("openssl genrsa")?
+            .stdout,
     )
-    .context("private from pem")?;
+    .context("pair from der")?;
 
-    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
-    Ok((rsa_private_key, key_pair))
+    Ok(key_pair)
 }
 
-pub(crate) fn rsa_key_from_pkcs8_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
-    let rsa_private_key = RsaPrivateKey::from_pkcs8_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
-        .context("private from pem")?;
+pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<InMemorySigningKeyPair> {
+    let gen_sec1_ec = StdCommand::new("openssl")
+        .args([
+            "ecparam",
+            "-name",
+            match ec_curve {
+                EcdsaCurve::Secp256r1 => "prime256v1",
+                EcdsaCurve::Secp384r1 => "secp384r1",
+            },
+            "-genkey",
+            "-noout",
+            "-outform",
+            "DER",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("openssl ecdsa")?;
 
-    let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
-    Ok((rsa_private_key, key_pair))
+    let pkcs8_der_data = StdCommand::new("openssl")
+        .args(["pkcs8", "-topk8", "-nocrypt", "-inform", "DER", "-outform", "DER"])
+        .stdin(gen_sec1_ec.stdout.unwrap())
+        .output()
+        .context("openssl pkcs8")?
+        .stdout;
+
+    let key_pair = InMemorySigningKeyPair::from_pkcs8_der(pkcs8_der_data).context("pair from der")?;
+
+    Ok(key_pair)
 }
 
-pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+pub(crate) fn key_from_pkcs8_file(path: &PathBuf) -> Result<InMemorySigningKeyPair> {
+    InMemorySigningKeyPair::from_pkcs8_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
+        .context("pair from der")
+}
+
+pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<InMemorySigningKeyPair> {
     let rsa_private_key = RsaPrivateKey::from_pkcs1_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
         .context("private from pem")?;
-
     let rsa_pkcs8_der_bytes: Vec<u8> = rsa_private_key.to_pkcs8_der().context("private to der")?.as_bytes().into();
     let key_pair = InMemorySigningKeyPair::from_pkcs8_der(rsa_pkcs8_der_bytes).context("pair from der")?;
-    Ok((rsa_private_key, key_pair))
+    Ok(key_pair)
 }
 
-pub(crate) fn rsa_key_from_file(path: &PathBuf) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+pub(crate) fn key_from_file(path: &PathBuf) -> Result<InMemorySigningKeyPair> {
     let parsed_pem = pem::parse(std::fs::read(path).context("reading private key file")?).context("parsing private key file")?;
     let pem_tag = parsed_pem.tag();
 
     match pem_tag {
         "RSA PRIVATE KEY" => rsa_key_from_pkcs1_file(path),
-        "PRIVATE KEY" => rsa_key_from_pkcs8_file(path),
+        "EC PRIVATE KEY" => bail!("loading non PKCS#8 EC private keys is not yet supported"),
+        "PRIVATE KEY" => key_from_pkcs8_file(path),
         _ => bail!("unknown private key format"),
     }
 }

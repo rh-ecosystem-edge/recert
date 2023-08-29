@@ -34,8 +34,8 @@ impl Display for DistributedPublicKey {
 }
 
 impl DistributedPublicKey {
-    pub(crate) fn regenerate(&mut self, new_private: &PrivateKey) -> Result<()> {
-        self.key = PublicKey::try_from(new_private)?;
+    pub(crate) fn regenerate(&mut self, new_private: PrivateKey) -> Result<()> {
+        self.key = PublicKey::try_from(&new_private)?;
         self.regenerated = true;
 
         Ok(())

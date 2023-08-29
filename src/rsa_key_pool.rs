@@ -1,12 +1,11 @@
 use super::cluster_crypto::crypto_utils::{generate_rsa_key, generate_rsa_key_async};
 use anyhow::Result;
 use futures_util::future::join_all;
-use rsa::RsaPrivateKey;
 use x509_certificate::InMemorySigningKeyPair;
 
 pub struct RsaKeyPool {
-    pub(crate) keys_2048: Vec<(RsaPrivateKey, InMemorySigningKeyPair)>,
-    pub(crate) keys_4096: Vec<(RsaPrivateKey, InMemorySigningKeyPair)>,
+    pub(crate) keys_2048: Vec<InMemorySigningKeyPair>,
+    pub(crate) keys_4096: Vec<InMemorySigningKeyPair>,
 }
 
 impl RsaKeyPool {
@@ -36,7 +35,7 @@ impl RsaKeyPool {
         })
     }
 
-    pub fn get(&mut self, size: usize) -> Result<(RsaPrivateKey, InMemorySigningKeyPair)> {
+    pub fn get(&mut self, size: usize) -> Result<InMemorySigningKeyPair> {
         let size = if size != 512 && size != 1024 && size != 2048 && size != 4096 {
             // HACK: If the size is not a power of 2, this is probably not RSA.
             // TODO: Remove this hack once we support non-RSA keys

@@ -1,8 +1,8 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
 use p256::pkcs8::EncodePublicKey;
-use pkcs1::EncodeRsaPrivateKey;
+use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey};
 use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
 use rsa::RsaPrivateKey;
 use std::{
@@ -11,12 +11,31 @@ use std::{
     io::Write,
     process::{Command, Stdio},
 };
+use x509_certificate::InMemorySigningKeyPair;
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum PrivateKey {
     Rsa(RsaPrivateKey),
     Ec(Bytes),
+}
+
+impl TryFrom<&InMemorySigningKeyPair> for PrivateKey {
+    type Error = Error;
+
+    fn try_from(value: &InMemorySigningKeyPair) -> std::result::Result<Self, Self::Error> {
+        Ok(match value {
+            InMemorySigningKeyPair::Ecdsa(_, _, vec) => PrivateKey::Ec(Bytes::copy_from_slice(vec.as_ref())),
+            InMemorySigningKeyPair::Ed25519(_) => todo!(),
+            InMemorySigningKeyPair::Rsa(_, vec) => {
+                let rsa_private_key = RsaPrivateKey::from_pkcs1_der(vec.as_ref()).context(format!(
+                    "converting in memory pair to RSA PrivateKey {:?}",
+                    Bytes::copy_from_slice(vec.as_ref())
+                ))?;
+                PrivateKey::Rsa(rsa_private_key)
+            }
+        })
+    }
 }
 
 impl std::fmt::Debug for PrivateKey {
@@ -44,7 +63,7 @@ pub(crate) enum PublicKey {
 }
 
 impl TryFrom<&PrivateKey> for PublicKey {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(priv_key: &PrivateKey) -> Result<Self> {
         Ok(match priv_key {
