@@ -41,13 +41,11 @@ fn mutate_expiration(tbs_certificate: &mut TbsCertificate, extend_expiration: bo
         x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
     };
 
-    let (before, after) = (not_before, not_after);
-
     let now = chrono::Utc::now();
-    let extension = now - before;
-
     let extended_not_before = now;
-    let extended_not_after = after + extension;
+
+    let extension = now - not_before;
+    let extended_not_after = not_after + extension;
 
     tbs_certificate.validity.not_before = extended_not_before.into();
     tbs_certificate.validity.not_after = extended_not_after.into();
