@@ -60,7 +60,7 @@ impl DistributedPrivateKey {
             PublicKey::Ec(_) => 0,
         };
 
-        let (self_new_rsa_private_key, self_new_key_pair) = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
+        let self_new_key_pair = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
 
         for signee in &mut self.signees {
             signee.regenerate(
@@ -73,11 +73,11 @@ impl DistributedPrivateKey {
             )?;
         }
 
-        self.key = PrivateKey::Rsa(self_new_rsa_private_key);
+        self.key = (&self_new_key_pair).try_into()?;
         self.regenerated = true;
 
         if let Some(public_key) = &self.associated_distributed_public_key {
-            (*public_key).borrow_mut().regenerate(&self.key)?;
+            (*public_key).borrow_mut().regenerate(self.key.clone())?;
         }
 
         Ok(())
