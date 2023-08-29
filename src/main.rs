@@ -46,6 +46,7 @@ async fn main_internal(args: cli::Cli) -> Result<()> {
     Ok(())
 }
 
+/// All the user requested customizations, coalesced into a single struct for convenience
 pub(crate) struct Customizations {
     cn_san_replace_rules: CnSanReplaceRules,
     use_key_rules: UseKeyRules,
