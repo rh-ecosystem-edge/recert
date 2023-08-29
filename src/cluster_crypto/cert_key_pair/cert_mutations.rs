@@ -12,8 +12,46 @@ use x509_cert::ext::pkix::SubjectAltName;
 use x509_certificate::rfc3280::{AttributeTypeAndValue, Name};
 use x509_certificate::{rfc3280, rfc4519::OID_COMMON_NAME, rfc5280::TbsCertificate};
 
-pub(crate) fn mutate_cert(tbs_certificate: &mut TbsCertificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
+pub(crate) fn mutate_cert(
+    tbs_certificate: &mut TbsCertificate,
+    cn_san_replace_rules: &CnSanReplaceRules,
+    extend_expiration: bool,
+) -> Result<()> {
     mutate_cert_cn_san(tbs_certificate, cn_san_replace_rules).context("mutating CN/SAN")?;
+    mutate_expiration(tbs_certificate, extend_expiration).context("extending expiration")?;
+    Ok(())
+}
+
+fn mutate_expiration(tbs_certificate: &mut TbsCertificate, extend_expiration: bool) -> Result<()> {
+    if !extend_expiration {
+        return Ok(());
+    }
+
+    let (not_before, not_after) = match &tbs_certificate.validity.not_before {
+        x509_certificate::asn1time::Time::UtcTime(not_before) => {
+            match &tbs_certificate.validity.not_after {
+                x509_certificate::asn1time::Time::UtcTime(not_after) => {
+                    // Dereferncing is the only way to get a chrono::DateTime out of the
+                    // x509_certificate::asn1time::UtcTime struct.
+                    (*(not_before.clone()), *(not_after.clone()))
+                }
+                x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
+            }
+        }
+        x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
+    };
+
+    let (before, after) = (not_before, not_after);
+
+    let now = chrono::Utc::now();
+    let extension = now - before;
+
+    let extended_not_before = now;
+    let extended_not_after = after + extension;
+
+    tbs_certificate.validity.not_before = extended_not_before.into();
+    tbs_certificate.validity.not_after = extended_not_after.into();
+
     Ok(())
 }
 
