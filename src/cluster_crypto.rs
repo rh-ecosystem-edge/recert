@@ -136,6 +136,7 @@ impl ClusterCryptoObjects {
         cn_san_replace_rules: CnSanReplaceRules,
         use_key_rules: UseKeyRules,
         use_cert_rules: UseCertRules,
+        extend_expiration: bool,
     ) -> Result<()> {
         let mut skid_edits = SkidEdits::new();
         let mut serial_number_edits = SerialNumberEdits::new();
@@ -151,6 +152,7 @@ impl ClusterCryptoObjects {
                 &cn_san_replace_rules,
                 &use_key_rules,
                 &use_cert_rules,
+                extend_expiration,
                 &mut skid_edits,
                 &mut serial_number_edits,
             )?
@@ -159,7 +161,7 @@ impl ClusterCryptoObjects {
         for private_key in self.distributed_private_keys.values() {
             (**private_key)
                 .borrow_mut()
-                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules, &use_cert_rules)?
+                .regenerate(&mut rsa_key_pool, &cn_san_replace_rules, &use_key_rules, &use_cert_rules, extend_expiration)?
         }
 
         self.assert_regeneration();
@@ -536,11 +538,12 @@ impl ClusterCryptoObjects {
         cn_san_replace_rules: CnSanReplaceRules,
         use_key_rules: UseKeyRules,
         use_cert_rules: UseCertRules,
+        extend_expiration: bool,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);
         self.establish_relationships().context("establishing relationships")?;
-        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules, use_cert_rules)
+        self.regenerate_crypto(rsa_pool, cn_san_replace_rules, use_key_rules, use_cert_rules, extend_expiration)
             .context("regenerating crypto")?;
 
         Ok(())

@@ -60,6 +60,7 @@ impl DistributedPrivateKey {
         cn_san_replace_rules: &CnSanReplaceRules,
         use_key_rules: &UseKeyRules,
         use_cert_rules: &UseCertRules,
+        extend_expiration: bool,
     ) -> Result<()> {
         let original_signing_public_key = PublicKey::try_from(&self.key)?;
 
@@ -78,6 +79,7 @@ impl DistributedPrivateKey {
                 cn_san_replace_rules,
                 use_key_rules,
                 use_cert_rules,
+                extend_expiration,
                 None,
                 None,
             )?;

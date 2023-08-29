@@ -31,8 +31,16 @@ async fn main() -> Result<()> {
 }
 
 async fn main_internal(args: cli::Cli) -> Result<()> {
-    let (static_dirs, mut cluster_crypto, memory_etcd, cn_san_replace_rules, use_key_rules, use_cert_rules, cluster_rename) =
-        init(args).await.context("initializing")?;
+    let (
+        static_dirs,
+        mut cluster_crypto,
+        memory_etcd,
+        cn_san_replace_rules,
+        use_key_rules,
+        use_cert_rules,
+        cluster_rename,
+        extend_expiration,
+    ) = init(args).await.context("initializing")?;
 
     recertify(
         Arc::clone(&memory_etcd),
@@ -41,6 +49,7 @@ async fn main_internal(args: cli::Cli) -> Result<()> {
         cn_san_replace_rules,
         use_key_rules,
         use_cert_rules,
+        extend_expiration
     )
     .await
     .context("scanning and recertification")?;
@@ -64,6 +73,7 @@ async fn init(
     UseKeyRules,
     UseCertRules,
     Option<ClusterRenameParameters>,
+    bool,
 )> {
     let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None)
         .await
@@ -98,6 +108,7 @@ async fn init(
         } else {
             None
         },
+        cli.extend_expiration,
     ))
 }
 
@@ -108,6 +119,7 @@ async fn recertify(
     cn_san_replace_rules: CnSanReplaceRules,
     use_key_rules: UseKeyRules,
     use_cert_rules: UseCertRules,
+    extend_expiration: bool,
 ) -> Result<()> {
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
@@ -125,6 +137,7 @@ async fn recertify(
             cn_san_replace_rules,
             use_key_rules,
             use_cert_rules,
+            extend_expiration,
             rsa_pool,
         )
         .context("processing discovered objects")?;

@@ -43,6 +43,11 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) use_cert: Vec<String>,
 
+    /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and
+    /// change their issue date to now.
+    #[arg(long, default_value_t = false)]
+    pub(crate) extend_expiration: bool, 
+
     /// Deprecated
     #[arg(long)]
     pub(crate) kubeconfig: Option<String>,

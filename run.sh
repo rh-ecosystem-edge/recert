@@ -34,7 +34,8 @@ cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
 	--cn-san-replace "api.test-cluster.redhat.com api.new-name.foo.com" \
 	--cn-san-replace "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com" \
 	--cluster-rename new-name,foo.com \
-	--use-cert example.crt
+	--use-cert example.crt \
+    --extend-expiration
 
 # Dump etcd after changes
 dump "$CLUSTER_DIR/etcd_dump"

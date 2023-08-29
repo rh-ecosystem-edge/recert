@@ -76,6 +76,7 @@ impl CertKeyPair {
         cn_san_replace_rules: &CnSanReplaceRules,
         use_key_rules: &UseKeyRules,
         use_cert_rules: &UseCertRules,
+        extend_expiration: bool,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
@@ -92,6 +93,7 @@ impl CertKeyPair {
                     rsa_key_pool,
                     cn_san_replace_rules,
                     use_key_rules,
+                    extend_expiration,
                     skid_edits,
                     serial_number_edits,
                 )?;
@@ -105,6 +107,7 @@ impl CertKeyPair {
                         cn_san_replace_rules,
                         use_key_rules,
                         use_cert_rules,
+                        extend_expiration,
                         Some(skid_edits),
                         Some(serial_number_edits),
                     )?;
@@ -127,7 +130,7 @@ impl CertKeyPair {
             // User asked us to use their provided cert instead of this one, so we simply replace
             // it. If the cert has any children, we can't continue as we don't have the private
             // key for the user-provided cert to use to regenerate the children, so we error
-            // out.
+            // out. We also cannot extend its expiration even if extend_expiration is true.
             Some(replacement_cert) => {
                 ensure!(self.signees.is_empty(), "replacement cert cannot be used with signees");
 
@@ -155,12 +158,14 @@ impl CertKeyPair {
     ///
     /// This function will return an error if .
     #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
         rsa_key_pool: &mut RsaKeyPool,
         cn_san_rules: &CnSanReplaceRules,
         use_key_rules: &use_key::UseKeyRules,
+        extend_expiration: bool,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(InMemorySigningKeyPair, RsaPrivateKey, CapturedX509Certificate)> {
@@ -254,7 +259,7 @@ impl CertKeyPair {
         }
 
         // Perform all requested mutations on the certificate
-        cert_mutations::mutate_cert(&mut tbs_certificate, cn_san_rules).context("mutating cert")?;
+        cert_mutations::mutate_cert(&mut tbs_certificate, cn_san_rules, extend_expiration).context("mutating cert")?;
 
         // The to-be-signed ceritifcate, encoded to DER, is the bytes we sign
         let tbs_der = encode_tbs_cert_to_der(&tbs_certificate)?;

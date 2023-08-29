@@ -18,6 +18,7 @@ async fn test_init() -> Result<()> {
         use_key: vec![],
         use_cert: vec![],
         kubeconfig: None,
+        extend_expiration: false,
     };
 
     main_internal(args).await
