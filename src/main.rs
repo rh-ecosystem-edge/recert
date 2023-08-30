@@ -15,9 +15,10 @@ mod cnsanreplace;
 mod file_utils;
 mod json_tools;
 mod k8s_etcd;
-mod rsa_key_pool;
 mod ocp_postprocess;
+mod rsa_key_pool;
 mod rules;
+mod ulimit;
 mod use_cert;
 mod use_key;
 
@@ -26,6 +27,7 @@ mod tests;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    ulimit::set_max_open_files_limit();
     let args = cli::Cli::parse();
     main_internal(args).await
 }

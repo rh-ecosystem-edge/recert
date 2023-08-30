@@ -1641,6 +1641,7 @@ dependencies = [
  "jwt-simple",
  "lazy-regex",
  "lazy_static",
+ "libc",
  "num-bigint",
  "p256",
  "pem 2.0.1",

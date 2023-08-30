@@ -24,7 +24,6 @@ dump "$BACKUP_CLUSTER_DIR/etcd_dump"
 wait
 
 # Run utility
-ulimit -n 999999
 cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
 	--etcd-endpoint localhost:2379 \
 	--static-dir "$CLUSTER_DIR"/kubernetes \
