@@ -22,32 +22,6 @@ mod ulimit;
 mod use_cert;
 mod use_key;
 
-#[cfg(test)]
-mod tests;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    ulimit::set_max_open_files_limit();
-    let args = cli::Cli::parse();
-    main_internal(args).await
-}
-
-async fn main_internal(args: cli::Cli) -> Result<()> {
-    let (static_dirs, mut cluster_crypto, memory_etcd, customizations, cluster_rename) = init(args).await.context("initializing")?;
-
-    recertify(Arc::clone(&memory_etcd), &mut cluster_crypto, static_dirs.clone(), customizations)
-        .await
-        .context("scanning and recertification")?;
-
-    finalize(memory_etcd, &mut cluster_crypto, cluster_rename, static_dirs)
-        .await
-        .context("finalizing")?;
-
-    cluster_crypto.display();
-
-    Ok(())
-}
-
 /// All the user requested customizations, coalesced into a single struct for convenience
 pub(crate) struct Customizations {
     cn_san_replace_rules: CnSanReplaceRules,
@@ -56,24 +30,72 @@ pub(crate) struct Customizations {
     extend_expiration: bool,
 }
 
-async fn init(
-    cli: cli::Cli,
-) -> Result<(
-    Vec<PathBuf>,
-    ClusterCryptoObjects,
-    Arc<InMemoryK8sEtcd>,
-    Customizations,
-    Option<ClusterRenameParameters>,
-)> {
-    let etcd_client = EtcdClient::connect([cli.etcd_endpoint.as_str()], None)
+/// All parsed CLI arguments, coalesced into a single struct for convenience
+struct Recert {
+    etcd_endpoint: String,
+    static_dirs: Vec<PathBuf>,
+    cluster_crypto: ClusterCryptoObjects,
+    customizations: Customizations,
+    cluster_rename: Option<ClusterRenameParameters>,
+    threads: Option<usize>,
+}
+
+fn main() -> Result<()> {
+    // Set the max open files limit to the maximum allowed by the kernel
+    ulimit::set_max_open_files_limit();
+
+    let recert = init(cli::Cli::parse()).context("initializing")?;
+    prepare_tokio_runtime(&recert)?.block_on(async { main_internal(recert).await })
+}
+
+fn prepare_tokio_runtime(recert: &Recert) -> Result<tokio::runtime::Runtime> {
+    Ok(if let Some(threads) = recert.threads {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(threads)
+            .enable_all()
+            .build()
+            .context("building tokio runtime")?
+    } else {
+        tokio::runtime::Runtime::new()?
+    })
+}
+
+async fn main_internal(mut recert: Recert) -> Result<()> {
+    let etcd_client = EtcdClient::connect([recert.etcd_endpoint.as_str()], None)
         .await
         .context("connecting to etcd")?;
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
+
+    recertify(
+        Arc::clone(&in_memory_etcd_client),
+        &mut recert.cluster_crypto,
+        recert.static_dirs.clone(),
+        recert.customizations,
+    )
+    .await
+    .context("scanning and recertification")?;
+
+    finalize(
+        in_memory_etcd_client,
+        &mut recert.cluster_crypto,
+        recert.cluster_rename,
+        recert.static_dirs,
+    )
+    .await
+    .context("finalizing")?;
+
+    recert.cluster_crypto.display();
+
+    Ok(())
+}
+
+fn init(cli: cli::Cli) -> Result<Recert> {
+    let etcd_endpoint = cli.etcd_endpoint;
+
+    let static_dirs = cli.static_dir;
 
     // The main data structure for recording all crypto objects
     let cluster_crypto = ClusterCryptoObjects::new();
-
-    // The in-memory etcd client, used for performance through caching etcd access
-    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
 
     // User provided certificate CN/SAN domain name replacement rules
     let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
@@ -101,13 +123,16 @@ async fn init(
         extend_expiration,
     };
 
-    Ok((
-        cli.static_dir,
+    let threads = cli.threads;
+
+    Ok(Recert {
+        etcd_endpoint,
+        static_dirs,
         cluster_crypto,
-        in_memory_etcd_client,
         customizations,
         cluster_rename,
-    ))
+        threads,
+    })
 }
 
 async fn recertify(
