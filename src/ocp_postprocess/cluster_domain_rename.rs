@@ -1,7 +1,10 @@
 use self::params::ClusterRenameParameters;
 use crate::{cluster_crypto::locations::K8sResourceLocation, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
-use std::{path::{PathBuf, Path}, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 mod etcd_rename;
 mod filesystem_rename;
@@ -84,14 +87,9 @@ async fn fix_etcd_resources(
     etcd_rename::fix_loadbalancer_serving_certkey(etcd_client, cluster_domain, "api", "external-loadbalancer-serving-certkey")
         .await
         .context("fixing external-loadbalancer-serving-certkey")?;
-    etcd_rename::fix_loadbalancer_serving_certkey(
-        etcd_client,
-        cluster_domain,
-        "api-int",
-        "internal-loadbalancer-serving-certkey",
-    )
-    .await
-    .context("fixing internal-loadbalancer-serving-certkey")?;
+    etcd_rename::fix_loadbalancer_serving_certkey(etcd_client, cluster_domain, "api-int", "internal-loadbalancer-serving-certkey")
+        .await
+        .context("fixing internal-loadbalancer-serving-certkey")?;
     etcd_rename::fix_machineconfigs(etcd_client, cluster_domain)
         .await
         .context("fixing machineconfigs")?;

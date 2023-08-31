@@ -13,4 +13,3 @@ pub(crate) fn set_max_open_files_limit() {
         libc::setrlimit(libc::RLIMIT_NOFILE, &new_limit);
     }
 }
-

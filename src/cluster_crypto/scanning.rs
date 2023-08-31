@@ -200,24 +200,22 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
 }
 
 pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
-    Ok(
-        yaml_crawl::crawl_yaml((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
-            .iter()
-            .map(yaml_crawl::decode_yaml_value)
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|opt| opt.context("failed to decode yaml"))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|(yaml_location, decoded_yaml_value)| {
-                process_yaml_value(
-                    decoded_yaml_value,
-                    &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
-                )
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>(),
-    )
+    Ok(yaml_crawl::crawl_yaml((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
+        .iter()
+        .map(yaml_crawl::decode_yaml_value)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|opt| opt.context("failed to decode yaml"))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|(yaml_location, decoded_yaml_value)| {
+            process_yaml_value(
+                decoded_yaml_value,
+                &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
+            )
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>())
 }

@@ -20,6 +20,8 @@ jobs:
       run: sudo apt update
     - name: apt install
       run: sudo apt install -y protobuf-compiler
+    - name: Formatting
+      run: cargo fmt --verify
     - name: Check
       run: cargo check
     - name: Clippy
