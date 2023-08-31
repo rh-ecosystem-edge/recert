@@ -21,7 +21,7 @@ jobs:
     - name: apt install
       run: sudo apt install -y protobuf-compiler
     - name: Formatting
-      run: cargo fmt --verify
+      run: cargo fmt --check
     - name: Check
       run: cargo check
     - name: Clippy
