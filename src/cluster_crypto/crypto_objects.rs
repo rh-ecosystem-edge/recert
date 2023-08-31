@@ -191,7 +191,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
 
     let hashable_cert = certificate::Certificate::try_from(x509_certificate).context("parsing cert")?;
 
-    if rules::EXTERNAL_CERTS.contains(&hashable_cert.subject) {
+    if rules::EXTERNAL_CERTS.read().unwrap().contains(&hashable_cert.subject) {
         return Ok(None);
     }
 

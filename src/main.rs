@@ -1,13 +1,14 @@
 use crate::{cluster_crypto::scanning, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters};
 use anyhow::{Context, Result};
 use clap::Parser;
-use cluster_crypto::ClusterCryptoObjects;
+use cluster_crypto::{locations::K8sResourceLocation, ClusterCryptoObjects};
 use cnsanreplace::CnSanReplaceRules;
 use etcd_client::Client as EtcdClient;
-use k8s_etcd::InMemoryK8sEtcd;
+use k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd};
 use std::{path::PathBuf, sync::Arc};
 use use_cert::UseCertRules;
 use use_key::UseKeyRules;
+use x509_certificate::X509Certificate;
 
 mod cli;
 mod cluster_crypto;
@@ -135,12 +136,49 @@ fn init(cli: cli::Cli) -> Result<Recert> {
     })
 }
 
+async fn get_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let yaml = get_etcd_yaml(
+        &in_memory_etcd_client,
+        &K8sResourceLocation {
+            namespace: Some("openshift-apiserver-operator".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "trusted-ca-bundle".into(),
+        },
+    )
+    .await
+    .context("getting")?;
+
+    let pem_bundle = pem::parse_many(
+        yaml.pointer("/data/ca-bundle.crt")
+            .context("parsing ca-bundle.crt")?
+            .as_str()
+            .context("must be string")?,
+    )
+    .context("parsing ca-bundle.crt")?;
+
+    for pem in pem_bundle {
+        if pem.tag() != "CERTIFICATE" {
+            continue;
+        }
+
+        let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
+        let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+
+        rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
+    }
+
+    Ok(())
+}
+
 async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     static_dirs: Vec<PathBuf>,
     customizations: Customizations,
 ) -> Result<()> {
+    get_external_certs(Arc::clone(&in_memory_etcd_client)).await?;
+
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs));
