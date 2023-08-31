@@ -48,6 +48,11 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = false)]
     pub(crate) extend_expiration: bool,
 
+    /// Threads to use for parallel processing. Defaults to using as many threads as there are
+    /// logical CPUs
+    #[arg(long)]
+    pub(crate) threads: Option<usize>,
+
     /// Deprecated
     #[arg(long)]
     pub(crate) kubeconfig: Option<String>,
