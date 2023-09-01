@@ -31,4 +31,3 @@ pub(crate) fn prepare_tokio_runtime(threads: Option<usize>) -> Result<tokio::run
         tokio::runtime::Runtime::new()?
     })
 }
-
