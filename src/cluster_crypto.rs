@@ -22,21 +22,22 @@ use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
 
-pub(self) mod cert_key_pair;
+mod cert_key_pair;
+mod crypto_objects;
+mod distributed_cert;
+mod distributed_jwt;
+mod distributed_private_key;
+mod distributed_public_key;
+mod jwt;
+mod keys;
+mod signee;
+mod yaml_crawl;
+
 pub(crate) mod certificate;
-pub(self) mod crypto_objects;
 pub(crate) mod crypto_utils;
-pub(self) mod distributed_cert;
-pub(self) mod distributed_jwt;
-pub(self) mod distributed_private_key;
-pub(self) mod distributed_public_key;
-pub(self) mod jwt;
-pub(self) mod keys;
 pub(crate) mod locations;
 pub(crate) mod pem_utils;
 pub(crate) mod scanning;
-pub(self) mod signee;
-pub(self) mod yaml_crawl;
 
 /// This is the main struct that holds all the crypto objects we've found in the cluster and the
 /// locations where we found them, and how they relate to each other.
