@@ -20,7 +20,7 @@ mod use_cert;
 mod use_key;
 
 fn main() -> Result<()> {
-    let parsed_cli = cli::parse_cli().context("initializing")?;
+    let parsed_cli = cli::parse_cli().context("parsing CLI")?;
     runtime::prepare_tokio_runtime(parsed_cli.threads)?.block_on(async { main_internal(parsed_cli).await })
 }
 
