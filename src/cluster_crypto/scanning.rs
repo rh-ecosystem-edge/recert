@@ -6,7 +6,8 @@ use super::{
 use crate::{
     cluster_crypto::{crypto_objects::process_yaml_value, yaml_crawl},
     file_utils::{self, read_file_to_string},
-    k8s_etcd::InMemoryK8sEtcd,
+    k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
+    rules,
 };
 use anyhow::{bail, Context, Result};
 use futures_util::future::join_all;
@@ -16,6 +17,42 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use x509_certificate::X509Certificate;
+
+pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let yaml = get_etcd_yaml(
+        &in_memory_etcd_client,
+        &K8sResourceLocation {
+            namespace: Some("openshift-apiserver-operator".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "trusted-ca-bundle".into(),
+        },
+    )
+    .await
+    .context("getting")?;
+
+    let pem_bundle = pem::parse_many(
+        yaml.pointer("/data/ca-bundle.crt")
+            .context("parsing ca-bundle.crt")?
+            .as_str()
+            .context("must be string")?,
+    )
+    .context("parsing ca-bundle.crt")?;
+
+    for pem in pem_bundle {
+        if pem.tag() != "CERTIFICATE" {
+            continue;
+        }
+
+        let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
+        let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+
+        rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
+    }
+
+    Ok(())
+}
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,

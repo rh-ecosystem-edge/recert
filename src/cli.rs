@@ -1,6 +1,10 @@
-use std::path::PathBuf;
-
+use crate::{
+    cluster_crypto::ClusterCryptoObjects, cnsanreplace::CnSanReplaceRules,
+    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCertRules, use_key::UseKeyRules,
+};
+use anyhow::{Context, Result};
 use clap::Parser;
+use std::path::PathBuf;
 
 /// A program to regenerate cluster certificates, keys and tokens
 #[derive(Parser)]
@@ -56,4 +60,69 @@ pub(crate) struct Cli {
     /// Deprecated
     #[arg(long)]
     pub(crate) kubeconfig: Option<String>,
+}
+
+/// All the user requested customizations, coalesced into a single struct for convenience
+pub(crate) struct Customizations {
+    pub(crate) cn_san_replace_rules: CnSanReplaceRules,
+    pub(crate) use_key_rules: UseKeyRules,
+    pub(crate) use_cert_rules: UseCertRules,
+    pub(crate) extend_expiration: bool,
+}
+
+pub(crate) struct ParsedCLI {
+    pub(crate) etcd_endpoint: String,
+    pub(crate) static_dirs: Vec<PathBuf>,
+    pub(crate) cluster_crypto: ClusterCryptoObjects,
+    pub(crate) customizations: Customizations,
+    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
+    pub(crate) threads: Option<usize>,
+}
+
+pub(crate) fn parse_cli() -> Result<ParsedCLI> {
+    let cli = Cli::parse();
+
+    let etcd_endpoint = cli.etcd_endpoint;
+
+    let static_dirs = cli.static_dir;
+
+    // The main data structure for recording all crypto objects
+    let cluster_crypto = ClusterCryptoObjects::new();
+
+    // User provided certificate CN/SAN domain name replacement rules
+    let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
+
+    // User provided keys for particular CNs, when the user wants to use existing keys instead of
+    // generating new ones
+    let use_key_rules = UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
+
+    // User provided keys for particular CNs, when the user wants to use existing keys instead of
+    // generating new ones
+    let use_cert_rules = UseCertRules::try_from(cli.use_cert).context("parsing cli use-key")?;
+
+    let cluster_rename = if let Some(cluster_rename) = cli.cluster_rename {
+        Some(ClusterRenameParameters::try_from(cluster_rename)?)
+    } else {
+        None
+    };
+
+    let extend_expiration = cli.extend_expiration;
+
+    let customizations = Customizations {
+        cn_san_replace_rules,
+        use_key_rules,
+        use_cert_rules,
+        extend_expiration,
+    };
+
+    let threads = cli.threads;
+
+    Ok(ParsedCLI {
+        etcd_endpoint,
+        static_dirs,
+        cluster_crypto,
+        customizations,
+        cluster_rename,
+        threads,
+    })
 }

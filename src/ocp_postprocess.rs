@@ -12,6 +12,27 @@ use std::{path::PathBuf, sync::Arc};
 
 pub(crate) mod cluster_domain_rename;
 
+/// Perform some OCP-related post-processing to make some OCP operators happy
+pub(crate) async fn ocp_postprocess(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    cluster_rename_params: Option<ClusterRenameParameters>,
+    static_dirs: Vec<PathBuf>,
+) -> Result<()> {
+    fix_olm_secret_hash_annotation(in_memory_etcd_client)
+        .await
+        .context("fixing olm secret hash annotation")?;
+
+    delete_leases(in_memory_etcd_client).await.context("deleting leases")?;
+
+    if let Some(cluster_rename_params) = cluster_rename_params {
+        cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs)
+            .await
+            .context("renaming cluster")?;
+    }
+
+    Ok(())
+}
+
 /// The OLM packageserver operator requires that its secret's olmcahash sha256 hash annotation be
 /// set to the sha256 hash of its APIServer's CA cert. Otherwise it makes no effort to reconcile
 /// it. This method does that. Ideally we should get OLM to be more tolerant of this and remove
