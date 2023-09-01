@@ -104,3 +104,67 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_
     }
     .clone())
 }
+
+/// Annotates a kubernetes resources to indicate that it has been edited by recert. The
+/// annotation has a string value that is a serialized json object with its keys being JSON
+/// pointers of fields in this resource edited by recert and values being a list of PEM bundle
+/// indices of cryptographic objects that were edited in that field (or "N/A" if the field was not
+/// PEM-encoded).
+///
+/// For example:
+///
+/// metadata:
+///   annotations:
+///     ...
+///     recert-edited: '{"/spec/config/storage/files/15/contents/source":["1","2","6","5","3","0","4"],"/spec/config/storage/files/21/contents/source":["0"]}'
+///     ...
+///
+/// This annotation is purely informational and is not used programmatically by recert itself. It's
+/// used to help troubleshooters notice this is not a "natural" cryptographic object, but instead
+/// one that was manipulated by recert.
+pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: &YamlLocation) -> Result<()> {
+    if resource.pointer_mut("/metadata/annotations").is_none() {
+        resource
+            .pointer_mut("/metadata")
+            .context("metadata must exist")?
+            .as_object_mut()
+            .context("metadata must be an object")?
+            .insert(String::from("annotations"), Value::Object(serde_json::Map::new()));
+    }
+
+    let current_value_string = match resource.pointer_mut("/metadata/annotations/recert-edited") {
+        Some(annotation_data) => annotation_data.as_str().context("recert annotation data must be a string")?,
+        None => "{}",
+    };
+
+    let mut annotation_value: Value = serde_json::from_str(current_value_string).context("parsing recert annotation json")?;
+
+    let edited_index = Value::String(match &yaml_location.value {
+        LocationValueType::Pem(pem_info) => pem_info.pem_bundle_index.to_string(),
+        _ => "N/A".to_string(),
+    });
+
+    match annotation_value.get_mut(&yaml_location.json_pointer) {
+        Some(locations) => {
+            locations.as_array_mut().context("locations must be an array")?.push(edited_index);
+        }
+        None => {
+            annotation_value
+                .as_object_mut()
+                .context("annotation value must be an object")?
+                .insert(yaml_location.json_pointer.clone(), Value::Array(vec![edited_index]));
+        }
+    }
+
+    resource
+        .pointer_mut("/metadata/annotations")
+        .context("annotations must exist")?
+        .as_object_mut()
+        .context("annotations must be an object")?
+        .insert(
+            String::from("recert-edited"),
+            Value::String(serde_json::to_string(&annotation_value).context("serializing recert annotation")?),
+        );
+
+    Ok(())
+}

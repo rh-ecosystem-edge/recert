@@ -7,7 +7,7 @@ use super::{
     signee::Signee,
 };
 use crate::{
-    file_utils::{get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
+    file_utils::{add_recert_edited_annotation, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
     Customizations,
@@ -99,7 +99,8 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;
 
         etcd_client
             .put(
