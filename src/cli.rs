@@ -70,6 +70,7 @@ pub(crate) struct Customizations {
     pub(crate) extend_expiration: bool,
 }
 
+/// All parsed CLI arguments, coalesced into a single struct for convenience
 pub(crate) struct ParsedCLI {
     pub(crate) etcd_endpoint: String,
     pub(crate) static_dirs: Vec<PathBuf>,

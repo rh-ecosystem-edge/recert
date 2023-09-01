@@ -19,7 +19,6 @@ mod runtime;
 mod use_cert;
 mod use_key;
 
-/// All parsed CLI arguments, coalesced into a single struct for convenience
 fn main() -> Result<()> {
     let parsed_cli = cli::parse_cli().context("initializing")?;
     runtime::prepare_tokio_runtime(parsed_cli.threads)?.block_on(async { main_internal(parsed_cli).await })
