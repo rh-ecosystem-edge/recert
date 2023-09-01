@@ -33,8 +33,8 @@ impl TryFrom<String> for UseKey {
 
     fn try_from(value: String) -> Result<Self> {
         let mut split = value.split_whitespace();
-        let key_cert_cn = split.next().context("cn value")?.to_string();
-        let private_key_path = split.next().context("private key path")?.into();
+        let key_cert_cn = split.next().context("--use-key parameter is empty, see --help")?.to_string();
+        let private_key_path = split.next().context("--use-key parameter must be composed of a single CLI argument that is a space separated string with both the CN and the private key's path, see --help")?.into();
 
         Ok(Self::new(key_cert_cn, private_key_path))
     }
@@ -70,7 +70,7 @@ impl TryFrom<Vec<String>> for UseKeyRules {
                 .into_iter()
                 .map(UseKey::try_from)
                 .collect::<Result<Vec<_>>>()
-                .context("parsing use-key")?,
+                .context("parsing use-key CLI argument")?,
         ))
     }
 }
