@@ -253,7 +253,7 @@ impl CertKeyPair {
             new_serial_number.clone(),
         );
 
-        if let Some(old_serial_number) = insert_result {
+        if let Some(_old_serial_number) = insert_result {
             // TODO: This is buggy. Figure out why
             // bail!("duplicate serial number found: {:?} and {:?}", old_serial_number, new_serial_number);
         }
