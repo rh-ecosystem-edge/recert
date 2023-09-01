@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
 use std::{path::PathBuf, sync::Arc};
@@ -55,6 +56,19 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         packageserver_serving_cert_secret,
     )
     .await?;
+
+    Ok(())
+}
+
+/// Delete all the leases to help the node come up faster
+pub(crate) async fn delete_leases(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    join_all(etcd_client.list_keys("leases/").await?.into_iter().map(|key| async move {
+        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+        Ok(())
+    }))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }
