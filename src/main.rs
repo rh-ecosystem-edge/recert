@@ -230,6 +230,10 @@ async fn ocp_postprocess(
         .await
         .context("fixing olm secret hash annotation")?;
 
+    ocp_postprocess::delete_leases(in_memory_etcd_client)
+        .await
+        .context("deleting leases")?;
+
     if let Some(cluster_rename) = cluster_rename {
         ocp_postprocess::cluster_rename(in_memory_etcd_client, cluster_rename, static_dirs)
             .await
