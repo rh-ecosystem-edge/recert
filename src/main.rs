@@ -59,7 +59,9 @@ async fn recertify(
     static_dirs: Vec<PathBuf>,
     customizations: Customizations,
 ) -> Result<()> {
-    scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client)).await?;
+    scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
+        .await
+        .context("discovering external certs to ignore")?;
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
