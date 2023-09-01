@@ -24,15 +24,15 @@ fn main() -> Result<()> {
     runtime::prepare_tokio_runtime(parsed_cli.threads)?.block_on(async { main_internal(parsed_cli).await })
 }
 
-async fn main_internal(mut parsed_cli: ParsedCLI) -> Result<()> {
-    let etcd_client = EtcdClient::connect([parsed_cli.etcd_endpoint.as_str()], None)
-        .await
-        .context("connecting to etcd")?;
-    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(etcd_client));
+async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(
+        EtcdClient::connect([parsed_cli.etcd_endpoint.as_str()], None)
+            .await
+            .context("connecting to etcd")?,
+    ));
 
-    recertify(
+    let cluster_crypto = recertify(
         Arc::clone(&in_memory_etcd_client),
-        &mut parsed_cli.cluster_crypto,
         parsed_cli.static_dirs.clone(),
         parsed_cli.customizations,
     )
@@ -41,24 +41,21 @@ async fn main_internal(mut parsed_cli: ParsedCLI) -> Result<()> {
 
     finalize(
         in_memory_etcd_client,
-        &mut parsed_cli.cluster_crypto,
+        cluster_crypto,
         parsed_cli.cluster_rename,
         parsed_cli.static_dirs,
     )
     .await
     .context("finalizing")?;
 
-    parsed_cli.cluster_crypto.display();
-
     Ok(())
 }
 
 async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    cluster_crypto: &mut ClusterCryptoObjects,
     static_dirs: Vec<PathBuf>,
     customizations: Customizations,
-) -> Result<()> {
+) -> Result<ClusterCryptoObjects> {
     scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
         .await
         .context("discovering external certs to ignore")?;
@@ -73,16 +70,17 @@ async fn recertify(
     let rsa_pool = rsa_keys.await?.context("generating rsa keys")?;
 
     // We discovered all crypto objects, process them
+    let mut cluster_crypto = ClusterCryptoObjects::new();
     cluster_crypto
         .process_objects(all_discovered_crypto_objects, customizations, rsa_pool)
         .context("processing discovered objects")?;
 
-    Ok(())
+    Ok(cluster_crypto)
 }
 
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    cluster_crypto: &mut ClusterCryptoObjects,
+    mut cluster_crypto: ClusterCryptoObjects,
     cluster_rename: Option<ClusterRenameParameters>,
     static_dirs: Vec<PathBuf>,
 ) -> Result<()> {
@@ -101,6 +99,8 @@ async fn finalize(
         .commit_to_actual_etcd()
         .await
         .context("commiting etcd cache to actual etcd")?;
+
+    cluster_crypto.display();
 
     Ok(())
 }

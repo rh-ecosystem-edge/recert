@@ -1,6 +1,6 @@
 use crate::{
-    cluster_crypto::ClusterCryptoObjects, cnsanreplace::CnSanReplaceRules,
-    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCertRules, use_key::UseKeyRules,
+    cnsanreplace::CnSanReplaceRules, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCertRules,
+    use_key::UseKeyRules,
 };
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -74,7 +74,6 @@ pub(crate) struct Customizations {
 pub(crate) struct ParsedCLI {
     pub(crate) etcd_endpoint: String,
     pub(crate) static_dirs: Vec<PathBuf>,
-    pub(crate) cluster_crypto: ClusterCryptoObjects,
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) threads: Option<usize>,
@@ -86,9 +85,6 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     let etcd_endpoint = cli.etcd_endpoint;
 
     let static_dirs = cli.static_dir;
-
-    // The main data structure for recording all crypto objects
-    let cluster_crypto = ClusterCryptoObjects::new();
 
     // User provided certificate CN/SAN domain name replacement rules
     let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
@@ -121,7 +117,6 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     Ok(ParsedCLI {
         etcd_endpoint,
         static_dirs,
-        cluster_crypto,
         customizations,
         cluster_rename,
         threads,
