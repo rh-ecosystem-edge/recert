@@ -48,6 +48,7 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
         let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
 
+        // TODO: Don't use a global for this
         rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
     }
 
