@@ -93,8 +93,8 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     // generating new ones
     let use_key_rules = UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
 
-    // User provided keys for particular CNs, when the user wants to use existing keys instead of
-    // generating new ones
+    // User provided certs for particular CNs, when the user wants to use existing certs instead of
+    // modifying existing ones
     let use_cert_rules = UseCertRules::try_from(cli.use_cert).context("parsing cli use-key")?;
 
     let cluster_rename = if let Some(cluster_rename) = cli.cluster_rename {
