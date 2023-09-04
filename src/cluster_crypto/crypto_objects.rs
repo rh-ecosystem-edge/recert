@@ -58,14 +58,15 @@ impl DiscoveredCryptoObect {
     }
 }
 
-/// Given a value taken from a YAML field, scan it for cryptographic keys and certificates and
-/// record them in the appropriate data structures.
-pub(crate) fn process_yaml_value(value: String, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
+/// Given a value taken from a YAML field or the entire contents of a file, scan it for
+/// cryptographic keys and certificates and record them in the appropriate data structures.
+pub(crate) fn process_unknown_value(value: String, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
     let pem_bundle_objects = process_pem_bundle(&value, location).context("processing pem bundle")?;
     if !pem_bundle_objects.is_empty() {
         return Ok(pem_bundle_objects);
     }
 
+    // If we didn't find any PEM objects, try to process the value as a JWT
     if let Some(jwt) = process_jwt(&value, location)? {
         Ok(vec![jwt])
     } else {

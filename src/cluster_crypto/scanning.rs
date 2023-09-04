@@ -4,7 +4,7 @@ use super::{
     locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType},
 };
 use crate::{
-    cluster_crypto::{crypto_objects::process_yaml_value, yaml_crawl},
+    cluster_crypto::{crypto_objects::process_unknown_value, yaml_crawl},
     file_utils::{self, read_file_to_string},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rules,
@@ -162,7 +162,7 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                             .into_iter()
                             .flatten()
                             .map(|(yaml_location, yaml_value)| {
-                                process_yaml_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
+                                process_unknown_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
                                     .with_context(|| format!("processing yaml value of key {:?} at location {:?}", key, yaml_location))
                             })
                             .collect::<Result<Vec<_>>>()?
@@ -202,6 +202,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/*kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/token")?.into_iter())
             .map(|file_path| {
                 tokio::spawn(async move {
                     let contents = read_file_to_string(file_path.clone()).await?;
@@ -213,8 +214,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
                             process_static_resource_yaml(contents, &file_path)
                                 .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
                         } else {
-                            crypto_objects::process_pem_bundle(
-                                &contents,
+                            crypto_objects::process_unknown_value(
+                                contents,
                                 &Location::Filesystem(FileLocation {
                                     path: file_path.to_string_lossy().to_string(),
                                     content_location: FileContentLocation::Raw(LocationValueType::Unknown),
@@ -247,7 +248,7 @@ pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .map(|(yaml_location, decoded_yaml_value)| {
-            process_yaml_value(
+            process_unknown_value(
                 decoded_yaml_value,
                 &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
             )
