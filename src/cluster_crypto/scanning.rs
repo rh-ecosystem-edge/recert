@@ -190,6 +190,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
     Ok(join_all(
         file_utils::globvec(dir, "**/*.pem")?
             .into_iter()
+            // Other classic PEM extensions
             .chain(file_utils::globvec(dir, "**/*.crt")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.key")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.pub")?.into_iter())
@@ -198,10 +199,13 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/*.crt.mcdorig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.key.mcdorig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/*.pub.mcdorig")?.into_iter())
+            // A file-system copy of machineconfig objects found in /etc/machine-config-daemon/currentconfig
             .chain(file_utils::globvec(dir, "**/currentconfig")?.into_iter())
+            // The various names for kubeconfig files
             .chain(file_utils::globvec(dir, "**/*kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
+            // JWT tokens can be found in files named "token"
             .chain(file_utils::globvec(dir, "**/token")?.into_iter())
             .map(|file_path| {
                 tokio::spawn(async move {
