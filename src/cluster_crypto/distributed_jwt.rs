@@ -3,7 +3,7 @@ use super::{
     jwt::Jwt,
     jwt::JwtSigner,
     keys::PublicKey,
-    locations::{FileLocation, K8sLocation, Location, LocationValueType, Locations},
+    locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
 };
 use crate::{
     file_utils::encode_resource_data_entry,
@@ -94,7 +94,20 @@ impl DistributedJwt {
         Ok(())
     }
 
-    pub(crate) async fn commit_to_filesystem(&self, _filelocation: &FileLocation) -> Result<()> {
-        todo!()
+    pub(crate) async fn commit_to_filesystem(&self, filelocation: &FileLocation) -> Result<()> {
+        tokio::fs::write(
+            &filelocation.path,
+            match &filelocation.content_location {
+                FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
+                    LocationValueType::Pem(_) => bail!("JWT cannot be in PEM"),
+                    LocationValueType::Jwt => self.jwt.str.clone(),
+                    LocationValueType::Unknown => bail!("cannot commit unknown value type"),
+                },
+                FileContentLocation::Yaml(_) => todo!("filesystem YAML JWTs not implemented"),
+            },
+        )
+        .await?;
+
+        Ok(())
     }
 }
