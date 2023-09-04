@@ -25,11 +25,14 @@ fn main() -> Result<()> {
 }
 
 async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
-    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(
-        EtcdClient::connect([parsed_cli.etcd_endpoint.as_str()], None)
-            .await
-            .context("connecting to etcd")?,
-    ));
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match parsed_cli.etcd_endpoint {
+        Some(etcd_endpoint) => Some(
+            EtcdClient::connect([etcd_endpoint.as_str()], None)
+                .await
+                .context("connecting to etcd")?,
+        ),
+        None => None,
+    }));
 
     let cluster_crypto = recertify(
         Arc::clone(&in_memory_etcd_client),
@@ -56,9 +59,11 @@ async fn recertify(
     static_dirs: Vec<PathBuf>,
     customizations: Customizations,
 ) -> Result<ClusterCryptoObjects> {
-    scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
-        .await
-        .context("discovering external certs to ignore")?;
+    if in_memory_etcd_client.etcd_client.is_some() {
+        scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
+            .await
+            .context("discovering external certs to ignore")?;
+    }
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
@@ -89,9 +94,11 @@ async fn finalize(
         .await
         .context("commiting the cryptographic objects back to memory etcd and to disk")?;
 
-    ocp_postprocess::ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs)
-        .await
-        .context("performing ocp specific post-processing")?;
+    if in_memory_etcd_client.etcd_client.is_some() {
+        ocp_postprocess::ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs)
+            .await
+            .context("performing ocp specific post-processing")?;
+    }
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done

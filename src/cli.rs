@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub(crate) struct Cli {
     // etcd endpoint to recertify
     #[arg(long)]
-    pub(crate) etcd_endpoint: String,
+    pub(crate) etcd_endpoint: Option<String>,
 
     /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and /etc/machine-config-daemon. Can specify multiple times
     #[arg(long)]
@@ -72,7 +72,7 @@ pub(crate) struct Customizations {
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 pub(crate) struct ParsedCLI {
-    pub(crate) etcd_endpoint: String,
+    pub(crate) etcd_endpoint: Option<String>,
     pub(crate) static_dirs: Vec<PathBuf>,
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,

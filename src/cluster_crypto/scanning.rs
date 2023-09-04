@@ -126,7 +126,7 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
 
     let all_keys = key_lists.into_iter().flatten().collect::<Vec<_>>();
 
-    if all_keys.is_empty() {
+    if all_keys.is_empty() && etcd_client.etcd_client.is_some() {
         bail!("No keys found in etcd - is the etcd database empty/corrupt?")
     }
 

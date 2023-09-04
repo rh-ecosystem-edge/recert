@@ -22,15 +22,16 @@ pub(crate) struct EtcdResult {
 /// key regeneration, as we we don't have to go through ouger and etcd for every single certificate
 /// and key access.
 pub(crate) struct InMemoryK8sEtcd {
-    etcd_client: Arc<EtcdClient>,
+    pub(crate) etcd_client: Option<Arc<EtcdClient>>,
     etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
     deleted_keys: Mutex<HashSet<String>>,
 }
 
 impl InMemoryK8sEtcd {
-    pub(crate) fn new(etcd_client: EtcdClient) -> Self {
+    /// Pass a None etcd_client to disable actual etcd access (dummy mode, empty key list).
+    pub(crate) fn new(etcd_client: Option<EtcdClient>) -> Self {
         Self {
-            etcd_client: Arc::new(etcd_client),
+            etcd_client: etcd_client.map(Arc::new),
             etcd_keyvalue_hashmap: Mutex::new(HashMap::new()),
             deleted_keys: Mutex::new(HashSet::new()),
         }
@@ -43,7 +44,12 @@ impl InMemoryK8sEtcd {
         Ok(())
     }
 
-    async fn commit_deleted_keys(&self) -> Result<(), anyhow::Error> {
+    async fn commit_deleted_keys(&self) -> Result<()> {
+        let etcd_client = match &self.etcd_client {
+            Some(etcd_client) => etcd_client,
+            None => return Ok(()),
+        };
+
         join_all(
             self.deleted_keys
                 .lock()
@@ -51,7 +57,7 @@ impl InMemoryK8sEtcd {
                 .iter()
                 .map(|key| {
                     let key = key.clone();
-                    let etcd_client = Arc::clone(&self.etcd_client);
+                    let etcd_client = Arc::clone(etcd_client);
                     tokio::spawn(async move {
                         etcd_client.kv_client().delete(key.as_bytes(), None).await?;
                         anyhow::Ok(())
@@ -67,11 +73,16 @@ impl InMemoryK8sEtcd {
         Ok(())
     }
 
-    async fn commit_hashmap(&self) -> Result<(), anyhow::Error> {
+    async fn commit_hashmap(&self) -> Result<()> {
+        let etcd_client = match &self.etcd_client {
+            Some(etcd_client) => etcd_client,
+            None => return Ok(()),
+        };
+
         for (key, value) in self.etcd_keyvalue_hashmap.lock().await.iter() {
             let key = key.clone();
             let value = value.clone();
-            let etcd_client = Arc::clone(&self.etcd_client);
+            let etcd_client = Arc::clone(etcd_client);
             // TODO: Find a fancier way to detect CRDs
             let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
                 value.to_vec()
@@ -86,6 +97,11 @@ impl InMemoryK8sEtcd {
     }
 
     pub(crate) async fn get(&self, key: String) -> Result<EtcdResult> {
+        let etcd_client = match &self.etcd_client {
+            Some(etcd_client) => etcd_client,
+            None => bail!("etcd client not configured"),
+        };
+
         let mut result = EtcdResult {
             key: key.to_string(),
             value: vec![],
@@ -99,12 +115,7 @@ impl InMemoryK8sEtcd {
             }
         }
 
-        let get_result = self
-            .etcd_client
-            .kv_client()
-            .get(key.clone(), None)
-            .await
-            .context("during etcd get")?;
+        let get_result = etcd_client.kv_client().get(key.clone(), None).await.context("during etcd get")?;
         let raw_etcd_value = get_result.kvs().first().context("key not found")?.value();
 
         let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
@@ -123,9 +134,13 @@ impl InMemoryK8sEtcd {
     }
 
     pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
+        let etcd_client = match &self.etcd_client {
+            Some(etcd_client) => etcd_client,
+            None => return Ok(vec![]),
+        };
+
         let etcd_get_options = GetOptions::new().with_prefix().with_limit(0).with_keys_only();
-        let keys = self
-            .etcd_client
+        let keys = etcd_client
             .kv_client()
             .get(format!("/kubernetes.io/{}", resource_kind), Some(etcd_get_options.clone()))
             .await?;
