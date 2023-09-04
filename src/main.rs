@@ -16,6 +16,7 @@ mod ocp_postprocess;
 mod rsa_key_pool;
 mod rules;
 mod runtime;
+mod server_ssh_keys;
 mod use_cert;
 mod use_key;
 
@@ -47,6 +48,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         cluster_crypto,
         parsed_cli.cluster_rename,
         parsed_cli.static_dirs,
+        parsed_cli.regenerate_server_ssh_keys,
     )
     .await
     .context("finalizing")?;
@@ -88,6 +90,7 @@ async fn finalize(
     mut cluster_crypto: ClusterCryptoObjects,
     cluster_rename: Option<ClusterRenameParameters>,
     static_dirs: Vec<PathBuf>,
+    regenerate_server_ssh_keys: Option<PathBuf>,
 ) -> Result<()> {
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
@@ -98,6 +101,11 @@ async fn finalize(
         ocp_postprocess::ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs)
             .await
             .context("performing ocp specific post-processing")?;
+    }
+
+    if let Some(regenerate_server_ssh_keys) = regenerate_server_ssh_keys {
+        let key_types = server_ssh_keys::remove_old_keys(&regenerate_server_ssh_keys).context("removing old server SSH keys")?;
+        server_ssh_keys::write_new_keys(&regenerate_server_ssh_keys, key_types).context("regenerating new server SSH keys")?;
     }
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real

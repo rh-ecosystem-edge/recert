@@ -57,6 +57,10 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) threads: Option<usize>,
 
+    /// Regenerate server SSH keys and write to this directory
+    #[arg(long)]
+    pub(crate) regenerate_server_ssh_keys: Option<PathBuf>,
+
     /// Deprecated
     #[arg(long)]
     pub(crate) kubeconfig: Option<String>,
@@ -77,6 +81,7 @@ pub(crate) struct ParsedCLI {
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) threads: Option<usize>,
+    pub(crate) regenerate_server_ssh_keys: Option<PathBuf>,
 }
 
 pub(crate) fn parse_cli() -> Result<ParsedCLI> {
@@ -114,11 +119,14 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
 
     let threads = cli.threads;
 
+    let regenerate_server_ssh_keys = cli.regenerate_server_ssh_keys;
+
     Ok(ParsedCLI {
         etcd_endpoint,
         static_dirs,
         customizations,
         cluster_rename,
         threads,
+        regenerate_server_ssh_keys,
     })
 }
