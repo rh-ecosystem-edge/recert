@@ -10,8 +10,10 @@ use crate::{
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as base64_url, Engine as _};
 use jwt_simple::prelude::RSAKeyPairLike;
 use serde_json::Value;
+use sha2::Digest;
 use x509_certificate::InMemorySigningKeyPair;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,9 +45,18 @@ impl DistributedJwt {
             InMemorySigningKeyPair::Ed25519(_) => {
                 bail!("ed unsupported");
             }
-            InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => Ok(jwt_simple::prelude::RS256KeyPair::from_der(bytes)?
-                .sign(verify_jwt(original_public_key, self)?)?
-                .to_string()),
+            InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => {
+                let claims = verify_jwt(original_public_key, self)?;
+
+                let mut sha256 = sha2::Sha256::new();
+                sha256.update(bytes);
+                let kid = base64_url.encode(sha256.finalize());
+
+                Ok(jwt_simple::prelude::RS256KeyPair::from_der(bytes)?
+                    .with_key_id(&kid)
+                    .sign(claims)?
+                    .to_string())
+            }
         }
     }
 
