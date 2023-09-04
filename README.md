@@ -14,6 +14,10 @@ in many different sites. By running the tool during the first boot of a host
 from said image, the new cluster will then have its own independent secret keys
 that are separate from other clusters deployed in the same manner.
 
+# Documentation
+
+For more information see the [design doc](docs/design.md)
+
 ## Usage examples
 
 ### Local Development
