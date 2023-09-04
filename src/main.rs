@@ -104,8 +104,11 @@ async fn finalize(
     }
 
     if let Some(regenerate_server_ssh_keys) = regenerate_server_ssh_keys {
-        let key_types = server_ssh_keys::remove_old_keys(&regenerate_server_ssh_keys).context("removing old server SSH keys")?;
-        server_ssh_keys::write_new_keys(&regenerate_server_ssh_keys, key_types).context("regenerating new server SSH keys")?;
+        server_ssh_keys::write_new_keys(
+            &regenerate_server_ssh_keys,
+            server_ssh_keys::remove_old_keys(&regenerate_server_ssh_keys).context("removing old server SSH keys")?,
+        )
+        .context("regenerating new server SSH keys")?;
     }
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
