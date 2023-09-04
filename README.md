@@ -1,7 +1,7 @@
 # Recert
 
-A tool to regenerate all certificates in a cluster (both in the etcd database
-and filesystem files) before it starts. Works by scanning the existing
+A tool to regenerate all cryptographic objects in a cluster (both in the etcd
+database and filesystem files) before it starts. Works by scanning the existing
 certificates/keys/jwts, understanding how they relate, and replacing them in an
 identical structure, but with newly randomly generated keys and optional
 modifications.
