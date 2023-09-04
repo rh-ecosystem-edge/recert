@@ -4,7 +4,7 @@ use std::{collections::HashSet, path::Path};
 
 const PATTERN: &str = r"^ssh_host_([a-z\d]+)_key(?:\.pub)?$";
 
-pub(crate) fn write_new_keys(regenerate_server_ssh_keys: &Path, key_types: HashSet<String>) -> Result<()> {
+pub(crate) fn write_new_keys(regenerate_server_ssh_keys: &Path, original_key_types: HashSet<String>) -> Result<()> {
     let temp_dir = &tempfile::tempdir().context("creating temporary directory for new SSH server keys")?;
     let temp_dir_path = temp_dir.path();
     std::fs::create_dir_all(temp_dir_path.join("etc/ssh")).context("creating new SSH server key directory structure")?;
@@ -31,35 +31,33 @@ pub(crate) fn write_new_keys(regenerate_server_ssh_keys: &Path, key_types: HashS
         temp_dir_path.display()
     );
 
-    let mut generated_key_types = HashSet::<String>::new();
-    for key_file in generated_key_files {
-        let key_type = get_key_type(&key_file)?;
-
-        // Ignore key types that the host didn't originally have
-        if !key_types.contains(&key_type) {
-            continue;
-        }
-
-        // Record which key types got generated
-        generated_key_types.insert(key_type.clone());
-
-        std::fs::copy(
-            &key_file,
-            regenerate_server_ssh_keys.join(key_file.file_name().context("no file component")?),
-        )
-        .context(format!(
-            "failed to copy new SSH server key file {} to {}",
-            key_file.display(),
-            regenerate_server_ssh_keys.display()
-        ))?;
-    }
-
+    let generated_key_types = generated_key_files
+        .iter()
+        .map(|key| get_key_type(key))
+        .collect::<Result<HashSet<_>>>()?;
     ensure!(
-        generated_key_types == key_types,
+        original_key_types.is_subset(&generated_key_types),
         "Failed to find all expected SSH server key types. Expected: {:?}, found: {:?}",
-        key_types,
+        original_key_types,
         generated_key_types
     );
+
+    generated_key_files
+        .iter()
+        .filter(|key_file| original_key_types.contains(&get_key_type(key_file).unwrap()))
+        .try_for_each(|key_file| {
+            std::fs::copy(
+                key_file,
+                regenerate_server_ssh_keys.join(key_file.file_name().context("no file component")?),
+            )
+            .context(format!(
+                "failed to copy new SSH server key file {} to {}",
+                key_file.display(),
+                regenerate_server_ssh_keys.display()
+            ))
+            .map(|_| ())
+        })
+        .context("copying new SSH server key files")?;
 
     Ok(())
 }
