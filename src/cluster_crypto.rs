@@ -232,13 +232,13 @@ impl ClusterCryptoObjects {
         //         (**distributed_public_key).borrow(),
         //     );
         // }
-        // for distributed_jwt in self.distributed_jwts.values() {
-        //     assert!(
-        //         (*distributed_jwt).borrow().regenerated,
-        //         "Didn't seem to regenerate jwt {:#?}",
-        //         (*distributed_jwt).borrow(),
-        //     );
-        // }
+        for distributed_jwt in self.distributed_jwts.values() {
+            assert!(
+                (*distributed_jwt).borrow().regenerated,
+                "Didn't seem to regenerate jwt {:#?}",
+                (*distributed_jwt).borrow(),
+            );
+        }
         for distributed_private_key in self.distributed_private_keys.values() {
             assert!(
                 (*distributed_private_key).borrow().regenerated,
@@ -316,7 +316,9 @@ impl ClusterCryptoObjects {
                     }
                     Err(_error) => {}
                 }
-            } else {
+            }
+
+            if maybe_signer == jwt::JwtSigner::Unknown {
                 for distributed_private_key in self.distributed_private_keys.values() {
                     match crypto_utils::verify_jwt(
                         &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
@@ -332,7 +334,7 @@ impl ClusterCryptoObjects {
                 }
             }
 
-            if let jwt::JwtSigner::Unknown = &maybe_signer {
+            if maybe_signer == jwt::JwtSigner::Unknown {
                 for cert_key_pair in &self.cert_key_pairs {
                     if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
                         match crypto_utils::verify_jwt(
@@ -350,17 +352,17 @@ impl ClusterCryptoObjects {
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
-                // bail!(
-                //     "no signer found for jwt in location {}",
-                //     (**distributed_jwt)
-                //         .borrow()
-                //         .clone()
-                //         .locations
-                //         .0
-                //         .into_iter()
-                //         .next()
-                //         .context("no locations for jwt")?
-                // );
+                bail!(
+                    "no signer found for jwt in location {}",
+                    (**distributed_jwt)
+                        .borrow()
+                        .clone()
+                        .locations
+                        .0
+                        .into_iter()
+                        .next()
+                        .context("no locations for jwt")?
+                );
             }
 
             (**distributed_jwt).borrow_mut().signer = maybe_signer;
