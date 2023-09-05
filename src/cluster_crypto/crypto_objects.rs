@@ -5,7 +5,7 @@ use super::{
     locations::Location,
 };
 use crate::rules;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use p256::SecretKey;
