@@ -14,6 +14,7 @@ use std::{
     io::Write,
     process::{Command, Stdio},
 };
+use x509_certificate::InMemorySigningKeyPair;
 
 pub(crate) enum CryptoObject {
     PrivateKey(PrivateKey, PublicKey),
@@ -135,12 +136,29 @@ pub(crate) fn process_single_pem(pem: &pem::Pem) -> Result<Option<CryptoObject>>
         "TRUSTED CERTIFICATE" => process_pem_cert(pem).context("processing trusted pem cert"), // TODO: we'll have to save it back as TRUSTED
         "RSA PRIVATE KEY" => process_pem_rsa_private_key(pem).context("processing pem rsa private key"),
         "EC PRIVATE KEY" => process_pem_ec_private_key(pem).context("processing pem ec private key"),
-        "PRIVATE KEY" => Err(anyhow!("private pkcs8 unsupported")),
-        "PUBLIC KEY" => Err(anyhow!("private pkcs8 unsupported")),
+        "PRIVATE KEY" => process_pem_private_key(pem).context("processing pem private key"),
+        "PUBLIC KEY" => bail!("private pkcs8 unsupported"),
         "RSA PUBLIC KEY" => Ok(process_pem_public_key(pem)),
         "ENTITLEMENT DATA" | "RSA SIGNATURE" => Ok(None),
-        _ => Err(anyhow!("unknown pem tag {}", pem.tag())),
+        _ => bail!("unknown pem tag {}", pem.tag()),
     }
+}
+
+fn process_pem_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
+    let pair = InMemorySigningKeyPair::from_pkcs8_der(pem.contents())?;
+
+    Ok(match pair {
+        InMemorySigningKeyPair::Ecdsa(_, _, _) => bail!("private ed25519 pkcs8 unsupported"),
+        InMemorySigningKeyPair::Ed25519(_) => bail!("private ed25519 pkcs8 unsupported"),
+        InMemorySigningKeyPair::Rsa(_, bytes) => {
+            let rsa_private_key = rsa::RsaPrivateKey::from_pkcs1_der(&bytes)?;
+
+            let private_part = PrivateKey::Rsa(rsa_private_key);
+            let public_part = PublicKey::try_from(&private_part)?;
+
+            Some((private_part, public_part).into())
+        }
+    })
 }
 
 pub(crate) fn process_pem_public_key(pem: &pem::Pem) -> Option<CryptoObject> {
