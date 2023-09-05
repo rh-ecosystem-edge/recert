@@ -148,7 +148,7 @@ fn process_pem_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
     let pair = InMemorySigningKeyPair::from_pkcs8_der(pem.contents())?;
 
     Ok(match pair {
-        InMemorySigningKeyPair::Ecdsa(_, _, _) => bail!("private ed25519 pkcs8 unsupported"),
+        InMemorySigningKeyPair::Ecdsa(_, _, _) => bail!("private ecdsa pkcs8 unsupported"),
         InMemorySigningKeyPair::Ed25519(_) => bail!("private ed25519 pkcs8 unsupported"),
         InMemorySigningKeyPair::Rsa(_, bytes) => {
             let rsa_private_key = rsa::RsaPrivateKey::from_pkcs1_der(&bytes)?;
