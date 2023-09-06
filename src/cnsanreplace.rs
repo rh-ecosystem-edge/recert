@@ -1,5 +1,6 @@
-use anyhow::{self, Context, Result};
+use anyhow::{ensure, Result};
 
+#[derive(Clone)]
 pub(crate) struct CnSanReplace {
     pub(crate) old: String,
     pub(crate) new: String,
@@ -12,25 +13,28 @@ impl std::fmt::Display for CnSanReplace {
 }
 
 impl CnSanReplace {
-    pub(crate) fn new(old: String, new: String) -> Self {
-        Self { old, new }
-    }
-}
+    pub(crate) fn cli_parse(value: &str) -> Result<Self> {
+        // TODO: ' ' is legacy, remove eventually
+        let split = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
 
-impl TryFrom<String> for CnSanReplace {
-    type Error = anyhow::Error;
+        ensure!(
+            split.len() == 2,
+            "expected exactly one ':' in CN/SAN replace argument, found {}",
+            split.len()
+        );
 
-    fn try_from(value: String) -> Result<Self> {
-        let mut split = value.split_whitespace();
-        let old = split.next().context("old value")?.to_string();
-        let new = split.next().context("new value")?.to_string();
+        let old_domain = split[0].to_string();
+        let new_domain = split[1].to_string();
 
-        Ok(Self::new(old, new))
+        Ok(Self {
+            old: old_domain,
+            new: new_domain,
+        })
     }
 }
 
 /// A collection of CnSanReplace, see cn_san_replace CLI argument for more information
-pub(crate) struct CnSanReplaceRules(Vec<CnSanReplace>);
+pub(crate) struct CnSanReplaceRules(pub Vec<CnSanReplace>);
 
 impl CnSanReplaceRules {
     pub(crate) fn replace(&self, input: &str) -> String {
@@ -43,20 +47,6 @@ impl CnSanReplaceRules {
         }
 
         output
-    }
-}
-
-impl TryFrom<Vec<String>> for CnSanReplaceRules {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Vec<String>) -> Result<Self> {
-        Ok(Self(
-            value
-                .into_iter()
-                .map(CnSanReplace::try_from)
-                .collect::<Result<Vec<_>>>()
-                .context("parsing cn-san-replace")?,
-        ))
     }
 }
 

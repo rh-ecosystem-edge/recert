@@ -1,10 +1,10 @@
 use anyhow::{ensure, Context, Result};
 use bcder::Oid;
-use std::{self, path::PathBuf};
 use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
 
 use crate::cluster_crypto::certificate::Certificate;
 
+#[derive(Clone)]
 pub(crate) struct UseCert {
     pub(crate) cert: Certificate,
 }
@@ -16,7 +16,7 @@ impl std::fmt::Display for UseCert {
 }
 
 impl UseCert {
-    pub(crate) fn new(cert_path: PathBuf) -> Result<Self> {
+    pub(crate) fn cli_parse(cert_path: &str) -> Result<Self> {
         let pem = pem::parse_many(std::fs::read(cert_path).context("reading cert file")?).context("parsing PEM")?;
         ensure!(pem.len() == 1, "expected exactly one PEM block, found {}", pem.len());
         let pem = &pem[0];
@@ -29,15 +29,7 @@ impl UseCert {
     }
 }
 
-impl TryFrom<String> for UseCert {
-    type Error = anyhow::Error;
-
-    fn try_from(value: String) -> Result<Self> {
-        Self::new(value.into()).context("constructing cert")
-    }
-}
-
-pub(crate) struct UseCertRules(Vec<UseCert>);
+pub(crate) struct UseCertRules(pub Vec<UseCert>);
 
 impl UseCertRules {
     pub(crate) fn get_replacement_cert(&self, candidate_subject: &Name) -> Result<Option<Certificate>> {
@@ -72,20 +64,6 @@ fn get_cn(subject: &Name) -> Result<Option<String>> {
         let cn = common_names[0].to_string().context("converting CN to string")?;
         Some(cn)
     })
-}
-
-impl TryFrom<Vec<String>> for UseCertRules {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Vec<String>) -> Result<Self> {
-        Ok(Self(
-            value
-                .into_iter()
-                .map(UseCert::try_from)
-                .collect::<Result<Vec<_>>>()
-                .context("parsing use-key")?,
-        ))
-    }
 }
 
 impl std::fmt::Display for UseCertRules {

@@ -3,6 +3,7 @@ use bcder::Oid;
 use std::{self, path::PathBuf};
 use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
 
+#[derive(Clone)]
 pub(crate) struct UseKey {
     pub(crate) key_cert_cn: String,
     pub(crate) private_key_path: PathBuf,
@@ -20,27 +21,23 @@ impl std::fmt::Display for UseKey {
 }
 
 impl UseKey {
-    pub(crate) fn new(key_cert_cn: String, private_key_path: PathBuf) -> Self {
-        Self {
+    pub(crate) fn cli_parse(value: &str) -> Result<Self> {
+        // TODO: ' ' is legacy, remove eventually
+        let parts = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
+
+        ensure!(parts.len() == 2, "expected exactly one ':' in use-key argument, found {}", parts.len());
+
+        let key_cert_cn = parts[0].to_string();
+        let private_key_path = PathBuf::from(parts[1].to_string());
+
+        Ok(Self {
             key_cert_cn,
             private_key_path,
-        }
+        })
     }
 }
 
-impl TryFrom<String> for UseKey {
-    type Error = anyhow::Error;
-
-    fn try_from(value: String) -> Result<Self> {
-        let mut split = value.split_whitespace();
-        let key_cert_cn = split.next().context("--use-key parameter is empty, see --help")?.to_string();
-        let private_key_path = split.next().context("--use-key parameter must be composed of a single CLI argument that is a space separated string with both the CN and the private key's path, see --help")?.into();
-
-        Ok(Self::new(key_cert_cn, private_key_path))
-    }
-}
-
-pub(crate) struct UseKeyRules(Vec<UseKey>);
+pub(crate) struct UseKeyRules(pub Vec<UseKey>);
 
 impl UseKeyRules {
     pub(crate) fn key_file(&self, subject: Name) -> Result<Option<PathBuf>> {
@@ -58,20 +55,6 @@ impl UseKeyRules {
                 .find(|key| key.key_cert_cn == cn)
                 .map(|key| key.private_key_path.clone()))
         }
-    }
-}
-
-impl TryFrom<Vec<String>> for UseKeyRules {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Vec<String>) -> Result<Self> {
-        Ok(Self(
-            value
-                .into_iter()
-                .map(UseKey::try_from)
-                .collect::<Result<Vec<_>>>()
-                .context("parsing use-key CLI argument")?,
-        ))
     }
 }
 

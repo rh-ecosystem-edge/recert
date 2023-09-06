@@ -1,8 +1,10 @@
 use crate::{
-    cnsanreplace::CnSanReplaceRules, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCertRules,
-    use_key::UseKeyRules,
+    cnsanreplace::{CnSanReplace, CnSanReplaceRules},
+    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters,
+    use_cert::{UseCert, UseCertRules},
+    use_key::{UseKey, UseKeyRules},
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -14,38 +16,42 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) etcd_endpoint: Option<String>,
 
-    /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and /etc/machine-config-daemon. Can specify multiple times
-    #[arg(long)]
+    /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and
+    /// /etc/machine-config-daemon. Can specify multiple times
+    #[clap(long)]
     pub(crate) static_dir: Vec<PathBuf>,
 
     /// A list of strings to replace in the subject name of all certificates. Can specify multiple.
-    /// Must come in pairs of old and new values, separated by a space. For example:
-    /// --cn-san-replace "foo bar" --cn-san-replace "baz qux" will replace all instances of "foo"
-    /// with "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
-    #[arg(long)]
-    pub(crate) cn_san_replace: Vec<String>,
+    /// --cn-san-replace foo:bar --cn-san-replace baz:qux will replace all instances of "foo" with
+    /// "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
+    #[arg(long, value_parser = CnSanReplace::cli_parse)]
+    pub(crate) cn_san_replace: Vec<CnSanReplace>,
 
-    /// Comma separated cluster name and cluster base domain.
-    /// If given, many resources will be modified to use this new information
-    #[arg(long)]
-    pub(crate) cluster_rename: Option<String>,
+    /// Experimental feature. Colon separated cluster name and cluster base domain. If given, many
+    /// cluster resources which refer to a cluster name / cluster base domain (typically through
+    /// URLs which they happen to contian) will be modified to use this cluster name and base
+    /// domain instead.
+    #[arg(long, value_parser = ClusterRenameParameters::cli_parse)]
+    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
 
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For
-    /// example: --use-key "foo /etc/foo.key" --use-key "bar /etc/bar.key" will use the key in
+    /// example: --use-key foo:/etc/foo.key --use-key bar:/etc/bar.key will use the key in
     /// /etc/foo.key for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
     /// If more than one cert has the same CN, an error will occur and no certs will be
     /// regenerated.
-    #[arg(long)]
-    pub(crate) use_key: Vec<String>,
+    #[arg(long, value_parser = UseKey::cli_parse)]
+    pub(crate) use_key: Vec<UseKey>,
 
     /// Same as --use-key, but for when a cert needs to be replaced in its entirety, rather than
-    /// just being re-signed with a known private key. Certs replaced in this manner must not have
-    /// any children, as no private key is available to re-sign them. This is useful for certs that
-    /// we don't have the private key for, such admin-kubeconfig-signer.
-    #[arg(long)]
-    pub(crate) use_cert: Vec<String>,
+    /// just being re-signed with a known private key. Only the cert path is needed, CN is implied
+    /// by the cert itself. This is useful for certs that we don't have the private key for, such
+    /// admin-kubeconfig-signer. Certs replaced in this manner must not have any children, as no
+    /// private key is available to re-sign them. Their expiration will not be extended even when
+    /// the --extend-expiration flag is used.
+    #[arg(long, value_parser = UseCert::cli_parse)]
+    pub(crate) use_cert: Vec<UseCert>,
 
     /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and
     /// change their issue date to now.
@@ -60,10 +66,6 @@ pub(crate) struct Cli {
     /// Regenerate server SSH keys and write to this directory
     #[arg(long)]
     pub(crate) regenerate_server_ssh_keys: Option<PathBuf>,
-
-    /// Deprecated
-    #[arg(long)]
-    pub(crate) kubeconfig: Option<String>,
 }
 
 /// All the user requested customizations, coalesced into a single struct for convenience
@@ -87,46 +89,17 @@ pub(crate) struct ParsedCLI {
 pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     let cli = Cli::parse();
 
-    let etcd_endpoint = cli.etcd_endpoint;
-
-    let static_dirs = cli.static_dir;
-
-    // User provided certificate CN/SAN domain name replacement rules
-    let cn_san_replace_rules = CnSanReplaceRules::try_from(cli.cn_san_replace).context("parsing cli cn-san-replace")?;
-
-    // User provided keys for particular CNs, when the user wants to use existing keys instead of
-    // generating new ones
-    let use_key_rules = UseKeyRules::try_from(cli.use_key).context("parsing cli use-key")?;
-
-    // User provided certs for particular CNs, when the user wants to use existing certs instead of
-    // modifying existing ones
-    let use_cert_rules = UseCertRules::try_from(cli.use_cert).context("parsing cli use-key")?;
-
-    let cluster_rename = if let Some(cluster_rename) = cli.cluster_rename {
-        Some(ClusterRenameParameters::try_from(cluster_rename)?)
-    } else {
-        None
-    };
-
-    let extend_expiration = cli.extend_expiration;
-
-    let customizations = Customizations {
-        cn_san_replace_rules,
-        use_key_rules,
-        use_cert_rules,
-        extend_expiration,
-    };
-
-    let threads = cli.threads;
-
-    let regenerate_server_ssh_keys = cli.regenerate_server_ssh_keys;
-
     Ok(ParsedCLI {
-        etcd_endpoint,
-        static_dirs,
-        customizations,
-        cluster_rename,
-        threads,
-        regenerate_server_ssh_keys,
+        etcd_endpoint: cli.etcd_endpoint,
+        static_dirs: cli.static_dir,
+        customizations: Customizations {
+            cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
+            use_key_rules: UseKeyRules(cli.use_key),
+            use_cert_rules: UseCertRules(cli.use_cert),
+            extend_expiration: cli.extend_expiration,
+        },
+        cluster_rename: cli.cluster_rename,
+        threads: cli.threads,
+        regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys,
     })
 }
