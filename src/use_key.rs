@@ -25,7 +25,11 @@ impl UseKey {
         // TODO: ' ' is legacy, remove eventually
         let parts = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
 
-        ensure!(parts.len() == 2, "expected exactly one ':' in use-key argument, found {}", parts.len());
+        ensure!(
+            parts.len() == 2,
+            "expected exactly one ':' in use-key argument, found {}",
+            parts.len()
+        );
 
         let key_cert_cn = parts[0].to_string();
         let private_key_path = PathBuf::from(parts[1].to_string());
