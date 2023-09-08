@@ -92,8 +92,8 @@ See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
 ```bash
 export DOCKER_BUILDKIT=1
-docker build . -t quay.io/otuchfel/recert:latest
-docker push quay.io/otuchfel/recert:latest
+docker build . -t quay.io/recert/recert:latest
+docker push quay.io/recert/recert:latest
 ```
 
 # TODO
