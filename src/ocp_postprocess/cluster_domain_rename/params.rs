@@ -8,7 +8,7 @@ pub(crate) struct ClusterRenameParameters {
 
 impl ClusterRenameParameters {
     pub(crate) fn cli_parse(value: &str) -> Result<Self> {
-        let parts = value.split(':').collect::<Vec<_>>();
+        let parts = if value.contains(',') { value.split(',') } else { value.split(':') }.collect::<Vec<_>>();
 
         ensure!(
             parts.len() == 2,
