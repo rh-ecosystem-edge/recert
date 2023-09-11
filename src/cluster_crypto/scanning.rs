@@ -10,13 +10,10 @@ use crate::{
     rules,
 };
 use anyhow::{bail, Context, Result};
+use clio::ClioPath;
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::{
-    os::unix::prelude::OsStrExt,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{os::unix::prelude::OsStrExt, path::Path, sync::Arc};
 use x509_certificate::X509Certificate;
 
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
@@ -57,7 +54,7 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<PathBuf>,
+    static_dirs: Vec<ClioPath>,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     // Launch separate paralllel long running background tasks
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
@@ -74,7 +71,7 @@ pub(crate) async fn crypto_scan(
         .collect::<Vec<_>>())
 }
 
-fn scan_static_dirs(static_dirs: Vec<PathBuf>) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+fn scan_static_dirs(static_dirs: Vec<ClioPath>) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(

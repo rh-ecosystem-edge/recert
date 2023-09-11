@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{ensure, Context, Result};
 use bcder::Oid;
 use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
@@ -17,6 +19,10 @@ impl std::fmt::Display for UseCert {
 
 impl UseCert {
     pub(crate) fn cli_parse(cert_path: &str) -> Result<Self> {
+        let path = PathBuf::from(cert_path);
+        ensure!(path.exists(), "cert file {} does not exist", cert_path);
+        ensure!(path.is_file(), "cert file {} is not a file", cert_path);
+
         let pem = pem::parse_many(std::fs::read(cert_path).context("reading cert file")?).context("parsing PEM")?;
         ensure!(pem.len() == 1, "expected exactly one PEM block, found {}", pem.len());
         let pem = &pem[0];

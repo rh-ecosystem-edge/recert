@@ -6,32 +6,32 @@ use crate::{
 };
 use anyhow::Result;
 use clap::Parser;
-use std::path::PathBuf;
+use clio::*;
 
 /// A program to regenerate cluster certificates, keys and tokens
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub(crate) struct Cli {
-    // etcd endpoint to recertify
-    #[arg(long)]
+    /// etcd endpoint of etcd instance to recertify
+    #[clap(long)]
     pub(crate) etcd_endpoint: Option<String>,
 
     /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and
     /// /etc/machine-config-daemon. Can specify multiple times
-    #[clap(long)]
-    pub(crate) static_dir: Vec<PathBuf>,
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
+    pub(crate) static_dir: Vec<ClioPath>,
 
     /// A list of strings to replace in the subject name of all certificates. Can specify multiple.
     /// --cn-san-replace foo:bar --cn-san-replace baz:qux will replace all instances of "foo" with
     /// "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
-    #[arg(long, value_parser = CnSanReplace::cli_parse)]
+    #[clap(long, value_parser = CnSanReplace::cli_parse)]
     pub(crate) cn_san_replace: Vec<CnSanReplace>,
 
     /// Experimental feature. Colon separated cluster name and cluster base domain. If given, many
     /// cluster resources which refer to a cluster name / cluster base domain (typically through
     /// URLs which they happen to contian) will be modified to use this cluster name and base
     /// domain instead.
-    #[arg(long, value_parser = ClusterRenameParameters::cli_parse)]
+    #[clap(long, value_parser = ClusterRenameParameters::cli_parse)]
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
 
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
@@ -41,7 +41,7 @@ pub(crate) struct Cli {
     /// /etc/foo.key for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
     /// If more than one cert has the same CN, an error will occur and no certs will be
     /// regenerated.
-    #[arg(long, value_parser = UseKey::cli_parse)]
+    #[clap(long, value_parser = UseKey::cli_parse)]
     pub(crate) use_key: Vec<UseKey>,
 
     /// Same as --use-key, but for when a cert needs to be replaced in its entirety, rather than
@@ -50,22 +50,22 @@ pub(crate) struct Cli {
     /// admin-kubeconfig-signer. Certs replaced in this manner must not have any children, as no
     /// private key is available to re-sign them. Their expiration will not be extended even when
     /// the --extend-expiration flag is used.
-    #[arg(long, value_parser = UseCert::cli_parse)]
+    #[clap(long, value_parser = UseCert::cli_parse)]
     pub(crate) use_cert: Vec<UseCert>,
 
     /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and
     /// change their issue date to now.
-    #[arg(long, default_value_t = false)]
+    #[clap(long, default_value_t = false)]
     pub(crate) extend_expiration: bool,
 
     /// Threads to use for parallel processing. Defaults to using as many threads as there are
     /// logical CPUs
-    #[arg(long)]
+    #[clap(long)]
     pub(crate) threads: Option<usize>,
 
     /// Regenerate server SSH keys and write to this directory
-    #[arg(long)]
-    pub(crate) regenerate_server_ssh_keys: Option<PathBuf>,
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
+    pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
 }
 
 /// All the user requested customizations, coalesced into a single struct for convenience
@@ -79,11 +79,11 @@ pub(crate) struct Customizations {
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 pub(crate) struct ParsedCLI {
     pub(crate) etcd_endpoint: Option<String>,
-    pub(crate) static_dirs: Vec<PathBuf>,
+    pub(crate) static_dirs: Vec<ClioPath>,
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) threads: Option<usize>,
-    pub(crate) regenerate_server_ssh_keys: Option<PathBuf>,
+    pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
 }
 
 pub(crate) fn parse_cli() -> Result<ParsedCLI> {

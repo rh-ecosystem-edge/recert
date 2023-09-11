@@ -1,10 +1,11 @@
 use crate::{cluster_crypto::scanning, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters};
 use anyhow::{Context, Result};
 use cli::{Customizations, ParsedCLI};
+use clio::ClioPath;
 use cluster_crypto::ClusterCryptoObjects;
 use etcd_client::Client as EtcdClient;
 use k8s_etcd::InMemoryK8sEtcd;
-use std::{path::PathBuf, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 mod cli;
 mod cluster_crypto;
@@ -48,7 +49,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         cluster_crypto,
         parsed_cli.cluster_rename,
         parsed_cli.static_dirs,
-        parsed_cli.regenerate_server_ssh_keys,
+        parsed_cli.regenerate_server_ssh_keys.as_deref(),
     )
     .await
     .context("finalizing")?;
@@ -58,7 +59,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
 
 async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<PathBuf>,
+    static_dirs: Vec<ClioPath>,
     customizations: Customizations,
 ) -> Result<ClusterCryptoObjects> {
     if in_memory_etcd_client.etcd_client.is_some() {
@@ -89,8 +90,8 @@ async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     mut cluster_crypto: ClusterCryptoObjects,
     cluster_rename: Option<ClusterRenameParameters>,
-    static_dirs: Vec<PathBuf>,
-    regenerate_server_ssh_keys: Option<PathBuf>,
+    static_dirs: Vec<ClioPath>,
+    regenerate_server_ssh_keys: Option<&Path>,
 ) -> Result<()> {
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
@@ -105,8 +106,8 @@ async fn finalize(
 
     if let Some(regenerate_server_ssh_keys) = regenerate_server_ssh_keys {
         server_ssh_keys::write_new_keys(
-            &regenerate_server_ssh_keys,
-            server_ssh_keys::remove_old_keys(&regenerate_server_ssh_keys).context("removing old server SSH keys")?,
+            regenerate_server_ssh_keys,
+            server_ssh_keys::remove_old_keys(regenerate_server_ssh_keys).context("removing old server SSH keys")?,
         )
         .context("regenerating new server SSH keys")?;
     }

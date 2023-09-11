@@ -5,10 +5,11 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use clio::ClioPath;
 use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 pub(crate) mod cluster_domain_rename;
 
@@ -16,7 +17,7 @@ pub(crate) mod cluster_domain_rename;
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: Option<ClusterRenameParameters>,
-    static_dirs: Vec<PathBuf>,
+    static_dirs: Vec<ClioPath>,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -98,7 +99,7 @@ pub(crate) async fn delete_leases(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: ClusterRenameParameters,
-    static_dirs: Vec<PathBuf>,
+    static_dirs: Vec<ClioPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
     cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs)
