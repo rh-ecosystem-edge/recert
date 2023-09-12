@@ -62,10 +62,19 @@ impl DiscoveredCryptoObect {
 /// Given a value taken from a YAML field or the entire contents of a file, scan it for
 /// cryptographic keys and certificates and record them in the appropriate data structures.
 pub(crate) fn process_unknown_value(value: String, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
-    let pem_bundle_objects = process_pem_bundle(&value, location).context("processing pem bundle")?;
-    if !pem_bundle_objects.is_empty() {
-        return Ok(pem_bundle_objects);
-    }
+    let pem_bundle_objects = process_pem_bundle(&value, location).context("processing pem bundle");
+
+    // We intentionally ignore errors from processing PEM bundles because that function easily
+    // trips up from values that kinda look like PEM (e.g. a serialized install config yaml
+    // embedded in a configmap entry that contains an additionalTrustBundle PEM, which is
+    // inherently external, so we don't care about it)
+    match pem_bundle_objects {
+        Ok(objects) => return Ok(objects),
+        Err(err) => println!(
+            "warning: ignoring error from processing pem-looking text at location {}: {}",
+            location, err
+        ),
+    };
 
     // If we didn't find any PEM objects, try to process the value as a JWT
     if let Some(jwt) = process_jwt(&value, location)? {
