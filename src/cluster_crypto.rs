@@ -283,8 +283,8 @@ impl ClusterCryptoObjects {
                 }
 
                 if true_signing_cert.is_none() {
-                    bail!(
-                        "no signing cert found for cert in {}",
+                    println!(
+                        "warning: no signing cert found for cert in {}",
                         (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
                     );
                 }
