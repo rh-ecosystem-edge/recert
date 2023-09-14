@@ -50,7 +50,7 @@ impl DistributedPrivateKey {
             )?;
         }
 
-        let regenerated_private_key: PrivateKey = (&self_new_key_pair).try_into()?;
+        let regenerated_private_key: PrivateKey = (&self_new_key_pair.in_memory_signing_key_pair).try_into()?;
         self.key_regenerated = Some(regenerated_private_key.clone());
 
         if let Some(public_key) = &self.associated_distributed_public_key {
