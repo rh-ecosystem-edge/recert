@@ -111,6 +111,10 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                 .await
                 .context("listing validatingwebhookconfigurations")?),
             &(etcd_client
+                .list_keys("mutatingwebhookconfigurations")
+                .await
+                .context("listing validatingwebhookconfigurations")?),
+            &(etcd_client
                 .list_keys("apiregistration.k8s.io/apiservices")
                 .await
                 .context("listing apiservices")?),

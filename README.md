@@ -44,7 +44,6 @@ RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 
 CLUSTER_DIR="$REPO_DIR"/cluster-files
 BACKUP_CLUSTER_DIR="$REPO_DIR"/cluster-files-backup
-ETCD_RESOURCES="machineconfiguration.openshift.io/machineconfigs secrets configmaps validatingwebhookconfigurations apiregistration.k8s.io/apiservices"
 ```
 
 #### Create a local copy of cluster files
