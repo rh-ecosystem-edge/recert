@@ -260,7 +260,9 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
     let contents = read_file_to_string(file_path.to_path_buf()).await?;
 
     anyhow::Ok(
-        if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?.ends_with("kubeconfig")
+        if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?
+            .to_lowercase()
+            .contains("kubeconfig")
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
         {
