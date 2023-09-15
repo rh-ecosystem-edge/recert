@@ -16,12 +16,12 @@ COPY Cargo.toml Cargo.lock .
 COPY src/ src/
 RUN cargo build --release --bin recert
 
-FROM golang:1.19-bookworm as ouger-builder
+FROM docker.io/library/golang:1.19-bookworm as ouger-builder
 COPY ./ouger $GOPATH/src
 WORKDIR $GOPATH/src
 RUN go build -buildvcs=false -o $GOPATH/bin/ouger
 
-FROM debian:bookworm AS runtime
+FROM docker.io/library/debian:bookworm AS runtime
 WORKDIR app
 RUN apt-get update
 RUN apt-get install -y openssl
