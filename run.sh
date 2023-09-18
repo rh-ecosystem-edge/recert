@@ -29,13 +29,12 @@ cargo run --manifest-path "$REPO_DIR"/Cargo.toml --release -- \
 	--static-dir "$CLUSTER_DIR"/kubernetes \
 	--static-dir "$CLUSTER_DIR"/kubelet \
 	--static-dir "$CLUSTER_DIR"/machine-config-daemon \
-	--cn-san-replace "api-int.test-cluster.redhat.com api-int.new-name.foo.com" \
-	--cn-san-replace "api.test-cluster.redhat.com api.new-name.foo.com" \
-	--cn-san-replace "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com" \
-	--cluster-rename new-name,foo.com \
-	--use-cert example.crt \
-    --extend-expiration \
-    --regenerate-server-ssh-keys "$CLUSTER_DIR"/ssh
+    --extend-expiration 
+	# --cn-san-replace "api-int.test-cluster.redhat.com api-int.new-name.foo.com" \
+	# --cn-san-replace "api.test-cluster.redhat.com api.new-name.foo.com" \
+	# --cn-san-replace "*.apps.test-cluster.redhat.com *.apps.new-name.foo.com" \
+	# --cluster-rename new-name,foo.com \
+	# --use-cert example.crt \
 
 # Dump etcd after changes
 dump "$CLUSTER_DIR/etcd_dump"
