@@ -69,7 +69,11 @@ pub(crate) fn process_unknown_value(value: String, location: &Location) -> Resul
     // embedded in a configmap entry that contains an additionalTrustBundle PEM, which is
     // inherently external, so we don't care about it)
     match pem_bundle_objects {
-        Ok(objects) => return Ok(objects),
+        Ok(objects) => {
+            if !objects.is_empty() {
+                return Ok(objects);
+            }
+        }
         Err(err) => println!(
             "warning: ignoring error from processing pem-looking text at location {}: {}",
             location, err
