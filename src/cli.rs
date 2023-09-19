@@ -21,6 +21,11 @@ pub(crate) struct Cli {
     #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
     pub(crate) static_dir: Vec<ClioPath>,
 
+    /// A file to recertify, such as /etc/mcs-machine-config-content.json. Can specify multiple
+    /// times
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_file())]
+    pub(crate) static_file: Vec<ClioPath>,
+
     /// A list of strings to replace in the subject name of all certificates. Can specify multiple.
     /// --cn-san-replace foo:bar --cn-san-replace baz:qux will replace all instances of "foo" with
     /// "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
@@ -80,6 +85,7 @@ pub(crate) struct Customizations {
 pub(crate) struct ParsedCLI {
     pub(crate) etcd_endpoint: Option<String>,
     pub(crate) static_dirs: Vec<ClioPath>,
+    pub(crate) static_files: Vec<ClioPath>,
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) threads: Option<usize>,
@@ -92,6 +98,7 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     Ok(ParsedCLI {
         etcd_endpoint: cli.etcd_endpoint,
         static_dirs: cli.static_dir,
+        static_files: cli.static_file,
         customizations: Customizations {
             cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
             use_key_rules: UseKeyRules(cli.use_key),

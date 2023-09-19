@@ -39,6 +39,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
     let cluster_crypto = recertify(
         Arc::clone(&in_memory_etcd_client),
         parsed_cli.static_dirs.clone(),
+        parsed_cli.static_files.clone(),
         parsed_cli.customizations,
     )
     .await
@@ -60,6 +61,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
 async fn recertify(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     static_dirs: Vec<ClioPath>,
+    static_files: Vec<ClioPath>,
     customizations: Customizations,
 ) -> Result<ClusterCryptoObjects> {
     if in_memory_etcd_client.etcd_client.is_some() {
@@ -70,7 +72,7 @@ async fn recertify(
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
-    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs));
+    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, static_files));
     let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300, 20));
 
     // Wait for the parallelizable tasks to finish and get their results

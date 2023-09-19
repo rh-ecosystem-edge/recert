@@ -13,7 +13,11 @@ use anyhow::{bail, Context, Result};
 use clio::ClioPath;
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::{os::unix::prelude::OsStrExt, path::Path, sync::Arc};
+use std::{
+    os::unix::prelude::OsStrExt,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use x509_certificate::X509Certificate;
 
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
@@ -55,19 +59,23 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     static_dirs: Vec<ClioPath>,
+    static_files: Vec<ClioPath>,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     // Launch separate paralllel long running background tasks
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
-    let discovered_filesystem_objects = scan_static_dirs(static_dirs);
+    let discovered_filesystem_dir_objects = scan_static_dirs(static_dirs);
+    let discovered_filesystem_file_objects = scan_static_files(static_files);
 
     // ... and join them
     let discovered_crypto_objects = discovered_etcd_objects.await??;
-    let discovered_filesystem_objects = discovered_filesystem_objects.await??;
+    let discovered_filesystem_dir_objects = discovered_filesystem_dir_objects.await??;
+    let discovered_filesystem_file_objects = discovered_filesystem_file_objects.await??;
 
     // Return all objects discovered as one large vector
     Ok(discovered_crypto_objects
         .into_iter()
-        .chain(discovered_filesystem_objects)
+        .chain(discovered_filesystem_dir_objects)
+        .chain(discovered_filesystem_file_objects)
         .collect::<Vec<_>>())
 }
 
@@ -82,6 +90,35 @@ fn scan_static_dirs(static_dirs: Vec<ClioPath>) -> tokio::task::JoinHandle<std::
                             scan_filesystem_directory(&static_dir)
                                 .await
                                 .with_context(|| format!("static dir {:?}", static_dir))
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+        )
+    })
+}
+
+fn scan_static_files(
+    static_files: Vec<ClioPath>,
+) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+    tokio::spawn(async move {
+        anyhow::Ok(
+            join_all(
+                static_files
+                    .into_iter()
+                    .map(|static_file| {
+                        tokio::spawn(async move {
+                            scan_filesystem_file(static_file.to_path_buf())
+                                .await
+                                .with_context(|| format!("static file {:?}", static_file))
                         })
                     })
                     .collect::<Vec<_>>(),
@@ -206,30 +243,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
             // JWT tokens can be found in files named "token"
             .chain(file_utils::globvec(dir, "**/token")?.into_iter())
-            .map(|file_path| {
-                tokio::spawn(async move {
-                    let contents = read_file_to_string(file_path.clone()).await?;
-
-                    anyhow::Ok(
-                        if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?.ends_with("kubeconfig")
-                            || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
-                            || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
-                        {
-                            process_static_resource_yaml(contents, &file_path)
-                                .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
-                        } else {
-                            crypto_objects::process_unknown_value(
-                                contents,
-                                &Location::Filesystem(FileLocation {
-                                    path: file_path.to_string_lossy().to_string(),
-                                    content_location: FileContentLocation::Raw(LocationValueType::Unknown),
-                                }),
-                            )
-                            .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
-                        },
-                    )
-                })
-            })
+            .map(|file_path| tokio::spawn(scan_filesystem_file(file_path.clone())))
             .collect::<Vec<_>>(),
     )
     .await
@@ -240,6 +254,29 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
     .into_iter()
     .flatten()
     .collect::<Vec<_>>())
+}
+
+async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCryptoObect>> {
+    let contents = read_file_to_string(file_path.to_path_buf()).await?;
+
+    anyhow::Ok(
+        if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?.ends_with("kubeconfig")
+            || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
+            || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
+        {
+            process_static_resource_yaml(contents, &file_path)
+                .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
+        } else {
+            crypto_objects::process_unknown_value(
+                contents,
+                &Location::Filesystem(FileLocation {
+                    path: file_path.to_string_lossy().to_string(),
+                    content_location: FileContentLocation::Raw(LocationValueType::Unknown),
+                }),
+            )
+            .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
+        },
+    )
 }
 
 pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
