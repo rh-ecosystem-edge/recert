@@ -366,7 +366,7 @@ impl CertKeyPair {
                         resource,
                         yaml_location,
                         &newpem,
-                        if filelocation.path.ends_with("currentconfig") {
+                        if filelocation.path.ends_with("currentconfig") || filelocation.path.ends_with("mcs-machine-config-content.json") {
                             crate::file_utils::RecreateYamlEncoding::Json
                         } else {
                             crate::file_utils::RecreateYamlEncoding::Yaml

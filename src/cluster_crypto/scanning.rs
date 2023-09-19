@@ -198,6 +198,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/*.pub.mcdorig")?.into_iter())
             // A file-system copy of machineconfig objects found in /etc/machine-config-daemon/currentconfig
             .chain(file_utils::globvec(dir, "**/currentconfig")?.into_iter())
+            // A file used by MCS
+            .chain(file_utils::globvec(dir, "**/mcs-machine-config-content.json")?.into_iter())
             // The various names for kubeconfig files
             .chain(file_utils::globvec(dir, "**/*kubeconfig")?.into_iter())
             .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
@@ -211,6 +213,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
                     anyhow::Ok(
                         if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?.ends_with("kubeconfig")
                             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
+                            || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
                         {
                             process_static_resource_yaml(contents, &file_path)
                                 .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
