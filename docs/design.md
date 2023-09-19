@@ -954,7 +954,7 @@ have anything to do with the rest of the tool.
 
 ### Use Key
 
-You can provide re-cert with a private key and a CN. When re-cert generates a
+You can provide recert with a private key and a CN. When recert generates a
 cert-key pair, and that certificate has a subject CN field which matches the
 given CN field, recert will use your given private key instead of randomly
 generating a new one. This is useful in image-based upgrades where you want the
@@ -962,13 +962,14 @@ old kubeconfig from the pre-upgrade cluster to keep working.
 
 ### Use cert
 
-Similar to use key, but the user provides us with a cert instead. When re-cert
+Similar to use key, but the user provides us with a cert instead. When recert
 generates a cert-key pair, and that certificate has a subject CN field which
 matches the given certificate's subject CN field, recert will simply use the
 user provided cert instead of generating a new one. This is also useful for
 image-based upgrades where you want the old kubeconfig from the pre-upgrade
 cluster to keep working, but you don't have access to the private key that was
-used to sign the kubeconfig client cert, which is the case in OpenShift - that
+used to sign the kubeconfig client cert, which is the case with OpenShift's
+installer generated admin kubeconfig client certificate CA's private key - that
 key gets discarded during installation.
 
 ## Optimizations
