@@ -16,7 +16,8 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
         Some(kind) => match kind.as_str().context("non-unicode kind")? {
             "Secret" => scan_secret(&yaml_value),
             "ConfigMap" => scan_configmap(&yaml_value),
-            "ValidatingWebhookConfiguration" => scan_validatingwebhookconfiguration(&yaml_value),
+            "ValidatingWebhookConfiguration" => scan_webhookconfiguration(&yaml_value),
+            "MutatingWebhookConfiguration" => scan_webhookconfiguration(&yaml_value),
             "APIService" => scan_apiservice(&yaml_value),
             "MachineConfig" => scan_machineconfig(&yaml_value),
             "Config" => match apiversion {
@@ -93,13 +94,9 @@ pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn scan_validatingwebhookconfiguration(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_webhookconfiguration(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = vec![];
-    if let Some(Value::Array(webhooks)) = value
-        .as_object()
-        .context("non-object ValidatingWebhookConfiguration")?
-        .get("webhooks")
-    {
+    if let Some(Value::Array(webhooks)) = value.as_object().context("non-object WebhookConfiguration")?.get("webhooks") {
         for (webhook_index, webhook_value) in webhooks.iter().enumerate() {
             if let Some(Value::Object(client_config)) = webhook_value.get("clientConfig") {
                 if let Some(ca_bundle) = client_config.get("caBundle") {
@@ -121,7 +118,7 @@ pub(crate) fn scan_validatingwebhookconfiguration(value: &Value) -> Result<Vec<Y
 
 pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
-    if let Some(Value::Object(spec)) = value.as_object().context("non-object ValidatingWebhookConfiguration")?.get("spec") {
+    if let Some(Value::Object(spec)) = value.as_object().context("non-object apiservice")?.get("spec") {
         if let Some(ca_bundle) = spec.get("caBundle") {
             res.push(YamlValue {
                 location: YamlLocation {
@@ -139,7 +136,7 @@ pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<YamlValue>> {
 
 pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
     let mut res = Vec::new();
-    if let Some(Value::Object(spec)) = value.as_object().context("non-object ValidatingWebhookConfiguration")?.get("spec") {
+    if let Some(Value::Object(spec)) = value.as_object().context("non-object machineconfig")?.get("spec") {
         if let Some(Value::Object(config)) = spec.get("config") {
             if let Some(Value::Object(storage)) = config.get("storage") {
                 if let Some(Value::Array(files)) = storage.get("files") {
