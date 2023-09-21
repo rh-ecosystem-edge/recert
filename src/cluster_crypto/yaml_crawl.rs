@@ -20,6 +20,7 @@ pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
             "MutatingWebhookConfiguration" => scan_webhookconfiguration(&yaml_value),
             "APIService" => scan_apiservice(&yaml_value),
             "MachineConfig" => scan_machineconfig(&yaml_value),
+            "ControllerConfig" => scan_controllerconfig(&yaml_value),
             "Config" => match apiversion {
                 Some(apiversion) => match apiversion.as_str().context("non-string apiVersion")? {
                     "v1" => scan_kubeconfig(&yaml_value),
@@ -164,6 +165,35 @@ pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
             }
         }
     }
+    Ok(res)
+}
+
+pub(crate) fn scan_controllerconfig(value: &Value) -> Result<Vec<YamlValue>> {
+    let mut res = Vec::new();
+    if let Some(Value::Object(spec)) = value.as_object().context("non-object controllerconfig")?.get("spec") {
+        if let Some(ca_bundle) = spec.get("kubeAPIServerServingCAData") {
+            res.push(YamlValue {
+                location: YamlLocation {
+                    json_pointer: "/spec/kubeAPIServerServingCAData".to_string(),
+                    value: LocationValueType::Unknown,
+                    encoding: FieldEncoding::Base64,
+                },
+                value: ca_bundle.clone(),
+            });
+        }
+
+        if let Some(ca_bundle) = spec.get("rootCAData") {
+            res.push(YamlValue {
+                location: YamlLocation {
+                    json_pointer: "/spec/rootCAData".to_string(),
+                    value: LocationValueType::Unknown,
+                    encoding: FieldEncoding::Base64,
+                },
+                value: ca_bundle.clone(),
+            });
+        }
+    }
+
     Ok(res)
 }
 

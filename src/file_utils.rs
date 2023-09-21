@@ -74,15 +74,45 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
     }
 }
 
+fn dataurl_escape(s: &str) -> String {
+    let mut escaped = String::with_capacity(s.len() * 2);
+
+    for c in s.chars() {
+        if {
+            let c = c;
+            // https://datatracker.ietf.org/doc/html/rfc2396#section-2.3
+            matches!(c, 'a'..='z'
+                | 'A'..='Z'
+                | '0'..='9'
+                | '-'
+                | '_'
+                | '.'
+                | '!'
+                | '~'
+                | '*'
+                | '\''
+                | '('
+                | ')')
+        } {
+            escaped.push(c);
+        } else {
+            escaped.push_str(&format!("%{:02X}", c as u32));
+        }
+    }
+
+    escaped
+}
+
+// This is not fully compliant with the dataurl spec, but it's good enough for our purposes
+pub(crate) fn dataurl_encode(data: &str) -> String {
+    format!("data:,{}", dataurl_escape(data))
+}
+
 pub(crate) fn encode_resource_data_entry(k8slocation: &YamlLocation, value: &String) -> String {
     match k8slocation.encoding {
         crate::cluster_crypto::locations::FieldEncoding::None => value.to_string(),
         crate::cluster_crypto::locations::FieldEncoding::Base64 => base64_standard.encode(value.as_bytes()),
-        crate::cluster_crypto::locations::FieldEncoding::DataUrl => {
-            let mut url = dataurl::DataUrl::new();
-            url.set_data(value.as_bytes());
-            url.to_string()
-        }
+        crate::cluster_crypto::locations::FieldEncoding::DataUrl => dataurl_encode(value),
     }
 }
 
