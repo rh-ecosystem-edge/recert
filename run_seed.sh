@@ -52,7 +52,7 @@ function dump {
 # dump backup/etcd_orig
 
 cargo run --release -- \
-	--cluster-rename new-name,foo.com \
+    --cluster-rename new-name,foo.com \
     --extend-expiration \
     --etcd-endpoint localhost:2379 \
     --static-dir backup/etc/kubernetes \
