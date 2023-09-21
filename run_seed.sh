@@ -22,7 +22,8 @@ mkdir -p backup/etc_orig backup/var_orig
 tar -C backup/etc_orig -xzf backup/etc.tgz etc --strip-components=1
 tar -C backup/var_orig -xzf backup/var.tgz var --strip-components=1
 
-sudo podman kill editor >/dev/null; sudo podman rm editor >/dev/null
+sudo podman kill editor >/dev/null || true
+sudo podman rm editor >/dev/null || true
 
 ETCD_IMAGE=${ETCD_IMAGE:-"$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"}
 sudo podman run --network=host --name editor \
@@ -51,7 +52,7 @@ function dump {
 # dump backup/etcd_orig
 
 cargo run --release -- \
-    --help \
+	--cluster-rename new-name,foo.com \
     --extend-expiration \
     --etcd-endpoint localhost:2379 \
     --static-dir backup/etc/kubernetes \
