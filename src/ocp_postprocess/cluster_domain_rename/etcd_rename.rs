@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
+    file_utils,
     k8s_etcd::{get_etcd_yaml, put_etcd_yaml, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
@@ -186,9 +187,7 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
                 let new = fix_apiserver_url_file(decoded, cluster_domain)?;
 
-                let mut url = dataurl::DataUrl::new();
-                url.set_data(new.as_bytes());
-                file_contents.insert("source".to_string(), serde_json::Value::String(url.to_string()));
+                file_contents.insert("source".to_string(), serde_json::Value::String(file_utils::dataurl_encode(&new)));
 
                 put_etcd_yaml(etcd_client, &k8s_resource_location, machineconfig).await?;
 

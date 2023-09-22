@@ -159,6 +159,10 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                 .list_keys("machineconfiguration.openshift.io/machineconfigs")
                 .await
                 .context("listing machineconfigs")?),
+            &(etcd_client
+                .list_keys("machineconfiguration.openshift.io/controllerconfigs")
+                .await
+                .context("listing controllerconfigs")?),
         ]
     };
 

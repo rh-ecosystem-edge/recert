@@ -84,7 +84,7 @@ impl InMemoryK8sEtcd {
             let value = value.clone();
             let etcd_client = Arc::clone(etcd_client);
             // TODO: Find a fancier way to detect CRDs
-            let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/machineconfigs/") {
+            let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/") {
                 value.to_vec()
             } else {
                 run_ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
