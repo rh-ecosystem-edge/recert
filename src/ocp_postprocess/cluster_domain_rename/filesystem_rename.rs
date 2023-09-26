@@ -1,6 +1,10 @@
 use super::{
-    rename_utils::fix_api_server_arguments, rename_utils::fix_apiserver_url_file, rename_utils::fix_kcm_extended_args,
-    rename_utils::fix_kcm_pod, rename_utils::fix_kubeconfig, rename_utils::fix_oauth_metadata,
+    rename_utils::fix_api_server_arguments,
+    rename_utils::fix_apiserver_url_file,
+    rename_utils::fix_kcm_extended_args,
+    rename_utils::fix_kubeconfig,
+    rename_utils::fix_oauth_metadata,
+    rename_utils::{fix_kcm_pod, fix_machineconfig},
 };
 use crate::file_utils::{self, read_file_to_string};
 use anyhow::{self, Context, Result};
@@ -165,8 +169,40 @@ pub(crate) async fn fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain:
     Ok(())
 }
 
+pub(crate) async fn fix_filesystem_currentconfig(cluster_domain: &str, dir: &Path) -> Result<()> {
+    join_all(file_utils::globvec(dir, "**/currentconfig")?.into_iter().map(|file_path| {
+        let kcm_config_path = file_path.clone();
+        let cluster_domain = cluster_domain.to_string();
+        tokio::spawn(async move {
+            async move {
+                let contents = read_file_to_string(file_path.clone())
+                    .await
+                    .context("reading kube-apiserver oauthMetadata")?;
+                let mut config: Value = serde_json::from_str(&contents).context("parsing currentconfig")?;
+
+                fix_machineconfig(&mut config, &cluster_domain)?;
+
+                tokio::fs::write(file_path, serde_json::to_string(&config).context("serializing currentconfig")?)
+                    .await
+                    .context("writing currentconfig to disk")?;
+
+                anyhow::Ok(())
+            }
+            .await
+            .context(format!("fixing currentconfig {:?}", kcm_config_path))
+        })
+    }))
+    .await
+    .into_iter()
+    .collect::<core::result::Result<Vec<_>, _>>()?
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
 pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str, dir: &Path) -> Result<()> {
-    join_all(file_utils::globvec(dir, "**/apiserver-url.env")?.into_iter().map(|file_path| {
+    join_all(file_utils::globvec(dir, "**/apiserver-url.env*")?.into_iter().map(|file_path| {
         let cluster_domain = cluster_domain.to_string();
         let kubeconfig_path = file_path.clone();
         tokio::spawn(async move {
@@ -215,7 +251,6 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path)
                             .await
                             .context("fixing kubeconfig")?;
 
-                        // write back to disk
                         tokio::fs::write(file_path, serde_yaml::to_string(&yaml_value).context("serializing kubeconfig")?)
                             .await
                             .context("writing kubeconfig to disk")?;

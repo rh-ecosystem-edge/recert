@@ -96,7 +96,7 @@ impl InMemoryK8sEtcd {
         Ok(())
     }
 
-    pub(crate) async fn get(&self, key: String) -> Result<EtcdResult> {
+    pub(crate) async fn get(&self, key: String) -> Result<Option<EtcdResult>> {
         let etcd_client = match &self.etcd_client {
             Some(etcd_client) => etcd_client,
             None => bail!("etcd client not configured"),
@@ -111,21 +111,26 @@ impl InMemoryK8sEtcd {
             let hashmap = self.etcd_keyvalue_hashmap.lock().await;
             if let Some(value) = hashmap.get(&key) {
                 result.value = value.clone();
-                return Ok(result);
+                return Ok(Some(result));
             }
         }
 
         let get_result = etcd_client.kv_client().get(key.clone(), None).await.context("during etcd get")?;
-        let raw_etcd_value = get_result.kvs().first().context("key not found")?.value();
 
-        let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
-        self.etcd_keyvalue_hashmap
-            .lock()
-            .await
-            .insert(key.to_string(), decoded_value.clone());
+        if let Some(value) = get_result.kvs().first() {
+            let raw_etcd_value = value.value();
 
-        result.value = decoded_value;
-        Ok(result)
+            let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
+            self.etcd_keyvalue_hashmap
+                .lock()
+                .await
+                .insert(key.to_string(), decoded_value.clone());
+
+            result.value = decoded_value;
+            return Ok(Some(result));
+        };
+
+        Ok(None)
     }
 
     pub(crate) async fn put(&self, key: &str, value: Vec<u8>) {
@@ -188,14 +193,17 @@ async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<
     Ok(result.stdout)
 }
 
-pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Value> {
-    Ok(serde_yaml::from_str(&String::from_utf8(
-        client
-            .get(k8slocation.as_etcd_key())
-            .await
-            .with_context(|| format!("etcd get {}", k8slocation.as_etcd_key()))?
-            .value,
-    )?)?)
+pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Option<Value>> {
+    let etcd_result = client
+        .get(k8slocation.as_etcd_key())
+        .await
+        .with_context(|| format!("etcd get {}", k8slocation.as_etcd_key()))?;
+
+    Ok(if let Some(etcd_result) = etcd_result {
+        Some(serde_yaml::from_str(&String::from_utf8(etcd_result.value)?)?)
+    } else {
+        None
+    })
 }
 
 pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation, value: Value) -> Result<()> {

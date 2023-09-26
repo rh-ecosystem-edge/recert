@@ -49,16 +49,19 @@ async fn fix_dir_resources(cluster_domain: &str, dir: &Path, generated_infra_id:
         .context("renaming apiserver-url.env")?;
     filesystem_rename::fix_filesystem_kcm_pods(generated_infra_id, dir)
         .await
-        .context("renaming apiserver-url.env")?;
+        .context("renaming kcm pods")?;
     filesystem_rename::fix_filesystem_kcm_configs(generated_infra_id, dir)
         .await
-        .context("renaming apiserver-url.env")?;
+        .context("renaming kcm configs")?;
     filesystem_rename::fix_filesystem_kube_apiserver_configs(cluster_domain, dir)
         .await
-        .context("renaming apiserver-url.env")?;
+        .context("renaming kube apiserver configs")?;
     filesystem_rename::fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain, dir)
         .await
-        .context("renaming apiserver-url.env")?;
+        .context("renaming kube apiserver oauth metdata")?;
+    filesystem_rename::fix_filesystem_currentconfig(cluster_domain, dir)
+        .await
+        .context("renaming currentconfig")?;
     Ok(())
 }
 

@@ -52,14 +52,18 @@ function dump {
 # dump backup/etcd_orig
 
 cargo run --release -- \
-    --extend-expiration \
     --etcd-endpoint localhost:2379 \
     --static-dir backup/etc/kubernetes \
     --static-dir backup/var/lib/kubelet \
     --static-dir backup/etc/machine-config-daemon \
-    --static-file backup/etc/mcs-machine-config-content.json 
+    --static-file backup/etc/mcs-machine-config-content.json  \
+    --cn-san-replace api-int.test-cluster.redhat.com:api-int.new-name.foo.com \
+    --cn-san-replace api.test-cluster.redhat.com:api.new-name.foo.com \
+    --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
+    --cluster-rename new-name,foo.com \
+    --extend-expiration
 
-# dump backup/etcd
+dump backup/etcd
 
 meld backup/etc_orig backup/etc
 meld backup/var_orig backup/var

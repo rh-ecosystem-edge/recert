@@ -309,7 +309,9 @@ impl CertKeyPair {
     }
 
     pub(crate) async fn commit_k8s_cert(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location)
+            .await?
+            .context("resource disappeared")?;
         add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;
 
         let cert_pem = pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?;

@@ -31,7 +31,8 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         },
     )
     .await
-    .context("getting")?;
+    .context("getting trust bundle")?
+    .context("trust bundle not found")?;
 
     let pem_bundle = pem::parse_many(
         yaml.pointer("/data/ca-bundle.crt")
@@ -182,7 +183,8 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                     let etcd_result = etcd_client
                         .get(key.clone())
                         .await
-                        .with_context(|| format!("getting key {:?}", key))?;
+                        .with_context(|| format!("getting key {:?}", key))?
+                        .context("key disappeared")?;
                     let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
                         .with_context(|| format!("deserializing value of key {:?}", key,))?;
                     let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
