@@ -19,7 +19,7 @@ RUN cargo build --release --bin recert
 FROM docker.io/library/golang:1.19-bookworm as ouger-builder
 COPY ./ouger $GOPATH/src
 WORKDIR $GOPATH/src
-RUN go build -buildvcs=false -o $GOPATH/bin/ouger
+RUN CGO_ENABLED=0 go build -buildvcs=false -o $GOPATH/bin/ouger
 
 FROM docker.io/library/debian:bookworm AS runtime
 WORKDIR app
