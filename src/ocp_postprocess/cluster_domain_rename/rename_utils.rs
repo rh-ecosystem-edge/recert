@@ -4,6 +4,8 @@ use rand::{thread_rng, Rng};
 use serde_json::Value;
 use std::io::BufRead;
 
+use crate::file_utils;
+
 pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &str) -> Result<String> {
     let mut found = false;
     let new = original_data
@@ -26,7 +28,7 @@ pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &st
         bail!("could not find line starting with KUBERNETES_SERVICE_HOST='api-int. in apiserver-url.env");
     }
 
-    Ok(new)
+    Ok(format!("{new}\n"))
 }
 
 pub(crate) fn fix_oauth_metadata(oauth_metadata: &mut Value, cluster_domain: &str) -> Result<()> {
@@ -245,6 +247,48 @@ pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_n
 
             Ok(())
         })?;
+
+    Ok(())
+}
+
+pub(crate) fn fix_machineconfig(machineconfig: &mut Value, cluster_domain: &str) -> Result<()> {
+    let pointer_mut = machineconfig.pointer_mut("/spec/config/storage/files");
+    if pointer_mut.is_none() {
+        // Not all machineconfigs have files to look at and that's ok
+        return Ok(());
+    };
+
+    let find_map = pointer_mut
+        .context("no /spec/config/storage/files")?
+        .as_array_mut()
+        .context("files not an array")?
+        .iter_mut()
+        .find_map(|file| (file.pointer("/path")? == "/etc/kubernetes/apiserver-url.env").then_some(file));
+
+    if find_map.is_none() {
+        // Not all machineconfigs have the file we're looking for and that's ok
+        return Ok(());
+    };
+
+    let file_contents = find_map
+        .context("no /etc/kubernetes/apiserver-url.env file in machineconfig")?
+        .pointer_mut("/contents")
+        .context("no .contents")?
+        .as_object_mut()
+        .context("annotations not an object")?;
+
+    let original_data = file_contents["source"].as_str().context("source not a string")?;
+
+    let (decoded, _fragment) = data_url::DataUrl::process(original_data)
+        .ok()
+        .context("dataurl processing")?
+        .decode_to_vec()
+        .ok()
+        .context("dataurl decoding")?;
+
+    let new = fix_apiserver_url_file(decoded, cluster_domain)?;
+
+    file_contents.insert("source".to_string(), serde_json::Value::String(file_utils::dataurl_encode(&new)));
 
     Ok(())
 }

@@ -24,6 +24,7 @@ pub(crate) async fn ocp_postprocess(
         .context("fixing olm secret hash annotation")?;
 
     delete_leases(in_memory_etcd_client).await.context("deleting leases")?;
+    delete_pods(in_memory_etcd_client).await.context("deleting leases")?;
 
     if let Some(cluster_rename_params) = cluster_rename_params {
         cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs)
@@ -49,6 +50,7 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
                 &K8sResourceLocation::new(None, "APIService", "v1.packages.operators.coreos.com", "apiregistration.k8s.io/v1"),
             )
             .await?
+            .context("couldn't find OLM APIService")?
             .pointer("/spec/caBundle")
             .context("couldn't find OLM .spec.caBundle")?
             .as_str()
@@ -64,7 +66,9 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         "v1",
     );
 
-    let mut packageserver_serving_cert_secret = get_etcd_yaml(etcd_client, &package_serving_cert_secret_k8s_resource_location).await?;
+    let mut packageserver_serving_cert_secret = get_etcd_yaml(etcd_client, &package_serving_cert_secret_k8s_resource_location)
+        .await?
+        .context("couldn't find packageserver-service-cert")?;
     packageserver_serving_cert_secret
         .pointer_mut("/metadata/annotations")
         .context("no .metadata.annotations")?
@@ -85,6 +89,18 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
 /// Delete all the leases to help the node come up faster
 pub(crate) async fn delete_leases(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
     join_all(etcd_client.list_keys("leases/").await?.into_iter().map(|key| async move {
+        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+        Ok(())
+    }))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_pods(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    join_all(etcd_client.list_keys("pods/").await?.into_iter().map(|key| async move {
         etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
         Ok(())
     }))

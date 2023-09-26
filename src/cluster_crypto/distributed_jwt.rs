@@ -76,7 +76,9 @@ impl DistributedJwt {
     }
 
     pub(crate) async fn commit_to_etcd(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location).await?;
+        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location)
+            .await?
+            .context("resource disappeared")?;
         let value_at_json_pointer = resource
             .pointer_mut(&k8slocation.yaml_location.json_pointer)
             .context("value disappeared")?;
