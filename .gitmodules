@@ -1,3 +1,6 @@
 [submodule "ouger"]
 	path = ouger
 	url = https://github.com/rh-ecosystem-edge/ouger
+[submodule "etcddump"]
+	path = etcddump
+	url = https://github.com/omertuc/etcddump

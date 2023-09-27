@@ -45,3 +45,5 @@ chrono = "0.4.26"
 libc = "0.2.147"
 clio = { version = "0.3.4", features = ["clap", "clap-parse"] }
 data-url = "0.3.0"
+reqwest = { version = "0.11.20", default-features = false }
+
