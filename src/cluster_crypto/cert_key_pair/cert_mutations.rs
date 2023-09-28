@@ -2,12 +2,12 @@ use super::SUBJECT_ALTERNATIVE_NAME_OID;
 use crate::cnsanreplace::CnSanReplaceRules;
 use anyhow::bail;
 use anyhow::{Context, Result};
-use bcder::OctetString;
+use bcder::OctetString as BcderOctetString;
 use bcder::Oid;
 use bcder::Tag;
 use der::asn1::Ia5String;
 use der::{Decode, Encode};
-use x509_cert::ext::pkix::name::GeneralName::DnsName;
+use x509_cert::ext::pkix::name::GeneralName::{DnsName, IpAddress};
 use x509_cert::ext::pkix::SubjectAltName;
 use x509_certificate::rfc3280::{AttributeTypeAndValue, Name};
 use x509_certificate::{rfc3280, rfc4519::OID_COMMON_NAME, rfc5280::TbsCertificate};
@@ -135,13 +135,14 @@ pub(crate) fn mutate_cert_subject_alternative_name(
                         .map(|san| {
                             Ok(match san {
                                 DnsName(name) => DnsName(Ia5String::new(&cn_san_replace_rules.replace(name.as_ref()))?),
+                                IpAddress(ip) => IpAddress(cn_san_replace_rules.replace_ip(ip)),
                                 san_name => san_name.clone(),
                             })
                         })
                         .collect::<Result<Vec<_>>>()?,
                 );
 
-                ext.value = OctetString::new(bytes::Bytes::copy_from_slice(
+                ext.value = BcderOctetString::new(bytes::Bytes::copy_from_slice(
                     new_san_extension
                         .to_der()
                         .context("failed to generate SAN extension")

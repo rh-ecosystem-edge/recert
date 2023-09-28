@@ -1,4 +1,7 @@
+use std::{net::IpAddr, str::FromStr};
+
 use anyhow::{ensure, Result};
+use der::asn1::OctetString;
 
 #[derive(Clone)]
 pub(crate) struct CnSanReplace {
@@ -47,6 +50,41 @@ impl CnSanReplaceRules {
         }
 
         output
+    }
+
+    pub(crate) fn replace_ip(&self, input: &OctetString) -> OctetString {
+        for rule in &self.0 {
+            if let Ok(ip) = IpAddr::from_str(&rule.old) {
+                let octets = if let Ok(octets) = OctetString::new(match ip {
+                    IpAddr::V4(ip) => ip.octets().to_vec(),
+                    IpAddr::V6(ip) => ip.octets().to_vec(),
+                }) {
+                    octets
+                } else {
+                    continue;
+                };
+
+                if octets == *input {
+                    let new_ip = match IpAddr::from_str(&rule.new) {
+                        Ok(ip_addr) => ip_addr,
+                        // Rules from IP to non-IP are not allowed
+                        Err(_) => continue,
+                    };
+
+                    let output = OctetString::new(match new_ip {
+                        IpAddr::V4(ip) => ip.octets().to_vec(),
+                        IpAddr::V6(ip) => ip.octets().to_vec(),
+                    });
+
+                    match output {
+                        Ok(output) => return output,
+                        Err(_) => continue,
+                    }
+                }
+            }
+        }
+
+        input.clone()
     }
 }
 
