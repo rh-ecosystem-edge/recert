@@ -1,13 +1,12 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
+use crate::ouger::{ouger, OUGER_SERVER_PORT};
 use anyhow::{bail, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
+use reqwest::Client;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 pub(crate) struct EtcdResult {
@@ -87,7 +86,7 @@ impl InMemoryK8sEtcd {
             let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/") {
                 value.to_vec()
             } else {
-                run_ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
+                ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
             };
 
             etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
@@ -120,7 +119,7 @@ impl InMemoryK8sEtcd {
         if let Some(value) = get_result.kvs().first() {
             let raw_etcd_value = value.value();
 
-            let decoded_value = run_ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
+            let decoded_value = ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
             self.etcd_keyvalue_hashmap
                 .lock()
                 .await
@@ -163,34 +162,23 @@ impl InMemoryK8sEtcd {
     }
 }
 
-async fn run_ouger(ouger_subcommand: &str, raw_etcd_value: &[u8]) -> Result<Vec<u8>> {
-    let mut command = Command::new("ouger")
-        .arg(ouger_subcommand)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+pub(crate) async fn wait_for_ouger() {
+    let mut tries = 0;
+    while tries < 100 {
+        if Client::new()
+            .get(format!("http://localhost:{OUGER_SERVER_PORT}/healthz"))
+            .send()
+            .await
+            .is_ok()
+        {
+            return;
+        }
 
-    command
-        .stdin
-        .take()
-        .context("opening ouger's stdin pipe")?
-        .write_all(raw_etcd_value)
-        .await
-        .context("writing to ouger's stdin pipe")?;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tries += 1;
+    }
 
-    let result = command.wait_with_output().await.context("waiting for ouger to finish")?;
-
-    if !result.status.success() {
-        bail!(
-            "ouger {} failed with exit code {} and stderr: {}",
-            ouger_subcommand,
-            result.status.code().context("checking ouger exit code")?,
-            String::from_utf8_lossy(&result.stderr)
-        );
-    };
-
-    Ok(result.stdout)
+    panic!("Ouger server did not start in time");
 }
 
 pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Option<Value>> {

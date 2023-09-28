@@ -25,6 +25,8 @@ tar -C backup/var_orig -xzf backup/var.tgz var --strip-components=1
 podman kill editor >/dev/null || true
 podman rm editor >/dev/null || true
 
+pushd ouger && go install cmd/server/ouger_server.go && popd
+
 ETCD_IMAGE=${ETCD_IMAGE:-"$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"}
 podman run --network=host --name editor \
     --detach \
@@ -37,19 +39,7 @@ until etcdctl endpoint health; do
     sleep 1
 done
 
-function dump {
-	dumpdir="$1"
-    echo "Dumping etcd to $dumpdir"
-	mkdir -p "$dumpdir"
-	rm -rf "$dumpdir"
-	endpoints="--endpoints=127.0.0.1:2379"
-	for key in $(etcdctl $endpoints get --prefix / --keys-only); do
-		mkdir -p $(dirname "$dumpdir/$key")
-		(etcdctl $endpoints get --print-value-only "$key" | head -c -1 | ouger decode >"$dumpdir/$key.yaml") &
-	done
-}
-
-# dump backup/etcd_orig
+cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd_orig
 
 cargo run --release -- \
     --etcd-endpoint localhost:2379 \
@@ -63,9 +53,8 @@ cargo run --release -- \
     --cluster-rename new-name,foo.com \
     --extend-expiration
 
-dump backup/etcd
+cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd
 
-meld backup/etc_orig backup/etc
-meld backup/var_orig backup/var
-
+# meld backup/etc_orig backup/etc
+# meld backup/var_orig backup/var
 # meld backup/etcd_orig backup/etcd

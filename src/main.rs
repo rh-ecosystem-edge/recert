@@ -14,6 +14,7 @@ mod file_utils;
 mod json_tools;
 mod k8s_etcd;
 mod ocp_postprocess;
+mod ouger;
 mod rsa_key_pool;
 mod rules;
 mod runtime;
@@ -27,6 +28,8 @@ fn main() -> Result<()> {
 }
 
 async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
+    let _ouger_child_process = ouger::launch_ouger_server().await?;
+
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match parsed_cli.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)
@@ -73,7 +76,7 @@ async fn recertify(
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, static_files));
-    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(300, 20));
+    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(100, 20));
 
     // Wait for the parallelizable tasks to finish and get their results
     let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning etcd/filesystem")?;
