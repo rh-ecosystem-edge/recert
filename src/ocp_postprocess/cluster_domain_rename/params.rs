@@ -8,11 +8,11 @@ pub(crate) struct ClusterRenameParameters {
 
 impl ClusterRenameParameters {
     pub(crate) fn cli_parse(value: &str) -> Result<Self> {
-        let parts = if value.contains(',') { value.split(',') } else { value.split(':') }.collect::<Vec<_>>();
+        let parts = value.split(':').collect::<Vec<_>>();
 
         ensure!(
             parts.len() == 2,
-            "expected exactly one ':' in cluster rename argument, found {}",
+            "expected exactly two parts separated by ':' in cluster rename argument, i.e. '<cluster-name>:<cluster-base-domain>', found {}",
             parts.len()
         );
 
