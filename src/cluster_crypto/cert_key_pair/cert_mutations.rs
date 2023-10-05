@@ -58,7 +58,7 @@ pub(crate) fn mutate_cert_cn_san(
     cn_san_replace_rules: &CnSanReplaceRules,
 ) -> Result<(), anyhow::Error> {
     mutate_cert_common_name(&mut tbs_certificate.subject, cn_san_replace_rules).context("mutating subject Common Name")?;
-    mutate_cert_common_name(&mut tbs_certificate.issuer, cn_san_replace_rules).context("mutating subject Common Name")?;
+    mutate_cert_common_name(&mut tbs_certificate.issuer, cn_san_replace_rules).context("mutating issuer Common Name")?;
     mutate_cert_subject_alternative_name(tbs_certificate, cn_san_replace_rules).context("mutating Subject Alternative Name")?;
     Ok(())
 }
