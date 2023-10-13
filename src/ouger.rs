@@ -32,7 +32,7 @@ pub(crate) async fn ouger(ouger_path: &str, raw_etcd_value: &[u8]) -> Result<Vec
         .body(raw_etcd_value.to_vec())
         .send()
         .await
-        .context("ouger server not running")?;
+        .context("sending ouger request")?;
 
     ensure!(
         res.status().is_success(),

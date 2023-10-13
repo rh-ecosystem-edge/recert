@@ -5,12 +5,8 @@ use super::{
 };
 use crate::{rsa_key_pool::RsaKeyPool, Customizations};
 use anyhow::{bail, Context, Result};
-use std::{
-    self,
-    cell::RefCell,
-    fmt::{Display, Formatter},
-    rc::Rc,
-};
+use serde::Serialize;
+use std::{self, cell::RefCell, rc::Rc};
 use x509_certificate::InMemorySigningKeyPair;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,13 +15,14 @@ pub(crate) enum Signee {
     Jwt(Rc<RefCell<DistributedJwt>>),
 }
 
-impl Display for Signee {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Serialize for Signee {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
         match self {
-            Signee::CertKeyPair(cert_key_pair) => {
-                write!(f, "{}", (**cert_key_pair).borrow())
-            }
-            Signee::Jwt(jwt) => write!(f, "Jwt({})", (**jwt).borrow().locations),
+            Signee::CertKeyPair(cert_key_pair) => cert_key_pair.borrow().serialize(serializer),
+            Signee::Jwt(jwt) => jwt.borrow().serialize(serializer),
         }
     }
 }

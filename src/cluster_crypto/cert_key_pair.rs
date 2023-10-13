@@ -22,7 +22,8 @@ use bcder::{BitString, Oid};
 use bytes::Bytes;
 use fn_error_context::context;
 use rsa::signature::Signer;
-use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
+use serde::Serialize;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
 use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
 use x509_certificate::{
@@ -33,38 +34,28 @@ use x509_certificate::{
 mod cert_mutations;
 mod key_identifiers;
 
-const SUBJECT_ALTERNATIVE_NAME_OID: [u8; 3] = [85, 29, 17];
-const SUBJECT_KEY_IDENTIFIER_OID: [u8; 3] = [85, 29, 14];
-const AUTHORITY_KEY_IDENTIFIER_OID: [u8; 3] = [85, 29, 35];
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CertKeyPair {
+    #[serde(rename = "pair_private_key")]
     pub(crate) distributed_private_key: Option<Rc<RefCell<DistributedPrivateKey>>>,
+    #[serde(rename = "pair_cert")]
     pub(crate) distributed_cert: Rc<RefCell<DistributedCert>>,
 
     /// The signer is the cert that signed this cert. If this is a self-signed cert, then this will
     /// be None
+    #[serde(skip_serializing)]
     pub(crate) signer: Option<Rc<RefCell<CertKeyPair>>>,
     /// The signees are the certs or jwts that this cert has signed
     pub(crate) signees: Vec<Signee>,
     /// Sometimes cert public keys also appear on their own, outside the cert, so we need to track
     /// them
     pub(crate) associated_public_key: Option<Rc<RefCell<DistributedPublicKey>>>,
-    pub(crate) regenerated: bool,
 }
 
 pub(crate) type SkidEdits = HashMap<key_identifiers::HashableKeyID, SubjectKeyIdentifier>;
 pub(crate) type SerialNumberEdits = HashMap<key_identifiers::HashableSerialNumber, CertificateSerialNumber>;
 
 impl CertKeyPair {
-    pub(crate) fn num_parents(&self) -> usize {
-        if let Some(signer) = self.signer.as_ref() {
-            1 + signer.borrow().num_parents()
-        } else {
-            0
-        }
-    }
-
     pub(crate) fn regenerate(
         &mut self,
         sign_with: Option<&InMemorySigningKeyPair>,
@@ -75,7 +66,7 @@ impl CertKeyPair {
     ) -> Result<()> {
         let alternative_certificate = customizations
             .use_cert_rules
-            .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.original.subject_name())
+            .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.cert.subject_name())
             .context("evaluating replacement cert")?;
 
         match alternative_certificate {
@@ -84,11 +75,12 @@ impl CertKeyPair {
             None => {
                 let (new_cert_subject_key_pair, new_cert) =
                     self.re_sign_cert(sign_with, rsa_key_pool, customizations, skid_edits, serial_number_edits)?;
-                (*self.distributed_cert).borrow_mut().certificate = Certificate::try_from(&new_cert)?;
+                let new_cert = Certificate::try_from(&new_cert)?;
+                (*self.distributed_cert).borrow_mut().certificate_regenerated = Some(new_cert.clone());
 
                 for signee in &mut self.signees {
                     signee.regenerate(
-                        &(*self.distributed_cert).borrow().certificate.public_key,
+                        &new_cert.public_key,
                         Some(&new_cert_subject_key_pair),
                         rsa_key_pool,
                         customizations,
@@ -108,7 +100,7 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
-                    (**distributed_private_key).borrow_mut().key = (&new_cert_subject_key_pair).try_into()?;
+                    (**distributed_private_key).borrow_mut().key_regenerated = Some((&new_cert_subject_key_pair).try_into()?);
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
@@ -124,11 +116,9 @@ impl CertKeyPair {
                         .regenerate_from_public(&replacement_cert.public_key)?;
                 }
 
-                (*self.distributed_cert).borrow_mut().certificate = replacement_cert;
+                (*self.distributed_cert).borrow_mut().certificate_regenerated = Some(replacement_cert);
             }
         }
-
-        self.regenerated = true;
 
         Ok(())
     }
@@ -151,7 +141,7 @@ impl CertKeyPair {
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(InMemorySigningKeyPair, CapturedX509Certificate)> {
         // Clone the to-be-signed part of the certificate from the original certificate
-        let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.original;
+        let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.cert;
         let certificate: &rfc5280::Certificate = cert.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
 
@@ -314,7 +304,15 @@ impl CertKeyPair {
             .context("resource disappeared")?;
         add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;
 
-        let cert_pem = pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?;
+        let cert_pem = pem::parse(
+            (*self.distributed_cert)
+                .borrow()
+                .certificate_regenerated
+                .clone()
+                .context("certificate was not regenerated")?
+                .cert
+                .encode_pem(),
+        )?;
 
         etcd_client
             .put(
@@ -347,7 +345,15 @@ impl CertKeyPair {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents).await?;
 
-        let newpem = pem::parse((*self.distributed_cert).borrow().certificate.original.encode_pem())?;
+        let newpem = pem::parse(
+            (*self.distributed_cert)
+                .borrow()
+                .clone()
+                .certificate_regenerated
+                .context("certificate was not regenerated")?
+                .cert
+                .encode_pem(),
+        )?;
 
         Ok(tokio::fs::write(
             &filelocation.path,
@@ -403,53 +409,4 @@ fn fix_akid(
     }
 
     Ok(())
-}
-
-impl Display for CertKeyPair {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for _ in 0..self.num_parents() {
-            write!(f, "-")?;
-        }
-
-        if self.num_parents() > 0 {
-            write!(f, " ")?;
-        }
-
-        write!(
-            f,
-            "Cert {:03} locations {}, ",
-            (*self.distributed_cert).borrow().locations.0.len(),
-            // "<>",
-            (*self.distributed_cert).borrow().locations,
-        )?;
-        write!(
-            f,
-            "{}",
-            if let Some(distributed_private_key) = &self.distributed_private_key {
-                format!(
-                    "priv {:03} locations {}",
-                    (*distributed_private_key).borrow().locations.0.len(),
-                    (*distributed_private_key).borrow().locations,
-                    // "<>",
-                )
-            } else {
-                "NO PRIV".to_string()
-            }
-        )?;
-        write!(f, " | {}", (*self.distributed_cert).borrow().certificate.subject,)?;
-
-        if !self.signees.is_empty() {
-            writeln!(f)?;
-        }
-
-        for signee in &self.signees {
-            writeln!(f, "{}", signee)?;
-        }
-
-        if let Some(associated_public_key) = &self.associated_public_key {
-            writeln!(f, "* {}", (**associated_public_key).borrow())?;
-        }
-
-        Ok(())
-    }
 }

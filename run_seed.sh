@@ -17,7 +17,7 @@ rm -rf backup/etc backup/var backup/etc_orig backup/var_orig
 tar -C backup -xzf backup/etc.tgz
 tar -C backup -xzf backup/var.tgz
 
-mkdir -p backup/etc_orig backup/var_orig
+mkdir -p backup/etc_orig backup/var_orig backup/etcd_orig backup/etcd
 
 tar -C backup/etc_orig -xzf backup/etc.tgz etc --strip-components=1
 tar -C backup/var_orig -xzf backup/var.tgz var --strip-components=1
@@ -51,7 +51,7 @@ cargo run --release -- \
     --cn-san-replace api.test-cluster.redhat.com:api.new-name.foo.com \
     --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
     --cn-san-replace 192.168.127.10:192.168.127.11 \
-    --cluster-rename new-name:foo.com \
+    --summary-file summary.yaml \
     --extend-expiration
 
 cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd

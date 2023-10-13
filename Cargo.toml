@@ -24,7 +24,7 @@ rand = "0.8.5"
 hmac = "0.12.1"
 sha2 = "0.10.6"
 jwt-simple = "0.11.5"
-serde = "1.0.163"
+serde = { version = "1.0.163", features = ["rc"] }
 clap = { version = "4.4.2", features = ["derive"] }
 p256 = "0.13.2"
 tempfile = "3.5.0"

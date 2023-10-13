@@ -8,16 +8,14 @@ use self::{
     locations::Locations,
 };
 use crate::{
-    cluster_crypto::{
-        cert_key_pair::{SerialNumberEdits, SkidEdits},
-        signee::Signee,
-    },
+    cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
     Customizations,
 };
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use x509_certificate::X509CertificateError;
@@ -41,6 +39,7 @@ pub(crate) mod scanning;
 
 /// This is the main struct that holds all the crypto objects we've found in the cluster and the
 /// locations where we found them, and how they relate to each other.
+#[derive(Serialize)]
 pub(crate) struct ClusterCryptoObjects {
     /// At the end of the day we're scanning the entire cluster for private keys, public keys
     /// certificates, and jwts. These four hashmaps is where we store all of them. The reason
@@ -49,21 +48,48 @@ pub(crate) struct ClusterCryptoObjects {
     /// locations where the key/cert was found, and the list of locations for each cert/key grows
     /// as we scan more and more resources. The hashmap keys are of-course hashables so we can
     /// easily check if we already encountered the object before.
+    #[serde(serialize_with = "hashmap_serialize_just_values", rename(serialize = "standalone_private_keys"))]
     pub(crate) distributed_private_keys: HashMap<PrivateKey, Rc<RefCell<DistributedPrivateKey>>>,
+    #[serde(serialize_with = "hashmap_serialize_just_values", rename(serialize = "standalone_public_keys"))]
     pub(crate) distributed_public_keys: HashMap<PublicKey, Rc<RefCell<DistributedPublicKey>>>,
+    #[serde(skip_serializing)]
     pub(crate) distributed_certs: HashMap<certificate::Certificate, Rc<RefCell<distributed_cert::DistributedCert>>>,
+    #[serde(skip_serializing)]
     pub(crate) distributed_jwts: HashMap<jwt::Jwt, Rc<RefCell<DistributedJwt>>>,
 
     /// Every time we encounter a private key, we extract the public key
     /// from it and add to this mapping. This will later allow us to easily
     /// associate certificates with their matching private key (which would
     /// otherwise require brute force search).
+    #[serde(skip_serializing)]
     pub(crate) public_to_private: HashMap<PublicKey, PrivateKey>,
 
     /// After collecting all certs and private keys, we go through the list of certs and try to
     /// find a private key that matches the public key of the cert (with the help of
     /// public_to_private) and populate this list of pairs.
+    #[serde(serialize_with = "serialize_only_root_pairs")]
     pub(crate) cert_key_pairs: Vec<Rc<RefCell<CertKeyPair>>>,
+}
+
+fn serialize_only_root_pairs<S>(pairs: &[Rc<RefCell<CertKeyPair>>], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    pairs
+        .iter()
+        .filter(|pair| pair.borrow().distributed_cert.borrow().certificate.cert.subject_is_issuer())
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}
+
+fn hashmap_serialize_just_values<S, K, V>(values: &HashMap<K, V>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+    K: serde::Serialize + std::cmp::Eq + std::hash::Hash,
+    V: serde::Serialize,
+{
+    let values: Vec<_> = values.values().collect();
+    values.serialize(serializer)
 }
 
 impl ClusterCryptoObjects {
@@ -85,20 +111,6 @@ impl ClusterCryptoObjects {
         self.fill_signees().context("filling signees")?;
         self.associate_public_keys().context("associating public keys")?;
         Ok(())
-    }
-
-    /// Convenience function to display all the crypto objects in the cluster,
-    /// their relationships, and their locations.
-    pub(crate) fn display(&self) {
-        for cert_key_pair in &self.cert_key_pairs {
-            if (**cert_key_pair).borrow().signer.as_ref().is_none() {
-                println!("{}", (**cert_key_pair).borrow());
-            }
-        }
-
-        for private_key in self.distributed_private_keys.values() {
-            println!("{}", (**private_key).borrow());
-        }
     }
 
     /// Commit all the crypto objects to etcd and disk. This is called after all the crypto
@@ -151,102 +163,7 @@ impl ClusterCryptoObjects {
             (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, &customizations)?
         }
 
-        self.assert_regeneration();
-
         Ok(())
-    }
-
-    fn assert_regeneration(&mut self) {
-        // Assert all known objects have been regenerated.
-        for cert_key_pair in &self.cert_key_pairs {
-            let signer = &(**cert_key_pair).borrow().signer;
-            if let Some(signer) = signer {
-                assert!(
-                    (**signer).borrow().regenerated,
-                    "Didn't seem to regenerate signer with cert at {} and keys at {} while I'm at {} with keys at {}",
-                    (*(**signer).borrow().distributed_cert).borrow().locations,
-                    if let Some(key) = &(**signer).borrow().distributed_private_key {
-                        format!("{}", (*key).borrow().locations)
-                    } else {
-                        "None".to_string()
-                    },
-                    (*(**cert_key_pair).borrow().distributed_cert).borrow().locations,
-                    if let Some(key) = &(**cert_key_pair).borrow().distributed_private_key {
-                        format!("{}", (*key).borrow().locations)
-                    } else {
-                        "None".to_string()
-                    },
-                );
-
-                assert!(
-                    !(**signer).borrow().signees.is_empty(),
-                    "Zero signees signer with cert at {} and keys at {}",
-                    (*(**signer).borrow().distributed_cert).borrow().locations,
-                    if let Some(key) = &(**signer).borrow().distributed_private_key {
-                        format!("{}", (*key).borrow().locations)
-                    } else {
-                        "None".to_string()
-                    },
-                );
-
-                for signee in &(**signer).borrow().signees {
-                    match signee {
-                        signee::Signee::CertKeyPair(pair) => {
-                            assert!(
-                                (*pair).borrow().regenerated,
-                                "Didn't seem to regenerate cert-key pair {} signee of {}",
-                                (*pair).borrow(),
-                                (**signer).borrow(),
-                            );
-                        }
-                        signee::Signee::Jwt(jwt) => {
-                            assert!(
-                                (*jwt).borrow().regenerated,
-                                "Didn't seem to regenerate jwt {:#?} signee of {}",
-                                (*jwt).borrow(),
-                                (**signer).borrow(),
-                            );
-                        }
-                    }
-                }
-
-                // Assert our cert-key pair is in the signees of the signer.
-                assert!(
-                    (**signer).borrow().signees.contains(&Signee::CertKeyPair(cert_key_pair.clone())),
-                    "Signer {} doesn't have cert-key pair {} as a signee",
-                    (**signer).borrow(),
-                    (**cert_key_pair).borrow(),
-                );
-            }
-
-            assert!(
-                (**cert_key_pair).borrow().regenerated,
-                "Didn't seem to regenerate cert at {}",
-                (*(**cert_key_pair).borrow().distributed_cert).borrow().locations,
-            );
-        }
-        // for distributed_public_key in self.public_keys.values() {
-        //     assert!(
-        //         (*distributed_public_key).borrow().regenerated,
-        //         "Didn't seem to regenerate public key {}",
-        //         (**distributed_public_key).borrow(),
-        //     );
-        // }
-        for distributed_jwt in self.distributed_jwts.values() {
-            assert!(
-                (*distributed_jwt).borrow().regenerated,
-                "Didn't seem to regenerate jwt {:#?}",
-                (*distributed_jwt).borrow(),
-            );
-        }
-        for distributed_private_key in self.distributed_private_keys.values() {
-            assert!(
-                (*distributed_private_key).borrow().regenerated,
-                "Didn't seem to regenerate private key {}",
-                (*distributed_private_key).borrow(),
-            );
-        }
-        assert_eq!(self.distributed_certs.len(), 0);
     }
 
     fn fill_cert_key_signers(&mut self) -> Result<()> {
@@ -255,26 +172,31 @@ impl ClusterCryptoObjects {
             if !(*(**cert_key_pair).borrow().distributed_cert)
                 .borrow()
                 .certificate
-                .original
+                .cert
                 .subject_is_issuer()
             {
                 for potential_signing_cert_key_pair in &self.cert_key_pairs {
                     match (*(**cert_key_pair).borrow().distributed_cert)
                         .borrow()
                         .certificate
-                        .original
+                        .cert
                         .verify_signed_by_certificate(
                             &(*(*potential_signing_cert_key_pair).borrow().distributed_cert)
                                 .borrow()
                                 .certificate
-                                .original,
+                                .cert,
                         ) {
                         Ok(_) => true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair)),
                         Err(X509CertificateError::CertificateSignatureVerificationFailed) => {}
                         Err(X509CertificateError::UnsupportedSignatureVerification(..)) => {
                             // This is a hack to get around the fact this lib doesn't support
                             // all signature algorithms yet.
-                            if crypto_utils::openssl_is_signed(potential_signing_cert_key_pair, cert_key_pair)? {
+                            if crypto_utils::openssl_is_signed(
+                                &(*(*potential_signing_cert_key_pair).borrow().distributed_cert).borrow().certificate,
+                                &(*(**cert_key_pair).borrow().distributed_cert).borrow().certificate,
+                            )
+                            .context("checking signature")?
+                            {
                                 true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair));
                             }
                         }
@@ -378,11 +300,8 @@ impl ClusterCryptoObjects {
             let mut signees = Vec::new();
             for potential_signee in &self.cert_key_pairs {
                 if let Some(potential_signee_signer) = &(**potential_signee).borrow().signer {
-                    if (*(**potential_signee_signer).borrow().distributed_cert)
-                        .borrow()
-                        .certificate
-                        .original
-                        == (*(**cert_key_pair).borrow().distributed_cert).borrow().certificate.original
+                    if (*(**potential_signee_signer).borrow().distributed_cert).borrow().certificate.cert
+                        == (*(**cert_key_pair).borrow().distributed_cert).borrow().certificate.cert
                     {
                         signees.push(signee::Signee::CertKeyPair(Rc::clone(potential_signee)));
                     }
@@ -437,7 +356,6 @@ impl ClusterCryptoObjects {
                 signer: None,
                 signees: Vec::new(),
                 associated_public_key: None,
-                regenerated: false,
             }));
 
             let subject_public_key = (**distributed_cert).borrow().certificate.public_key.clone();
@@ -557,9 +475,9 @@ impl ClusterCryptoObjects {
             Vacant(distributed_jwt) => {
                 distributed_jwt.insert(Rc::new(RefCell::new(distributed_jwt::DistributedJwt {
                     jwt,
+                    jwt_regenerated: None,
                     locations: Locations(vec![location].into_iter().collect()),
                     signer: jwt::JwtSigner::Unknown,
-                    regenerated: false,
                 })));
             }
             Occupied(distributed_jwt) => {
@@ -573,6 +491,7 @@ impl ClusterCryptoObjects {
             Vacant(distributed_cert) => {
                 distributed_cert.insert(Rc::new(RefCell::new(distributed_cert::DistributedCert {
                     certificate: hashable_cert,
+                    certificate_regenerated: None,
                     locations: Locations(vec![location.clone()].into_iter().collect()),
                 })));
             }
@@ -588,7 +507,7 @@ impl ClusterCryptoObjects {
                 distributed_public_key_entry.insert(Rc::new(RefCell::new(distributed_public_key::DistributedPublicKey {
                     locations: Locations(vec![location.clone()].into_iter().collect()),
                     key: public_key,
-                    regenerated: false,
+                    key_regenerated: None,
                     associated: false,
                 })));
             }
@@ -611,12 +530,12 @@ impl ClusterCryptoObjects {
                 distributed_private_key_entry.insert(Rc::new(RefCell::new(distributed_private_key::DistributedPrivateKey {
                     locations: Locations(vec![location.clone()].into_iter().collect()),
                     key: private_part,
+                    key_regenerated: None,
                     signees: vec![],
                     // We don't set the public key here even though we just generated it because
                     // this field is for actual public keys that we find in the wild, not ones we
                     // generate ourselves.
                     associated_distributed_public_key: None,
-                    regenerated: false,
                 })));
             }
 

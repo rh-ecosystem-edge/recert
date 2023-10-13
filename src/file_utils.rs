@@ -77,11 +77,10 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
 fn dataurl_escape(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len() * 2);
 
-    for c in s.chars() {
+    for char in s.chars() {
         if {
-            let c = c;
             // https://datatracker.ietf.org/doc/html/rfc2396#section-2.3
-            matches!(c, 'a'..='z'
+            matches!(char, 'a'..='z'
                 | 'A'..='Z'
                 | '0'..='9'
                 | '-'
@@ -94,9 +93,9 @@ fn dataurl_escape(s: &str) -> String {
                 | '('
                 | ')')
         } {
-            escaped.push(c);
+            escaped.push(char);
         } else {
-            escaped.push_str(&format!("%{:02X}", c as u32));
+            escaped.push_str(&format!("%{:02X}", char as u32));
         }
     }
 

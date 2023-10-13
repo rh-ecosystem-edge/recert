@@ -54,6 +54,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         parsed_cli.cluster_rename,
         parsed_cli.static_dirs,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
+        parsed_cli.summary_file,
     )
     .await
     .context("finalizing")?;
@@ -97,6 +98,7 @@ async fn finalize(
     cluster_rename: Option<ClusterRenameParameters>,
     static_dirs: Vec<ClioPath>,
     regenerate_server_ssh_keys: Option<&Path>,
+    summary_file: Option<ClioPath>,
 ) -> Result<()> {
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
@@ -124,7 +126,12 @@ async fn finalize(
         .await
         .context("commiting etcd cache to actual etcd")?;
 
-    cluster_crypto.display();
+    // Serialize cluster_crypto into the summary file if requested
+    if let Some(summary_file) = summary_file {
+        let summary_file = summary_file.create().context("opening summary file for writing")?;
+
+        serde_yaml::to_writer(summary_file, &cluster_crypto).context("serializing cluster crypto into summary file")?;
+    }
 
     Ok(())
 }

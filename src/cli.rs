@@ -71,6 +71,10 @@ pub(crate) struct Cli {
     /// Regenerate server SSH keys and write to this directory
     #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
     pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
+
+    /// Generate a summary
+    #[clap(long, value_parser = clap::value_parser!(ClioPath))]
+    pub(crate) summary_file: Option<ClioPath>,
 }
 
 /// All the user requested customizations, coalesced into a single struct for convenience
@@ -90,6 +94,7 @@ pub(crate) struct ParsedCLI {
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
+    pub(crate) summary_file: Option<ClioPath>,
 }
 
 pub(crate) fn parse_cli() -> Result<ParsedCLI> {
@@ -108,5 +113,6 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
         cluster_rename: cli.cluster_rename,
         threads: cli.threads,
         regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys,
+        summary_file: cli.summary_file,
     })
 }

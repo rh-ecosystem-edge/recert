@@ -14,41 +14,16 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use pkcs1::EncodeRsaPrivateKey;
-use std::{self, cell::RefCell, fmt::Display, rc::Rc};
+use serde::Serialize;
+use std::{self, cell::RefCell, rc::Rc};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DistributedPrivateKey {
     pub(crate) key: PrivateKey,
+    pub(crate) key_regenerated: Option<PrivateKey>,
     pub(crate) locations: Locations,
     pub(crate) signees: Vec<Signee>,
     pub(crate) associated_distributed_public_key: Option<Rc<RefCell<DistributedPublicKey>>>,
-    pub(crate) regenerated: bool,
-}
-
-impl Display for DistributedPrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Standalone priv {:03} locations {}",
-            self.locations.0.len(),
-            self.locations,
-            // "<>",
-        )?;
-
-        if !self.signees.is_empty() || self.associated_distributed_public_key.is_some() {
-            writeln!(f)?;
-        }
-
-        for signee in &self.signees {
-            writeln!(f, "- {}", signee)?;
-        }
-
-        if let Some(public_key) = &self.associated_distributed_public_key {
-            writeln!(f, "* Associated public key at {}", (*public_key).borrow())?;
-        }
-
-        Ok(())
-    }
 }
 
 impl DistributedPrivateKey {
@@ -73,11 +48,11 @@ impl DistributedPrivateKey {
             )?;
         }
 
-        self.key = (&self_new_key_pair).try_into()?;
-        self.regenerated = true;
+        let regenerated_private_key: PrivateKey = (&self_new_key_pair).try_into()?;
+        self.key_regenerated = Some(regenerated_private_key.clone());
 
         if let Some(public_key) = &self.associated_distributed_public_key {
-            (*public_key).borrow_mut().regenerate(self.key.clone())?;
+            (*public_key).borrow_mut().regenerate(regenerated_private_key.clone())?;
         }
 
         Ok(())
@@ -110,7 +85,7 @@ impl DistributedPrivateKey {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &self.key.pem()?,
+                    &self.key_regenerated.clone().context("key was no regenerated")?.pem()?,
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
@@ -122,7 +97,7 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
-        let private_key_pem = match &self.key {
+        let private_key_pem = match &self.key_regenerated.clone().context("key was no regenerated")? {
             PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
             PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
         };

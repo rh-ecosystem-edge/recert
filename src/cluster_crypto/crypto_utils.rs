@@ -1,12 +1,13 @@
-use super::{cert_key_pair::CertKeyPair, distributed_jwt, keys};
+use super::certificate;
+use super::{distributed_jwt, keys};
 use anyhow::{bail, Context, Result};
 use bcder::{encode::Values, Mode};
 use jwt_simple::prelude::RSAPublicKeyLike;
 use pkcs1::DecodeRsaPrivateKey;
 use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
 use serde_json::{Map, Value};
+use std::io::Write;
 use std::process::Stdio;
-use std::{cell::RefCell, io::Write, rc::Rc};
 use std::{path::PathBuf, process::Command as StdCommand};
 use tokio::process::Command;
 use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair};
@@ -14,7 +15,7 @@ use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair};
 /// Shell out to openssl to verify that a certificate is signed by a given signing certificate. We
 /// use this when our certificate lib doesn't support the signature algorithm used by the
 /// certificates.
-pub(crate) fn openssl_is_signed(potential_signer: &Rc<RefCell<CertKeyPair>>, signee: &Rc<RefCell<CertKeyPair>>) -> Result<bool> {
+pub(crate) fn openssl_is_signed(potential_signer: &certificate::Certificate, signee: &certificate::Certificate) -> Result<bool> {
     // TODO: This condition is a hack. We should trust the openssl command we run further down to
     // tell us this, but we don't because currently the way this openssl command works, if you pass
     // it the same cert in both arguments, even when said cert is not self-signed, openssl would
@@ -23,34 +24,14 @@ pub(crate) fn openssl_is_signed(potential_signer: &Rc<RefCell<CertKeyPair>>, sig
     // that a certificate is not self-signed and has the same issuer and subject and it would pass
     // here undetected. This is not a big deal in our use case because these certs are all coming
     // from our trusted installer/operators.
-    if potential_signer == signee
-        && !(*(**potential_signer).borrow().distributed_cert)
-            .borrow()
-            .certificate
-            .original
-            .subject_is_issuer()
-    {
+    if potential_signer == signee && !potential_signer.cert.subject_is_issuer() {
         return Ok(false);
     }
 
     let mut signing_cert_file = tempfile::NamedTempFile::new()?;
-    signing_cert_file.write_all(
-        (*(**potential_signer).borrow().distributed_cert)
-            .borrow()
-            .certificate
-            .original
-            .encode_pem()
-            .as_bytes(),
-    )?;
+    signing_cert_file.write_all(potential_signer.cert.encode_pem().as_bytes())?;
     let mut signed_cert_file = tempfile::NamedTempFile::new()?;
-    signed_cert_file.write_all(
-        (*(**signee).borrow().distributed_cert)
-            .borrow()
-            .certificate
-            .original
-            .encode_pem()
-            .as_bytes(),
-    )?;
+    signed_cert_file.write_all(signee.cert.encode_pem().as_bytes())?;
     let mut openssl_verify_command = std::process::Command::new("openssl");
     openssl_verify_command
         .arg("verify")

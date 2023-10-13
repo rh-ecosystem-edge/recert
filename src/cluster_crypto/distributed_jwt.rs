@@ -12,16 +12,18 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as base64_url, Engine as _};
 use jwt_simple::prelude::RSAKeyPairLike;
+use serde::Serialize;
 use serde_json::Value;
 use sha2::Digest;
 use x509_certificate::InMemorySigningKeyPair;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DistributedJwt {
     pub(crate) jwt: Jwt,
+    pub(crate) jwt_regenerated: Option<Jwt>,
     pub(crate) locations: Locations,
+    #[serde(skip_serializing)]
     pub(crate) signer: JwtSigner,
-    pub(crate) regenerated: bool,
 }
 
 impl DistributedJwt {
@@ -31,8 +33,7 @@ impl DistributedJwt {
             JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key)?,
             JwtSigner::PrivateKey(_private_key) => self.resign(original_signing_key, new_signing_key)?,
         };
-        self.jwt.str = new_key;
-        self.regenerated = true;
+        self.jwt_regenerated = Some(Jwt { str: new_key });
 
         Ok(())
     }
@@ -89,7 +90,10 @@ impl DistributedJwt {
             }
             LocationValueType::Jwt => {
                 if let Value::String(value_at_json_pointer) = value_at_json_pointer {
-                    *value_at_json_pointer = encode_resource_data_entry(&k8slocation.yaml_location, &self.jwt.str);
+                    *value_at_json_pointer = encode_resource_data_entry(
+                        &k8slocation.yaml_location,
+                        &self.jwt_regenerated.clone().context("JWT was not regenerated")?.str,
+                    );
                 } else {
                     bail!("non-string value at json pointer")
                 }
@@ -113,7 +117,7 @@ impl DistributedJwt {
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
                     LocationValueType::Pem(_) => bail!("JWT cannot be in PEM"),
-                    LocationValueType::Jwt => self.jwt.str.clone(),
+                    LocationValueType::Jwt => self.jwt_regenerated.clone().context("JWT was not regenerated")?.str.clone(),
                     LocationValueType::Unknown => bail!("cannot commit unknown value type"),
                 },
                 FileContentLocation::Yaml(_) => todo!("filesystem YAML JWTs not implemented"),
