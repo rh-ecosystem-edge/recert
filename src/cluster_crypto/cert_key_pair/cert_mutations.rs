@@ -1,4 +1,4 @@
-use super::SUBJECT_ALTERNATIVE_NAME_OID;
+use crate::cluster_crypto::certificate::SUBJECT_ALTERNATIVE_NAME_OID;
 use crate::cnsanreplace::CnSanReplaceRules;
 use anyhow::bail;
 use anyhow::{Context, Result};
@@ -76,9 +76,9 @@ impl TryFrom<AttributeTypeAndValue> for CommonNameType {
         let mut common_name_type = CommonNameType::Unknown;
 
         (*value.value).clone().decode(|cons| {
-            if (cons.take_opt_value_if(Tag::PRINTABLE_STRING, |content| bcder::PrintableString::from_content(content))?).is_some() {
+            if (cons.take_opt_value_if(Tag::PRINTABLE_STRING, bcder::PrintableString::from_content)?).is_some() {
                 common_name_type = CommonNameType::PrintableString;
-            } else if (cons.take_opt_value_if(Tag::UTF8_STRING, |content| bcder::Utf8String::from_content(content))?).is_some() {
+            } else if (cons.take_opt_value_if(Tag::UTF8_STRING, bcder::Utf8String::from_content)?).is_some() {
                 common_name_type = CommonNameType::Utf8String;
             }
 
@@ -93,17 +93,16 @@ pub(crate) fn mutate_cert_common_name(name: &mut Name, cn_san_replace_rules: &Cn
     name.iter_mut_by_oid(Oid(OID_COMMON_NAME.as_ref().into()))
         .map(|common_name| {
             let binding = cn_san_replace_rules.replace(common_name.to_string()?.as_str());
-            let new_name = binding.as_str().clone();
+            let new_name = binding.as_str();
 
             let common_name_type: CommonNameType = common_name.clone().try_into()?;
 
             match common_name_type {
                 CommonNameType::Unknown => bail!("unknown common name type"),
                 CommonNameType::PrintableString => {
-                    *common_name =
-                        rfc3280::AttributeTypeAndValue::new_printable_string(Oid(OID_COMMON_NAME.as_ref().into()), new_name.clone())
-                            .ok()
-                            .context("failed to generate utf-8 common name")?
+                    *common_name = rfc3280::AttributeTypeAndValue::new_printable_string(Oid(OID_COMMON_NAME.as_ref().into()), new_name)
+                        .ok()
+                        .context("failed to generate utf-8 common name")?
                 }
                 CommonNameType::Utf8String => {
                     *common_name = rfc3280::AttributeTypeAndValue::new_utf8_string(Oid(OID_COMMON_NAME.as_ref().into()), new_name)

@@ -1,4 +1,3 @@
-use super::{AUTHORITY_KEY_IDENTIFIER_OID, SUBJECT_KEY_IDENTIFIER_OID};
 use anyhow::{bail, ensure, Context, Result};
 use bcder::Oid;
 use der::{asn1::OctetString, Decode, Encode};
@@ -12,6 +11,8 @@ use x509_certificate::{
     rfc5280,
     KeyAlgorithm::{self, Ecdsa},
 };
+
+use crate::cluster_crypto::certificate::{AUTHORITY_KEY_IDENTIFIER_OID, SUBJECT_KEY_IDENTIFIER_OID};
 
 #[derive(PartialEq, Eq)]
 pub(crate) struct HashableKeyID(pub(crate) OctetString);

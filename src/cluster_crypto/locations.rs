@@ -1,6 +1,7 @@
 use crate::json_tools;
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
+use serde::{ser::SerializeStruct, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
@@ -129,6 +130,41 @@ lazy_static! {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locations(pub(crate) HashSet<Location>);
 
+impl Serialize for Locations {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Sorted
+        let mut locations = self.0.iter().collect::<Vec<_>>();
+
+        let k8s_locations = locations
+            .iter()
+            .filter_map(|location| match location {
+                Location::K8s(k8s_location) => Some(k8s_location),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let file_locations = locations
+            .iter()
+            .filter_map(|location| match location {
+                Location::Filesystem(file_location) => Some(file_location),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        locations.sort();
+
+        let mut struct_serializer = serializer.serialize_struct("locations", 2)?;
+
+        struct_serializer.serialize_field("k8s", &k8s_locations)?;
+        struct_serializer.serialize_field("filesystem", &file_locations)?;
+
+        struct_serializer.end()
+    }
+}
+
 impl AsRef<HashSet<Location>> for Locations {
     fn as_ref(&self) -> &HashSet<Location> {
         &self.0
@@ -156,6 +192,30 @@ impl Display for Locations {
 pub(crate) enum Location {
     K8s(K8sLocation),
     Filesystem(FileLocation),
+}
+
+impl Ord for Location {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.to_string().cmp(&other.to_string())
+    }
+}
+
+impl PartialOrd for Location {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Serialize for Location {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Location::K8s(k8s_location) => k8s_location.serialize(serializer),
+            Location::Filesystem(file_location) => file_location.serialize(serializer),
+        }
+    }
 }
 
 impl Location {
@@ -251,7 +311,7 @@ impl Location {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct PemLocationInfo {
     pub(crate) pem_bundle_index: u64,
 }
@@ -264,7 +324,7 @@ impl PemLocationInfo {
 
 impl std::fmt::Display for PemLocationInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, ":pem{}", self.pem_bundle_index)
+        write!(f, "in PEM bundle at index {}", self.pem_bundle_index)
     }
 }
 
@@ -274,10 +334,31 @@ pub(crate) struct FileLocation {
     pub(crate) content_location: FileContentLocation,
 }
 
+impl Serialize for FileLocation {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("file: {} {}", self.path, self.content_location))
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum FileContentLocation {
     Raw(LocationValueType),
     Yaml(YamlLocation),
+}
+
+impl Serialize for FileContentLocation {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            FileContentLocation::Raw(location_value_type) => serializer.serialize_str(&format!("{}", location_value_type)),
+            FileContentLocation::Yaml(yaml_location) => yaml_location.serialize(serializer),
+        }
+    }
 }
 
 impl std::fmt::Display for FileContentLocation {
@@ -289,7 +370,7 @@ impl std::fmt::Display for FileContentLocation {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum LocationValueType {
     Pem(PemLocationInfo),
     Jwt,
@@ -300,17 +381,27 @@ impl std::fmt::Display for LocationValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LocationValueType::Pem(pem_location_info) => write!(f, "{}", pem_location_info),
-            LocationValueType::Jwt => write!(f, ":jwt"),
-            LocationValueType::Unknown => write!(f, ":unknown"),
+            LocationValueType::Jwt => write!(f, "jwt"),
+            LocationValueType::Unknown => write!(f, "unknown"),
         }
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum FieldEncoding {
     None,
     Base64,
     DataUrl,
+}
+
+impl Display for FieldEncoding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldEncoding::None => write!(f, "without encoding"),
+            FieldEncoding::Base64 => write!(f, "encoded as base64"),
+            FieldEncoding::DataUrl => write!(f, "encoded as a dataurl"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -318,6 +409,15 @@ pub(crate) struct YamlLocation {
     pub(crate) json_pointer: String,
     pub(crate) value: LocationValueType,
     pub(crate) encoding: FieldEncoding,
+}
+
+impl Serialize for YamlLocation {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
 }
 
 impl YamlLocation {
@@ -332,7 +432,7 @@ impl YamlLocation {
 
 impl std::fmt::Display for YamlLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, ":{}{}", self.json_pointer, self.value)
+        write!(f, "{}, {}, {}", self.json_pointer, self.encoding, self.value)
     }
 }
 
@@ -342,6 +442,18 @@ pub(crate) struct K8sResourceLocation {
     pub(crate) kind: String,
     pub(crate) apiversion: String,
     pub(crate) name: String,
+}
+
+impl Serialize for K8sResourceLocation {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match &self.namespace {
+            Some(namespace) => serializer.serialize_str(&format!("{}/{}/{}:{}", self.apiversion, self.kind, namespace, self.name)),
+            None => serializer.serialize_str(&format!("{}/{}/{}", self.apiversion, self.kind, self.name)),
+        }
+    }
 }
 
 impl K8sResourceLocation {
@@ -423,6 +535,15 @@ impl std::fmt::Display for K8sResourceLocation {
 pub(crate) struct K8sLocation {
     pub(crate) resource_location: K8sResourceLocation,
     pub(crate) yaml_location: YamlLocation,
+}
+
+impl Serialize for K8sLocation {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("k8s: {} {}", self.resource_location, self.yaml_location))
+    }
 }
 
 impl std::fmt::Display for K8sLocation {

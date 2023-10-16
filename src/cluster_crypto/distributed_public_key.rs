@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 
 use super::{
     keys::{PrivateKey, PublicKey},
@@ -11,11 +12,11 @@ use crate::{
 };
 use std::fmt::Display;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DistributedPublicKey {
     pub(crate) key: PublicKey,
+    pub(crate) key_regenerated: Option<PublicKey>,
     pub(crate) locations: Locations,
-    pub(crate) regenerated: bool,
     pub(crate) associated: bool,
 }
 
@@ -35,15 +36,13 @@ impl Display for DistributedPublicKey {
 
 impl DistributedPublicKey {
     pub(crate) fn regenerate(&mut self, new_private: PrivateKey) -> Result<()> {
-        self.key = PublicKey::try_from(&new_private)?;
-        self.regenerated = true;
+        self.key_regenerated = Some(PublicKey::try_from(&new_private)?);
 
         Ok(())
     }
 
     pub(crate) fn regenerate_from_public(&mut self, new_public: &PublicKey) -> Result<()> {
-        self.key = new_public.clone();
-        self.regenerated = true;
+        self.key_regenerated = Some(new_public.clone());
 
         Ok(())
     }
@@ -75,7 +74,7 @@ impl DistributedPublicKey {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &self.key.pem(),
+                    &self.key_regenerated.clone().context("key was not regenerated")?.pem(),
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
@@ -87,7 +86,7 @@ impl DistributedPublicKey {
     }
 
     async fn commit_filesystem_public_key(&self, filelocation: &FileLocation) -> Result<()> {
-        let public_key_pem = match &self.key {
+        let public_key_pem = match &self.key_regenerated.clone().context("key was not regenerated")? {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
             PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
         };

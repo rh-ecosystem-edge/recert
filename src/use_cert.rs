@@ -47,7 +47,7 @@ impl UseCertRules {
         };
 
         for rule in &self.0 {
-            if get_cn(rule.cert.original.subject_name())
+            if get_cn(rule.cert.cert.subject_name())
                 .context("getting subject name CN")?
                 .context("user provided cert has no CN")?
                 == candidate_cn

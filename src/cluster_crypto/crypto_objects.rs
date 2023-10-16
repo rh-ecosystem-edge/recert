@@ -227,7 +227,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
         return Ok(None);
     }
 
-    match hashable_cert.original.key_algorithm().context("failed to get cert key algorithm")? {
+    match hashable_cert.cert.key_algorithm().context("failed to get cert key algorithm")? {
         x509_certificate::KeyAlgorithm::Rsa => {}
         x509_certificate::KeyAlgorithm::Ecdsa(_) => {}
         x509_certificate::KeyAlgorithm::Ed25519 => {

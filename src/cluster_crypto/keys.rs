@@ -1,10 +1,11 @@
 use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
-use p256::pkcs8::EncodePublicKey;
-use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey};
+use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
+use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
 use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
 use rsa::RsaPrivateKey;
+use serde::Serialize;
 use std::{
     self,
     fmt::Formatter,
@@ -18,6 +19,24 @@ use x509_certificate::InMemorySigningKeyPair;
 pub(crate) enum PrivateKey {
     Rsa(RsaPrivateKey),
     Ec(Bytes),
+}
+
+impl Serialize for PrivateKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Rsa(rsa_private_key) => serializer.serialize_str(
+                &base64_standard.encode(
+                    &rsa_private_key
+                        .to_pkcs8_pem(LineEnding::LF)
+                        .unwrap_or("failed to serialize RSA private key".to_string().into()),
+                ),
+            ),
+            Self::Ec(ec_bytes) => serializer.serialize_str(&pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()).to_string()),
+        }
+    }
 }
 
 impl TryFrom<&InMemorySigningKeyPair> for PrivateKey {
@@ -60,6 +79,18 @@ impl PrivateKey {
 pub(crate) enum PublicKey {
     Rsa(Bytes),
     Ec(Bytes),
+}
+
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Rsa(rsa_bytes) => serializer.serialize_str(&base64_standard.encode(rsa_bytes.as_ref())),
+            Self::Ec(ec_bytes) => serializer.serialize_str(&base64_standard.encode(ec_bytes.as_ref())),
+        }
+    }
 }
 
 impl TryFrom<&PrivateKey> for PublicKey {
