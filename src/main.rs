@@ -5,7 +5,10 @@ use clio::ClioPath;
 use cluster_crypto::ClusterCryptoObjects;
 use etcd_client::Client as EtcdClient;
 use k8s_etcd::InMemoryK8sEtcd;
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{atomic::Ordering::Relaxed, Arc},
+};
 
 mod cli;
 mod cluster_crypto;
@@ -39,6 +42,10 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         None => None,
     }));
 
+    if parsed_cli.dry_run {
+        file_utils::DRY_RUN.store(true, Relaxed);
+    }
+
     let cluster_crypto = recertify(
         Arc::clone(&in_memory_etcd_client),
         parsed_cli.static_dirs.clone(),
@@ -55,6 +62,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         parsed_cli.static_dirs,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
         parsed_cli.summary_file,
+        parsed_cli.dry_run,
     )
     .await
     .context("finalizing")?;
@@ -99,6 +107,7 @@ async fn finalize(
     static_dirs: Vec<ClioPath>,
     regenerate_server_ssh_keys: Option<&Path>,
     summary_file: Option<ClioPath>,
+    dry_run: bool,
 ) -> Result<()> {
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
@@ -120,11 +129,13 @@ async fn finalize(
     }
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
-    // etcd after we're done
-    in_memory_etcd_client
-        .commit_to_actual_etcd()
-        .await
-        .context("commiting etcd cache to actual etcd")?;
+    // etcd after we're done (unless we're doing a dry run)
+    if !dry_run {
+        in_memory_etcd_client
+            .commit_to_actual_etcd()
+            .await
+            .context("commiting etcd cache to actual etcd")?;
+    }
 
     // Serialize cluster_crypto into the summary file if requested
     if let Some(summary_file) = summary_file {

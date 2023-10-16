@@ -6,7 +6,7 @@ use super::{
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
 };
 use crate::{
-    file_utils::encode_resource_data_entry,
+    file_utils::{commit_file, encode_resource_data_entry},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
@@ -112,7 +112,7 @@ impl DistributedJwt {
     }
 
     pub(crate) async fn commit_to_filesystem(&self, filelocation: &FileLocation) -> Result<()> {
-        tokio::fs::write(
+        commit_file(
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {

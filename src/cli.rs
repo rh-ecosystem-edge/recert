@@ -69,12 +69,18 @@ pub(crate) struct Cli {
     pub(crate) threads: Option<usize>,
 
     /// Regenerate server SSH keys and write to this directory
-    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
+    #[clap(long, group = "dry", value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
     pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
 
     /// Generate a summary
     #[clap(long, value_parser = clap::value_parser!(ClioPath))]
     pub(crate) summary_file: Option<ClioPath>,
+
+    /// Don't actually commit anything to etcd/disk. Useful for validating that a cluster can be
+    /// recertified error-free before turning it into a seed image.
+    /// Note: the act of reading from etcd might sometimes cause changes to etcd
+    #[clap(long, group = "dry")]
+    pub(crate) dry_run: bool,
 }
 
 /// All the user requested customizations, coalesced into a single struct for convenience
@@ -87,6 +93,7 @@ pub(crate) struct Customizations {
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 pub(crate) struct ParsedCLI {
+    pub(crate) dry_run: bool,
     pub(crate) etcd_endpoint: Option<String>,
     pub(crate) static_dirs: Vec<ClioPath>,
     pub(crate) static_files: Vec<ClioPath>,
@@ -101,6 +108,7 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
     let cli = Cli::parse();
 
     Ok(ParsedCLI {
+        dry_run: cli.dry_run,
         etcd_endpoint: cli.etcd_endpoint,
         static_dirs: cli.static_dir,
         static_files: cli.static_file,

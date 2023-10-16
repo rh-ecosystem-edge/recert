@@ -1,6 +1,4 @@
-use crate::k8s_etcd;
 use anyhow::{ensure, Context, Result};
-use k8s_etcd::wait_for_ouger;
 use reqwest::Client;
 use std::process::{Child, Command};
 
@@ -14,6 +12,25 @@ impl Drop for OugerChildProcess {
             println!("Could not kill child process: {}", e)
         }
     }
+}
+
+async fn wait_for_ouger() {
+    let mut tries = 0;
+    while tries < 100 {
+        if Client::new()
+            .get(format!("http://localhost:{OUGER_SERVER_PORT}/healthz"))
+            .send()
+            .await
+            .is_ok()
+        {
+            return;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tries += 1;
+    }
+
+    panic!("Ouger server did not start in time");
 }
 
 pub(crate) async fn launch_ouger_server() -> Result<OugerChildProcess> {

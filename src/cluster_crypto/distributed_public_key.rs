@@ -7,7 +7,9 @@ use super::{
     pem_utils,
 };
 use crate::{
-    file_utils::{add_recert_edited_annotation, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
+    file_utils::{
+        add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
+    },
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
 };
 use std::fmt::Display;
@@ -91,7 +93,7 @@ impl DistributedPublicKey {
             PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
         };
 
-        tokio::fs::write(
+        commit_file(
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
