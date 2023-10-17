@@ -31,6 +31,23 @@ fn main() -> Result<()> {
 }
 
 async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
+    let mut cluster_crypto = ClusterCryptoObjects::new();
+
+    let summary_file = parsed_cli.summary_file.clone();
+
+    let run_result = run(parsed_cli, &mut cluster_crypto).await;
+
+    // Serialize cluster_crypto into the summary file if requested
+    if let Some(summary_file) = summary_file {
+        let summary_file = summary_file.create().context("opening summary file for writing")?;
+
+        serde_yaml::to_writer(summary_file, &cluster_crypto).context("serializing cluster crypto into summary file")?;
+    }
+
+    run_result
+}
+
+async fn run(parsed_cli: ParsedCLI, cluster_crypto: &mut ClusterCryptoObjects) -> std::result::Result<(), anyhow::Error> {
     let _ouger_child_process = ouger::launch_ouger_server().await?;
 
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match parsed_cli.etcd_endpoint {
@@ -46,7 +63,8 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         file_utils::DRY_RUN.store(true, Relaxed);
     }
 
-    let cluster_crypto = recertify(
+    recertify(
+        cluster_crypto,
         Arc::clone(&in_memory_etcd_client),
         parsed_cli.static_dirs.clone(),
         parsed_cli.static_files.clone(),
@@ -61,7 +79,6 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
         parsed_cli.cluster_rename,
         parsed_cli.static_dirs,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
-        parsed_cli.summary_file,
         parsed_cli.dry_run,
     )
     .await
@@ -71,11 +88,12 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
 }
 
 async fn recertify(
+    cluster_crypto: &mut ClusterCryptoObjects,
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     static_dirs: Vec<ClioPath>,
     static_files: Vec<ClioPath>,
     customizations: Customizations,
-) -> Result<ClusterCryptoObjects> {
+) -> Result<()> {
     if in_memory_etcd_client.etcd_client.is_some() {
         scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
             .await
@@ -92,21 +110,19 @@ async fn recertify(
     let rsa_pool = rsa_keys.await?.context("generating rsa keys")?;
 
     // We discovered all crypto objects, process them
-    let mut cluster_crypto = ClusterCryptoObjects::new();
     cluster_crypto
         .process_objects(all_discovered_crypto_objects, customizations, rsa_pool)
         .context("processing discovered objects")?;
 
-    Ok(cluster_crypto)
+    Ok(())
 }
 
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    mut cluster_crypto: ClusterCryptoObjects,
+    cluster_crypto: &mut ClusterCryptoObjects,
     cluster_rename: Option<ClusterRenameParameters>,
     static_dirs: Vec<ClioPath>,
     regenerate_server_ssh_keys: Option<&Path>,
-    summary_file: Option<ClioPath>,
     dry_run: bool,
 ) -> Result<()> {
     cluster_crypto
@@ -135,13 +151,6 @@ async fn finalize(
             .commit_to_actual_etcd()
             .await
             .context("commiting etcd cache to actual etcd")?;
-    }
-
-    // Serialize cluster_crypto into the summary file if requested
-    if let Some(summary_file) = summary_file {
-        let summary_file = summary_file.create().context("opening summary file for writing")?;
-
-        serde_yaml::to_writer(summary_file, &cluster_crypto).context("serializing cluster crypto into summary file")?;
     }
 
     Ok(())
