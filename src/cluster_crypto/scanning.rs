@@ -21,37 +21,67 @@ use std::{
 use x509_certificate::X509Certificate;
 
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let mut pem_strings = vec![];
+
     let yaml = get_etcd_yaml(
         &in_memory_etcd_client,
-        &K8sResourceLocation {
+        &(K8sResourceLocation {
             namespace: Some("openshift-apiserver-operator".into()),
             kind: "ConfigMap".into(),
             apiversion: "v1".into(),
             name: "trusted-ca-bundle".into(),
-        },
+        }),
     )
     .await
-    .context("getting trust bundle")?
-    .context("trust bundle not found")?;
+    .context("getting trusted-ca-bundle")?
+    .context("not found")?;
 
-    let pem_bundle = pem::parse_many(
+    pem_strings.push(
         yaml.pointer("/data/ca-bundle.crt")
             .context("parsing ca-bundle.crt")?
             .as_str()
-            .context("must be string")?,
+            .context("must be string")?
+            .to_string(),
+    );
+
+    let yaml = get_etcd_yaml(
+        &in_memory_etcd_client,
+        &(K8sResourceLocation {
+            namespace: Some("openshift-config".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "registry-cas".into(),
+        }),
     )
-    .context("parsing ca-bundle.crt")?;
+    .await
+    .context("getting registry-cas")?;
 
-    for pem in pem_bundle {
-        if pem.tag() != "CERTIFICATE" {
-            continue;
+    // registry-cas doesn't always exist
+    if let Some(yaml) = yaml {
+        for (_k, v) in yaml
+            .pointer("/data")
+            .context("parsing registry-cas")?
+            .as_object()
+            .context("must be object")?
+        {
+            pem_strings.push(v.as_str().context("must be string")?.to_string());
         }
+    }
 
-        let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
-        let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+    for pem_string in pem_strings {
+        let pem_bundle = pem::parse_many(pem_string).context("parsing ca-bundle.crt")?;
 
-        // TODO: Don't use a global for this
-        rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
+        for pem in pem_bundle {
+            if pem.tag() != "CERTIFICATE" {
+                continue;
+            }
+
+            let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
+            let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+
+            // TODO: Don't use a global for this
+            rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
+        }
     }
 
     Ok(())
