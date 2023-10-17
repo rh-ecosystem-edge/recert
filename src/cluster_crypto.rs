@@ -274,7 +274,7 @@ impl ClusterCryptoObjects {
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
-                bail!(
+                println!(
                     "no signer found for jwt in location {}",
                     (**distributed_jwt)
                         .borrow()

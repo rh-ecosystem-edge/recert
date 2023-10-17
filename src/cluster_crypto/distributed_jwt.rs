@@ -62,13 +62,19 @@ impl DistributedJwt {
     }
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
-        for location in &self.locations.0 {
-            match location {
-                Location::K8s(k8slocation) => {
-                    self.commit_to_etcd(etcd_client, k8slocation).await?;
-                }
-                Location::Filesystem(filelocation) => {
-                    self.commit_to_filesystem(filelocation).await?;
+        if let Some(jwt_regenerated) = &self.jwt_regenerated {
+            for location in &self.locations.0 {
+                match location {
+                    Location::K8s(k8slocation) => {
+                        Self::commit_to_etcd(jwt_regenerated, etcd_client, k8slocation)
+                            .await
+                            .context("committing etcd JWT")?;
+                    }
+                    Location::Filesystem(filelocation) => {
+                        Self::commit_to_filesystem(jwt_regenerated, filelocation)
+                            .await
+                            .context("committing filesystem JWT")?;
+                    }
                 }
             }
         }
@@ -76,7 +82,7 @@ impl DistributedJwt {
         Ok(())
     }
 
-    pub(crate) async fn commit_to_etcd(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
+    async fn commit_to_etcd(jwt_regenerated: &Jwt, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
         let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location)
             .await?
             .context("resource disappeared")?;
@@ -90,10 +96,7 @@ impl DistributedJwt {
             }
             LocationValueType::Jwt => {
                 if let Value::String(value_at_json_pointer) = value_at_json_pointer {
-                    *value_at_json_pointer = encode_resource_data_entry(
-                        &k8slocation.yaml_location,
-                        &self.jwt_regenerated.clone().context("JWT was not regenerated")?.str,
-                    );
+                    *value_at_json_pointer = encode_resource_data_entry(&k8slocation.yaml_location, &jwt_regenerated.clone().str);
                 } else {
                     bail!("non-string value at json pointer")
                 }
@@ -111,13 +114,13 @@ impl DistributedJwt {
         Ok(())
     }
 
-    pub(crate) async fn commit_to_filesystem(&self, filelocation: &FileLocation) -> Result<()> {
+    async fn commit_to_filesystem(jwt_regenerated: &Jwt, filelocation: &FileLocation) -> Result<()> {
         commit_file(
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
                     LocationValueType::Pem(_) => bail!("JWT cannot be in PEM"),
-                    LocationValueType::Jwt => self.jwt_regenerated.clone().context("JWT was not regenerated")?.str.clone(),
+                    LocationValueType::Jwt => jwt_regenerated.clone().str.clone(),
                     LocationValueType::Unknown => bail!("cannot commit unknown value type"),
                 },
                 FileContentLocation::Yaml(_) => todo!("filesystem YAML JWTs not implemented"),
