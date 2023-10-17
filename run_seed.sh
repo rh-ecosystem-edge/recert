@@ -12,7 +12,7 @@ if [[ ! -d backup ]]; then
     cat backup/blobs/sha256/$(cat backup/blobs/sha256/$(cat backup/index.json | jq '.manifests[0].digest' -r | cut -d ':' -f2) | jq '.layers[0].digest' -r | cut -d ':' -f2) | tar -xz -C backup
 fi
 
-rm -rf backup/etc backup/var backup/etc_orig backup/var_orig
+rm -rf backup/etc backup/var backup/etc_orig backup/var_orig backup/etcd_orig backup/etcd
 
 tar -C backup -xzf backup/etc.tgz
 tar -C backup -xzf backup/var.tgz
@@ -52,7 +52,9 @@ cargo run --release -- \
     --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
     --cn-san-replace 192.168.127.10:192.168.127.11 \
     --summary-file summary.yaml \
-    --extend-expiration
+    --extend-expiration \
+    --dry-run
+    # --regenerate-server-ssh-keys backup/etc/ssh/ \
 
 cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd
 

@@ -1,9 +1,8 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
-use crate::ouger::{ouger, OUGER_SERVER_PORT};
+use crate::ouger::ouger;
 use anyhow::{bail, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
-use reqwest::Client;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -160,25 +159,6 @@ impl InMemoryK8sEtcd {
         self.deleted_keys.lock().await.insert(key.to_string());
         Ok(())
     }
-}
-
-pub(crate) async fn wait_for_ouger() {
-    let mut tries = 0;
-    while tries < 100 {
-        if Client::new()
-            .get(format!("http://localhost:{OUGER_SERVER_PORT}/healthz"))
-            .send()
-            .await
-            .is_ok()
-        {
-            return;
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        tries += 1;
-    }
-
-    panic!("Ouger server did not start in time");
 }
 
 pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Option<Value>> {

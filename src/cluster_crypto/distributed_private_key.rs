@@ -7,7 +7,9 @@ use super::{
     signee::Signee,
 };
 use crate::{
-    file_utils::{add_recert_edited_annotation, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem},
+    file_utils::{
+        add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
+    },
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
     Customizations,
@@ -102,7 +104,7 @@ impl DistributedPrivateKey {
             PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
         };
 
-        tokio::fs::write(
+        commit_file(
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {

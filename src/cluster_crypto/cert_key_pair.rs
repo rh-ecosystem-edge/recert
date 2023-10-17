@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::{crypto_utils::key_from_file, locations::LocationValueType},
-    file_utils::{add_recert_edited_annotation, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
+    file_utils::{add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     Customizations,
@@ -355,7 +355,7 @@ impl CertKeyPair {
                 .encode_pem(),
         )?;
 
-        Ok(tokio::fs::write(
+        commit_file(
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(location_value_type) => match &location_value_type {
@@ -383,7 +383,7 @@ impl CertKeyPair {
                 }
             },
         )
-        .await?)
+        .await
     }
 }
 
