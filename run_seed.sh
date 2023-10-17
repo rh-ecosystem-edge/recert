@@ -52,8 +52,7 @@ cargo run --release -- \
     --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
     --cn-san-replace 192.168.127.10:192.168.127.11 \
     --summary-file summary.yaml \
-    --extend-expiration \
-    --dry-run
+    --extend-expiration
     # --regenerate-server-ssh-keys backup/etc/ssh/ \
 
 cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd
