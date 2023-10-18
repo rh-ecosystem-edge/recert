@@ -4,12 +4,12 @@ use super::{
     locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType},
 };
 use crate::{
-    cluster_crypto::{crypto_objects::process_unknown_value, yaml_crawl},
+    cluster_crypto::{crypto_objects::process_unknown_value, json_crawl},
     file_utils::{self, read_file_to_string},
-    k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
+    k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rules,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use clio::ClioPath;
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -23,7 +23,7 @@ use x509_certificate::X509Certificate;
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
     let mut pem_strings = vec![];
 
-    let yaml = get_etcd_yaml(
+    let yaml = get_etcd_json(
         &in_memory_etcd_client,
         &(K8sResourceLocation {
             namespace: Some("openshift-apiserver-operator".into()),
@@ -44,7 +44,7 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
             .to_string(),
     );
 
-    let yaml = get_etcd_yaml(
+    let yaml = get_etcd_json(
         &in_memory_etcd_client,
         &(K8sResourceLocation {
             namespace: Some("openshift-config".into()),
@@ -223,12 +223,17 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                     // still have the key to compare to. TODO: Find a more robust way to generate
                     // etcd keys, kubernetes is doing it weirdly which is why as_etcd_key is so
                     // complicated. Couldn't find documentation on how it should be done properly
-                    assert_eq!(etcd_result.key, k8s_resource_location.as_etcd_key());
+                    ensure!(
+                        etcd_result.key == k8s_resource_location.as_etcd_key(),
+                        "{:?} != {:?}",
+                        etcd_result.key,
+                        k8s_resource_location.as_etcd_key()
+                    );
 
-                    let decoded_yaml_values = yaml_crawl::crawl_yaml(value)
+                    let decoded_yaml_values = json_crawl::crawl_json(value)
                         .with_context(|| format!("crawling yaml of key {:?}", key))?
                         .iter()
-                        .map(|yaml| yaml_crawl::decode_yaml_value(yaml).context("decoding yaml"))
+                        .map(|yaml| json_crawl::decode_json_value(yaml).context(format!("decoding yaml of key {:?}", key)))
                         .collect::<Result<Vec<_>>>()?;
 
                     anyhow::Ok(
@@ -313,7 +318,7 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
                 contents,
                 &Location::Filesystem(FileLocation {
                     path: file_path.to_string_lossy().to_string(),
-                    content_location: FileContentLocation::Raw(LocationValueType::Unknown),
+                    content_location: FileContentLocation::Raw(LocationValueType::YetUnknown),
                 }),
             )
             .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
@@ -322,9 +327,9 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
 }
 
 pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
-    Ok(yaml_crawl::crawl_yaml((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
+    Ok(json_crawl::crawl_json((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
         .iter()
-        .map(yaml_crawl::decode_yaml_value)
+        .map(json_crawl::decode_json_value)
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .map(|opt| opt.context("failed to decode yaml"))

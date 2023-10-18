@@ -1,49 +1,51 @@
-use super::locations::{FieldEncoding, LocationValueType, YamlLocation};
+use super::locations::{FieldEncoding, JsonLocation, LocationValueType};
 use crate::rules::{self, IGNORE_LIST_CONFIGMAP};
-use anyhow::{Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use fn_error_context::context;
 use serde_json::Value;
 
-pub(crate) struct YamlValue {
-    pub(crate) location: YamlLocation,
+#[derive(Debug)]
+pub(crate) struct JsonValue {
+    pub(crate) location: JsonLocation,
     pub(crate) value: Value,
 }
 
-pub(crate) fn crawl_yaml(yaml_value: Value) -> Result<Vec<YamlValue>> {
-    let kind = yaml_value.get("kind");
-    let apiversion = yaml_value.get("apiVersion");
+pub(crate) fn crawl_json(json_value: Value) -> Result<Vec<JsonValue>> {
+    let kind = json_value.get("kind");
+    let apiversion = json_value.get("apiVersion");
     match kind {
         Some(kind) => match kind.as_str().context("non-unicode kind")? {
-            "Secret" => scan_secret(&yaml_value),
-            "ConfigMap" => scan_configmap(&yaml_value),
-            "ValidatingWebhookConfiguration" => scan_webhookconfiguration(&yaml_value),
-            "MutatingWebhookConfiguration" => scan_webhookconfiguration(&yaml_value),
-            "APIService" => scan_apiservice(&yaml_value),
-            "MachineConfig" => scan_machineconfig(&yaml_value),
-            "ControllerConfig" => scan_controllerconfig(&yaml_value),
+            "Secret" => scan_secret(&json_value),
+            "ConfigMap" => scan_configmap(&json_value),
+            "ValidatingWebhookConfiguration" => scan_webhookconfiguration(&json_value),
+            "MutatingWebhookConfiguration" => scan_webhookconfiguration(&json_value),
+            "APIService" => scan_apiservice(&json_value),
+            "MachineConfig" => scan_machineconfig(&json_value),
+            "ControllerConfig" => scan_controllerconfig(&json_value),
             "Config" => match apiversion {
                 Some(apiversion) => match apiversion.as_str().context("non-string apiVersion")? {
-                    "v1" => scan_kubeconfig(&yaml_value),
+                    "v1" => scan_kubeconfig(&json_value),
                     _ => Ok(Vec::new()),
                 },
                 None => Ok(Vec::new()),
             },
             _ => Ok(Vec::new()),
         },
-        // Not all kubeconfigs and machineconfigs have a kind field, so we try to process any YAML
+        // Not all kubeconfigs and machineconfigs have a kind field, so we try to process any JSON
         // without a kind as if it were a kubeconfig/machineconfig
         None => {
-            let kubeconfig_scan_result = scan_kubeconfig(&yaml_value)?;
+            let kubeconfig_scan_result = scan_kubeconfig(&json_value)?;
             if !kubeconfig_scan_result.is_empty() {
                 Ok(kubeconfig_scan_result)
             } else {
-                scan_machineconfig(&yaml_value)
+                scan_machineconfig(&json_value)
             }
         }
     }
 }
 
-pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<JsonValue>> {
     let mut ret = Vec::new();
 
     if let Some(Value::Object(data)) = value.as_object().context("configmap is not object")?.get("data") {
@@ -52,10 +54,10 @@ pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
                 continue;
             }
 
-            ret.push(YamlValue {
-                location: YamlLocation {
+            ret.push(JsonValue {
+                location: JsonLocation {
                     json_pointer: format!("/data/{key}"),
-                    value: LocationValueType::Unknown,
+                    value: LocationValueType::YetUnknown,
                     encoding: FieldEncoding::None,
                 },
                 value: value.clone(),
@@ -66,7 +68,7 @@ pub(crate) fn scan_configmap(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(ret)
 }
 
-pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_secret(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = Vec::new();
     if let Some(Value::Object(data)) = value.as_object().context("not object")?.get("data") {
         for (key, value) in data.iter() {
@@ -74,8 +76,8 @@ pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
                 continue;
             }
 
-            res.push(YamlValue {
-                location: YamlLocation::new("/data", key, FieldEncoding::Base64),
+            res.push(JsonValue {
+                location: JsonLocation::new("/data", key, FieldEncoding::ByteArray),
                 value: value.clone(),
             })
         }
@@ -84,8 +86,8 @@ pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
     if let Some(Value::Object(metadata)) = value.as_object().context("not object")?.get("metadata") {
         if let Some(Value::Object(annotations)) = metadata.get("annotations") {
             for (key, value) in annotations.iter() {
-                res.push(YamlValue {
-                    location: YamlLocation::new("/metadata/annotations", key, FieldEncoding::None),
+                res.push(JsonValue {
+                    location: JsonLocation::new("/metadata/annotations", key, FieldEncoding::None),
                     value: value.clone(),
                 })
             }
@@ -95,36 +97,48 @@ pub(crate) fn scan_secret(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn scan_webhookconfiguration(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_webhookconfiguration(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = vec![];
-    if let Some(Value::Array(webhooks)) = value.as_object().context("non-object WebhookConfiguration")?.get("webhooks") {
-        for (webhook_index, webhook_value) in webhooks.iter().enumerate() {
-            if let Some(Value::Object(client_config)) = webhook_value.get("clientConfig") {
-                if let Some(ca_bundle) = client_config.get("caBundle") {
-                    res.push(YamlValue {
-                        location: YamlLocation {
-                            json_pointer: format!("/webhooks/{webhook_index}/clientConfig/caBundle"),
-                            value: LocationValueType::Unknown,
-                            encoding: FieldEncoding::Base64,
-                        },
-                        value: ca_bundle.clone(),
-                    });
-                }
-            }
-        }
+
+    let Value::Array(webhooks) = value
+        .as_object()
+        .context("non-object WebhookConfiguration")?
+        .get("webhooks")
+        .context("no webhooks")?
+    else {
+        bail!("webhooks is not an array")
+    };
+
+    ensure!(!webhooks.is_empty(), "empty webhooks");
+
+    for (webhook_index, webhook_value) in webhooks.iter().enumerate() {
+        let Value::Object(client_config) = webhook_value.get("clientConfig").context("no clientConfig")? else {
+            bail!("clientConfig is not an object")
+        };
+
+        let ca_bundle = client_config.get("caBundle").context("no caBundle")?;
+
+        res.push(JsonValue {
+            location: JsonLocation {
+                json_pointer: format!("/webhooks/{webhook_index}/clientConfig/caBundle"),
+                value: LocationValueType::YetUnknown,
+                encoding: FieldEncoding::ByteArray,
+            },
+            value: ca_bundle.clone(),
+        });
     }
 
     Ok(res)
 }
 
-pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = Vec::new();
     if let Some(Value::Object(spec)) = value.as_object().context("non-object apiservice")?.get("spec") {
         if let Some(ca_bundle) = spec.get("caBundle") {
-            res.push(YamlValue {
-                location: YamlLocation {
+            res.push(JsonValue {
+                location: JsonLocation {
                     json_pointer: "/spec/caBundle".to_string(),
-                    value: LocationValueType::Unknown,
+                    value: LocationValueType::YetUnknown,
                     encoding: FieldEncoding::Base64,
                 },
                 value: ca_bundle.clone(),
@@ -135,7 +149,7 @@ pub(crate) fn scan_apiservice(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = Vec::new();
     if let Some(Value::Object(spec)) = value.as_object().context("non-object machineconfig")?.get("spec") {
         if let Some(Value::Object(config)) = spec.get("config") {
@@ -147,10 +161,10 @@ pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
                                 if path.ends_with(".pem") || path.ends_with(".crt") {
                                     if let Some(Value::Object(contents)) = file.get("contents") {
                                         if let Some(source) = contents.get("source") {
-                                            res.push(YamlValue {
-                                                location: YamlLocation {
+                                            res.push(JsonValue {
+                                                location: JsonLocation {
                                                     json_pointer: format!("/spec/config/storage/files/{file_index}/contents/source"),
-                                                    value: LocationValueType::Unknown,
+                                                    value: LocationValueType::YetUnknown,
                                                     encoding: FieldEncoding::DataUrl,
                                                 },
                                                 value: source.clone(),
@@ -168,14 +182,14 @@ pub(crate) fn scan_machineconfig(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn scan_controllerconfig(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_controllerconfig(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = Vec::new();
     if let Some(Value::Object(spec)) = value.as_object().context("non-object controllerconfig")?.get("spec") {
         if let Some(ca_bundle) = spec.get("kubeAPIServerServingCAData") {
-            res.push(YamlValue {
-                location: YamlLocation {
+            res.push(JsonValue {
+                location: JsonLocation {
                     json_pointer: "/spec/kubeAPIServerServingCAData".to_string(),
-                    value: LocationValueType::Unknown,
+                    value: LocationValueType::YetUnknown,
                     encoding: FieldEncoding::Base64,
                 },
                 value: ca_bundle.clone(),
@@ -183,10 +197,10 @@ pub(crate) fn scan_controllerconfig(value: &Value) -> Result<Vec<YamlValue>> {
         }
 
         if let Some(ca_bundle) = spec.get("rootCAData") {
-            res.push(YamlValue {
-                location: YamlLocation {
+            res.push(JsonValue {
+                location: JsonLocation {
                     json_pointer: "/spec/rootCAData".to_string(),
-                    value: LocationValueType::Unknown,
+                    value: LocationValueType::YetUnknown,
                     encoding: FieldEncoding::Base64,
                 },
                 value: ca_bundle.clone(),
@@ -197,7 +211,7 @@ pub(crate) fn scan_controllerconfig(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
+pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<JsonValue>> {
     let mut res = Vec::new();
 
     if let Some(Value::Array(users)) = value.get("users") {
@@ -208,8 +222,8 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
                     .context("non-object user")?
                     .get(user_field.to_string().as_str())
                 {
-                    res.push(YamlValue {
-                        location: YamlLocation::new(&format!("/users/{}/user", i), user_field, FieldEncoding::Base64),
+                    res.push(JsonValue {
+                        location: JsonLocation::new(&format!("/users/{}/user", i), user_field, FieldEncoding::Base64),
                         value: field_value.clone(),
                     });
                 }
@@ -224,8 +238,8 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
                 .context("non-object cluster")?
                 .get("certificate-authority-data")
             {
-                res.push(YamlValue {
-                    location: YamlLocation::new(
+                res.push(JsonValue {
+                    location: JsonLocation::new(
                         &format!("/clusters/{}/cluster", i),
                         "certificate-authority-data",
                         FieldEncoding::Base64,
@@ -239,17 +253,36 @@ pub(crate) fn scan_kubeconfig(value: &Value) -> Result<Vec<YamlValue>> {
     Ok(res)
 }
 
-pub(crate) fn decode_yaml_value(yaml_value: &YamlValue) -> Result<Option<(YamlLocation, String)>> {
-    let decoded = match yaml_value.location.encoding {
-        FieldEncoding::None => Some(yaml_value.value.as_str().context("non unicode YAML value")?.to_string()),
-        FieldEncoding::Base64 => process_base64_value(&yaml_value.value)?,
-        FieldEncoding::DataUrl => process_data_url_value(&yaml_value.value)?,
+#[context("decoding value at {:?}", json_value.location)]
+pub(crate) fn decode_json_value(json_value: &JsonValue) -> Result<Option<(JsonLocation, String)>> {
+    let decoded = match json_value.location.encoding {
+        FieldEncoding::None => Some(json_value.value.as_str().context("non unicode JSON value")?.to_string()),
+        FieldEncoding::Base64 => process_base64_value(&json_value.value).context("decoding base64 value")?,
+        FieldEncoding::DataUrl => process_data_url_value(&json_value.value).context("decoding dataurl value")?,
+        FieldEncoding::ByteArray => process_byte_array_value(&json_value.value).context("decoding byte array value")?,
     };
 
-    Ok(decoded.map(|decoded| (yaml_value.location.clone(), decoded)))
+    Ok(decoded.map(|decoded| (json_value.location.clone(), decoded)))
 }
 
-/// Given a data-url-encoded value taken from a YAML field, decode it and scan it for
+fn process_byte_array_value(value: &Value) -> Result<Option<String>> {
+    Ok(match value {
+        Value::Array(array_value) => {
+            let mut bytes = Vec::new();
+            for byte in array_value {
+                if let Value::Number(number) = byte {
+                    bytes.push(u8::try_from(number.as_u64().context("non-integer in array")?).context("converting to u8")?);
+                } else {
+                    bail!("non-number in array");
+                }
+            }
+            Some(String::from_utf8(bytes).context("non-utf8 decoded byte array value")?)
+        }
+        _ => None,
+    })
+}
+
+/// Given a data-url-encoded value taken from a JSON field, decode it and scan it for
 /// cryptographic keys and certificates and record them in the appropriate data structures.
 fn process_data_url_value(value: &Value) -> Result<Option<String>> {
     Ok(if let Value::String(string_value) = value {
@@ -267,12 +300,13 @@ fn process_data_url_value(value: &Value) -> Result<Option<String>> {
     })
 }
 
-/// Given a base64-encoded value taken from a YAML field, decode it and scan it for
+/// Given a base64-encoded value taken from a JSON field, decode it and scan it for
 /// cryptographic keys and certificates and record them in the appropriate data structures.
 fn process_base64_value(value: &Value) -> Result<Option<String>> {
-    Ok(if let Value::String(string_value) = value {
-        Some(String::from_utf8(base64_standard.decode(string_value.as_bytes())?).context("non-utf8 decoded base64 value")?)
-    } else {
-        None
+    Ok(match value {
+        Value::String(string_value) => {
+            Some(String::from_utf8(base64_standard.decode(string_value.as_bytes())?).context("non-utf8 decoded base64 value")?)
+        }
+        _ => None,
     })
 }

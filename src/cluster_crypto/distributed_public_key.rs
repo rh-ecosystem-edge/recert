@@ -10,7 +10,7 @@ use crate::{
     file_utils::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
     },
-    k8s_etcd::{get_etcd_yaml, InMemoryK8sEtcd},
+    k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
 };
 use std::fmt::Display;
 
@@ -65,7 +65,7 @@ impl DistributedPublicKey {
     }
 
     async fn commit_k8s_public_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location)
+        let mut resource = get_etcd_json(etcd_client, &k8slocation.resource_location)
             .await?
             .context("resource disappeared")?;
         add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;

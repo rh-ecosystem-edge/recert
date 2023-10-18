@@ -696,11 +696,10 @@ right places and doesn't miss anything.
 #### etcd scanning
 
 recert will fetch all etcd values of `secrets`, `configmaps`, `machineconfigs`
-and a few other kinds. Since etcd doesn't store YAMLs for most resources, and
-instead stores a protobuf binary encoding of the resources, `recert` for now
-has to use [ouger](https://github.com/omertuc/ouger/) to convert those
-resources from and to YAML (this is usually done by kube-apiserver when you
-normally use kubernetes, but with recert we use direct etcd access).
+and a few other kinds. Since kube-apiserver doesn't store raw JSONs in etcd for
+most resources, and instead stores a protobuf binary encoding of the resources,
+`recert` has to use protobuf definitions copied from the kubernetes repo in
+order to be able to decode/encode those values.
 
 For each kind of resource, `recert` has specialized code to scan it for
 cryptographic objects. i.e., recert will not simply brute-force blindly
@@ -977,8 +976,8 @@ key gets discarded during installation.
 ### etcd cache
 
 During the Commit stage mentioned above, we would do many writes to etcd. It's
-very slow to go through ouger and etcd for each one, so instead we maintain an
-in-memory cache of all etcd YAMLs, and all writes actually happen in memory.
+very slow to go through etcd for each one, so instead we maintain an in-memory
+cache of all etcd YAMLs, and all writes actually happen in memory.
 
 In the end, we simply commit that cache back to etcd. This essentially batches
 all the etcd writes of the same YAML into a single operation.

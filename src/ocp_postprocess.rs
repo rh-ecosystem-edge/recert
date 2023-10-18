@@ -1,7 +1,7 @@
 use self::cluster_domain_rename::params::ClusterRenameParameters;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
-    k8s_etcd::{self, get_etcd_yaml, put_etcd_yaml},
+    k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
@@ -45,7 +45,7 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
 
     hasher.update(
         base64_standard.decode(
-            get_etcd_yaml(
+            get_etcd_json(
                 etcd_client,
                 &K8sResourceLocation::new(None, "APIService", "v1.packages.operators.coreos.com", "apiregistration.k8s.io/v1"),
             )
@@ -66,7 +66,7 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         "v1",
     );
 
-    let mut packageserver_serving_cert_secret = get_etcd_yaml(etcd_client, &package_serving_cert_secret_k8s_resource_location)
+    let mut packageserver_serving_cert_secret = get_etcd_json(etcd_client, &package_serving_cert_secret_k8s_resource_location)
         .await?
         .context("couldn't find packageserver-service-cert")?;
     packageserver_serving_cert_secret

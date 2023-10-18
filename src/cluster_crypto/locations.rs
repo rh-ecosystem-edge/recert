@@ -219,14 +219,14 @@ impl Serialize for Location {
 }
 
 impl Location {
-    pub fn k8s_yaml(k8s_resource_location: &K8sResourceLocation, yaml_location: &YamlLocation) -> Location {
+    pub fn k8s_yaml(k8s_resource_location: &K8sResourceLocation, yaml_location: &JsonLocation) -> Location {
         Location::K8s(K8sLocation {
             resource_location: k8s_resource_location.clone(),
             yaml_location: yaml_location.clone(),
         })
     }
 
-    pub fn file_yaml(file_path: &str, yaml_location: &YamlLocation) -> Location {
+    pub fn file_yaml(file_path: &str, yaml_location: &JsonLocation) -> Location {
         Location::Filesystem(FileLocation {
             path: file_path.to_string(),
             content_location: FileContentLocation::Yaml(yaml_location.clone()),
@@ -264,7 +264,7 @@ impl Location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
                     LocationValueType::Pem(_) => bail!("already has PEM info"),
                     LocationValueType::Jwt => bail!("already has jwt info"),
-                    LocationValueType::Unknown => {
+                    LocationValueType::YetUnknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location =
                             FileContentLocation::Raw(LocationValueType::Pem(PemLocationInfo::new(pem_bundle_index)));
@@ -293,7 +293,7 @@ impl Location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
                     LocationValueType::Pem(_) => bail!("already has PEM info"),
                     LocationValueType::Jwt => bail!("already has jwt info"),
-                    LocationValueType::Unknown => {
+                    LocationValueType::YetUnknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location = FileContentLocation::Raw(LocationValueType::Jwt);
                         Self::Filesystem(new_file_location)
@@ -346,7 +346,7 @@ impl Serialize for FileLocation {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum FileContentLocation {
     Raw(LocationValueType),
-    Yaml(YamlLocation),
+    Yaml(JsonLocation),
 }
 
 impl Serialize for FileContentLocation {
@@ -374,7 +374,7 @@ impl std::fmt::Display for FileContentLocation {
 pub(crate) enum LocationValueType {
     Pem(PemLocationInfo),
     Jwt,
-    Unknown,
+    YetUnknown,
 }
 
 impl std::fmt::Display for LocationValueType {
@@ -382,7 +382,7 @@ impl std::fmt::Display for LocationValueType {
         match self {
             LocationValueType::Pem(pem_location_info) => write!(f, "{}", pem_location_info),
             LocationValueType::Jwt => write!(f, "jwt"),
-            LocationValueType::Unknown => write!(f, "unknown"),
+            LocationValueType::YetUnknown => write!(f, "unknown"),
         }
     }
 }
@@ -391,6 +391,7 @@ impl std::fmt::Display for LocationValueType {
 pub(crate) enum FieldEncoding {
     None,
     Base64,
+    ByteArray,
     DataUrl,
 }
 
@@ -400,18 +401,19 @@ impl Display for FieldEncoding {
             FieldEncoding::None => write!(f, "without encoding"),
             FieldEncoding::Base64 => write!(f, "encoded as base64"),
             FieldEncoding::DataUrl => write!(f, "encoded as a dataurl"),
+            FieldEncoding::ByteArray => write!(f, "encoded as a byte array"),
         }
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct YamlLocation {
+pub(crate) struct JsonLocation {
     pub(crate) json_pointer: String,
     pub(crate) value: LocationValueType,
     pub(crate) encoding: FieldEncoding,
 }
 
-impl Serialize for YamlLocation {
+impl Serialize for JsonLocation {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -420,17 +422,17 @@ impl Serialize for YamlLocation {
     }
 }
 
-impl YamlLocation {
+impl JsonLocation {
     pub fn new(prefix: &str, key: &str, encoding: FieldEncoding) -> Self {
-        YamlLocation {
+        JsonLocation {
             json_pointer: format!("{}/{}", prefix, key.to_string().replace('/', "~1")),
-            value: LocationValueType::Unknown,
+            value: LocationValueType::YetUnknown,
             encoding,
         }
     }
 }
 
-impl std::fmt::Display for YamlLocation {
+impl std::fmt::Display for JsonLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}, {}, {}", self.json_pointer, self.encoding, self.value)
     }
@@ -502,8 +504,16 @@ impl K8sResourceLocation {
 impl TryFrom<&serde_json::Value> for K8sResourceLocation {
     type Error = anyhow::Error;
     fn try_from(value: &serde_json::Value) -> Result<Self> {
+        let namespace = match json_tools::read_metadata_string_field(value, "namespace") {
+            Some(namespace) => match namespace.as_str() {
+                "" => None,
+                _ => Some(namespace),
+            },
+            None => None,
+        };
+
         Ok(Self {
-            namespace: json_tools::read_metadata_string_field(value, "namespace"),
+            namespace,
             kind: json_tools::read_string_field(value, "kind").context("missing kind field")?,
             name: json_tools::read_metadata_string_field(value, "name").context("missing name field")?,
             apiversion: json_tools::read_string_field(value, "apiVersion").context("missing apiversion field")?,
@@ -534,7 +544,7 @@ impl std::fmt::Display for K8sResourceLocation {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct K8sLocation {
     pub(crate) resource_location: K8sResourceLocation,
-    pub(crate) yaml_location: YamlLocation,
+    pub(crate) yaml_location: JsonLocation,
 }
 
 impl Serialize for K8sLocation {

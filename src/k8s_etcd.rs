@@ -1,5 +1,5 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
-use crate::ouger::ouger;
+use crate::etcd_encoding;
 use anyhow::{bail, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
@@ -15,13 +15,14 @@ pub(crate) struct EtcdResult {
 
 /// An etcd client wrapper backed by an in-memory hashmap. All reads are served from memory, with
 /// fallback to actual etcd for misses. All writes are strictly to memory, but supports eventually
-/// committing to an actual etcd instance of kubernetes, transparently encoding and decoding YAMLs
-/// with ouger. Used by recert as a cache to dramatically speed up the process of certificate and
-/// key regeneration, as we we don't have to go through ouger and etcd for every single certificate
-/// and key access.
+/// committing to an actual etcd instance of kubernetes. Values are not stored in the hasmap in
+/// native etcd protobuf encoding, but instead are stored as decoded JSONs. Used by recert as a
+/// cache to dramatically speed up the process of certificate and key regeneration, as we we don't
+/// have to go through etcd for every single edit.
 pub(crate) struct InMemoryK8sEtcd {
     pub(crate) etcd_client: Option<Arc<EtcdClient>>,
     etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
+    edited: Mutex<HashMap<String, Vec<u8>>>,
     deleted_keys: Mutex<HashSet<String>>,
 }
 
@@ -32,6 +33,7 @@ impl InMemoryK8sEtcd {
             etcd_client: etcd_client.map(Arc::new),
             etcd_keyvalue_hashmap: Mutex::new(HashMap::new()),
             deleted_keys: Mutex::new(HashSet::new()),
+            edited: Mutex::new(HashMap::new()),
         }
     }
 
@@ -78,17 +80,19 @@ impl InMemoryK8sEtcd {
         };
 
         for (key, value) in self.etcd_keyvalue_hashmap.lock().await.iter() {
+            if !self.edited.lock().await.contains_key(key) {
+                continue;
+            }
             let key = key.clone();
             let value = value.clone();
             let etcd_client = Arc::clone(etcd_client);
-            // TODO: Find a fancier way to detect CRDs
-            let value = if key.starts_with("/kubernetes.io/machineconfiguration.openshift.io/") {
-                value.to_vec()
-            } else {
-                ouger("encode", value.as_slice()).await.context("encoding value with ouger")?
-            };
+            let value = etcd_encoding::encode(value.as_slice()).await.context("encoding value")?;
 
-            etcd_client.kv_client().put(key.as_bytes(), value, None).await?;
+            etcd_client
+                .kv_client()
+                .put(key.as_bytes(), value.clone(), None)
+                .await
+                .context(format!("during etcd put {} {:?}", key, value))?;
         }
 
         Ok(())
@@ -118,7 +122,7 @@ impl InMemoryK8sEtcd {
         if let Some(value) = get_result.kvs().first() {
             let raw_etcd_value = value.value();
 
-            let decoded_value = ouger("decode", raw_etcd_value).await.context("decoding value with ouger")?;
+            let decoded_value = etcd_encoding::decode(raw_etcd_value).await.context("decoding value")?;
             self.etcd_keyvalue_hashmap
                 .lock()
                 .await
@@ -134,6 +138,7 @@ impl InMemoryK8sEtcd {
     pub(crate) async fn put(&self, key: &str, value: Vec<u8>) {
         self.etcd_keyvalue_hashmap.lock().await.insert(key.to_string(), value.clone());
         self.deleted_keys.lock().await.remove(key);
+        self.edited.lock().await.insert(key.to_string(), value);
     }
 
     pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
@@ -161,14 +166,14 @@ impl InMemoryK8sEtcd {
     }
 }
 
-pub(crate) async fn get_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Option<Value>> {
+pub(crate) async fn get_etcd_json(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation) -> Result<Option<Value>> {
     let etcd_result = client
         .get(k8slocation.as_etcd_key())
         .await
         .with_context(|| format!("etcd get {}", k8slocation.as_etcd_key()))?;
 
     Ok(if let Some(etcd_result) = etcd_result {
-        Some(serde_yaml::from_str(&String::from_utf8(etcd_result.value)?)?)
+        Some(serde_json::from_str(&String::from_utf8(etcd_result.value)?)?)
     } else {
         None
     })
