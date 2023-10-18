@@ -16,8 +16,11 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    collections::hash_map::Entry::{Occupied, Vacant},
+    sync::atomic::AtomicBool,
+};
 use x509_certificate::X509CertificateError;
 
 mod cert_key_pair;
@@ -27,12 +30,12 @@ mod distributed_jwt;
 mod distributed_private_key;
 mod distributed_public_key;
 mod jwt;
-mod keys;
 mod signee;
 mod yaml_crawl;
 
 pub(crate) mod certificate;
 pub(crate) mod crypto_utils;
+pub(crate) mod keys;
 pub(crate) mod locations;
 pub(crate) mod pem_utils;
 pub(crate) mod scanning;
@@ -91,6 +94,10 @@ where
     let values: Vec<_> = values.values().collect();
     values.serialize(serializer)
 }
+
+// TODO: Find a better way to communicate to the PrivateKey Serialize implementation that it should
+// redact the key
+pub(crate) static REDACT_SECRETS: AtomicBool = AtomicBool::new(false);
 
 impl ClusterCryptoObjects {
     pub(crate) fn new() -> Self {

@@ -7,12 +7,11 @@ use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
-    sync::atomic::Ordering::Relaxed,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
 use tokio::io::AsyncReadExt;
 
-// Global dry run flag
-pub(crate) static DRY_RUN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(crate) static DRY_RUN: AtomicBool = AtomicBool::new(false);
 
 pub async fn commit_file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
     if !DRY_RUN.load(Relaxed) {

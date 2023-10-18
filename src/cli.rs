@@ -76,6 +76,10 @@ pub(crate) struct Cli {
     #[clap(long, value_parser = clap::value_parser!(ClioPath))]
     pub(crate) summary_file: Option<ClioPath>,
 
+    /// Generate a summary without sensitive data (private keys and JWTs removed)
+    #[clap(long, value_parser = clap::value_parser!(ClioPath))]
+    pub(crate) summary_file_clean: Option<ClioPath>,
+
     /// Don't actually commit anything to etcd/disk. Useful for validating that a cluster can be
     /// recertified error-free before turning it into a seed image.
     /// Note: the act of reading from etcd might sometimes cause changes to etcd
@@ -102,6 +106,7 @@ pub(crate) struct ParsedCLI {
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
     pub(crate) summary_file: Option<ClioPath>,
+    pub(crate) summary_file_clean: Option<ClioPath>,
 }
 
 pub(crate) fn parse_cli() -> Result<ParsedCLI> {
@@ -122,5 +127,6 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
         threads: cli.threads,
         regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys,
         summary_file: cli.summary_file,
+        summary_file_clean: cli.summary_file_clean,
     })
 }
