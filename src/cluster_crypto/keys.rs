@@ -1,3 +1,4 @@
+use super::REDACT_SECRETS;
 use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
@@ -11,6 +12,7 @@ use std::{
     fmt::Formatter,
     io::Write,
     process::{Command, Stdio},
+    sync::atomic::Ordering::Relaxed,
 };
 use x509_certificate::InMemorySigningKeyPair;
 
@@ -26,6 +28,10 @@ impl Serialize for PrivateKey {
     where
         S: serde::Serializer,
     {
+        if REDACT_SECRETS.load(Relaxed) {
+            return serializer.serialize_str("<redacted>");
+        }
+
         match self {
             Self::Rsa(rsa_private_key) => serializer.serialize_str(
                 &base64_standard.encode(

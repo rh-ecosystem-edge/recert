@@ -2,7 +2,7 @@ use crate::{cluster_crypto::scanning, ocp_postprocess::cluster_domain_rename::pa
 use anyhow::{Context, Result};
 use cli::{Customizations, ParsedCLI};
 use clio::ClioPath;
-use cluster_crypto::ClusterCryptoObjects;
+use cluster_crypto::{ClusterCryptoObjects, REDACT_SECRETS};
 use etcd_client::Client as EtcdClient;
 use k8s_etcd::InMemoryK8sEtcd;
 use std::{
@@ -31,17 +31,29 @@ fn main() -> Result<()> {
 }
 
 async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
-    let mut cluster_crypto = ClusterCryptoObjects::new();
-
     let summary_file = parsed_cli.summary_file.clone();
+    let summary_file_clean = parsed_cli.summary_file_clean.clone();
 
+    if parsed_cli.dry_run {
+        file_utils::DRY_RUN.store(true, Relaxed);
+    }
+
+    let mut cluster_crypto = ClusterCryptoObjects::new();
     let run_result = run(parsed_cli, &mut cluster_crypto).await;
 
     // Serialize cluster_crypto into the summary file if requested
     if let Some(summary_file) = summary_file {
         let summary_file = summary_file.create().context("opening summary file for writing")?;
-
         serde_yaml::to_writer(summary_file, &cluster_crypto).context("serializing cluster crypto into summary file")?;
+    }
+
+    // Serialize cluster_crypto into a clean summary file if requested
+    if let Some(summary_file_clean) = summary_file_clean {
+        let summary_file_clean = summary_file_clean.create().context("opening summary file for writing")?;
+
+        REDACT_SECRETS.store(true, Relaxed);
+        serde_yaml::to_writer(summary_file_clean, &cluster_crypto).context("serializing cluster crypto into summary file")?;
+        REDACT_SECRETS.store(false, Relaxed);
     }
 
     run_result
@@ -58,10 +70,6 @@ async fn run(parsed_cli: ParsedCLI, cluster_crypto: &mut ClusterCryptoObjects) -
         ),
         None => None,
     }));
-
-    if parsed_cli.dry_run {
-        file_utils::DRY_RUN.store(true, Relaxed);
-    }
 
     recertify(
         cluster_crypto,
