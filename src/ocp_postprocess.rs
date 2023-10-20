@@ -25,6 +25,9 @@ pub(crate) async fn ocp_postprocess(
 
     delete_leases(in_memory_etcd_client).await.context("deleting leases")?;
     delete_pods(in_memory_etcd_client).await.context("deleting leases")?;
+    delete_node_kubeconfigs(in_memory_etcd_client)
+        .await
+        .context("deleting node-kubeconfigs")?;
 
     if let Some(cluster_rename_params) = cluster_rename_params {
         cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs)
@@ -82,6 +85,19 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         packageserver_serving_cert_secret,
     )
     .await?;
+
+    Ok(())
+}
+
+/// These kubeconfigs nested inside a secret are far too complicated to handle in recert, so we
+/// just delete them and hope that a reconcile will take care of them.
+pub(crate) async fn delete_node_kubeconfigs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    etcd_client
+        .delete(&K8sResourceLocation::new(Some("openshift-kube-apiserver"), "Secret", "node-kubeconfigs", "v1").as_etcd_key())
+        .await
+        .context("deleting node-kubeconfigs")?;
 
     Ok(())
 }
