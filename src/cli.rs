@@ -60,7 +60,7 @@ pub(crate) struct Cli {
 
     /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and
     /// change their issue date to now.
-    #[clap(long, default_value_t = false)]
+    #[clap(long, default_value_t = false, group = "expiration")]
     pub(crate) extend_expiration: bool,
 
     /// Threads to use for parallel processing. Defaults to using as many threads as there are
@@ -85,6 +85,13 @@ pub(crate) struct Cli {
     /// Note: the act of reading from etcd might sometimes cause changes to etcd
     #[clap(long, group = "dry")]
     pub(crate) dry_run: bool,
+
+    /// Intentionally give all certificates an expiration date in the past. Useful to run before
+    /// creating a seed image to make sure that this seed image will not be accidentally used
+    /// as-is. That is, the seed image would have to be recertified with --extend-expiration to fix
+    /// those intentionally expired dates.
+    #[clap(long, groups = &["dry", "expiration"])]
+    pub(crate) force_expire: bool,
 }
 
 /// All the user requested customizations, coalesced into a single struct for convenience
@@ -93,6 +100,7 @@ pub(crate) struct Customizations {
     pub(crate) use_key_rules: UseKeyRules,
     pub(crate) use_cert_rules: UseCertRules,
     pub(crate) extend_expiration: bool,
+    pub(crate) force_expire: bool,
 }
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
@@ -122,6 +130,7 @@ pub(crate) fn parse_cli() -> Result<ParsedCLI> {
             use_key_rules: UseKeyRules(cli.use_key),
             use_cert_rules: UseCertRules(cli.use_cert),
             extend_expiration: cli.extend_expiration,
+            force_expire: cli.force_expire,
         },
         cluster_rename: cli.cluster_rename,
         threads: cli.threads,

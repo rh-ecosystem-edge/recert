@@ -253,6 +253,7 @@ impl CertKeyPair {
             &mut tbs_certificate,
             &customizations.cn_san_replace_rules,
             customizations.extend_expiration,
+            customizations.force_expire,
         )
         .context("mutating cert")?;
 
