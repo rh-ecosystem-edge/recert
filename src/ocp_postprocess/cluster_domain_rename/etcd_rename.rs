@@ -3,7 +3,7 @@ use super::rename_utils::{
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
-    k8s_etcd::{get_etcd_yaml, put_etcd_yaml, InMemoryK8sEtcd},
+    k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
 use fn_error_context::context;
@@ -61,7 +61,7 @@ pub(crate) async fn fix_router_certs(
     cluster_domain: &str,
     k8s_resource_location: K8sResourceLocation,
 ) -> Result<()> {
-    let mut secret = get_etcd_yaml(etcd_client, &k8s_resource_location).await?.context("no secret")?;
+    let mut secret = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("no secret")?;
     let data = &mut secret
         .pointer_mut("/data")
         .context("no /data")?
@@ -89,14 +89,35 @@ pub(crate) async fn fix_router_certs(
         .as_array_mut()
         .context("managedFields not an array")?;
 
-    managed_fields.iter_mut().try_for_each(|mf| {
-        let managed_data = mf
-            .pointer_mut("/fieldsV1/f:data")
-            .context("no /fieldsV1/f:data")?
+    managed_fields.iter_mut().try_for_each(|managed_field| {
+        let fields_v1_raw_byte_array = managed_field
+            .pointer("/fieldsV1/raw")
+            .context("no /fieldsV1/raw")?
+            .as_array()
+            .context("/fieldsV1/raw not an array")?;
+
+        let mut fields_v1_raw_parsed: Value = serde_json::from_str(
+            &String::from_utf8(
+                fields_v1_raw_byte_array
+                    .iter()
+                    .map(|v| v.as_u64().context("fieldsV1 not a number"))
+                    .collect::<Result<Vec<_>>>()
+                    .context("parsing byte array")?
+                    .into_iter()
+                    .map(|v| v as u8)
+                    .collect::<Vec<_>>(),
+            )
+            .context("fieldsV1 not valid utf8")?,
+        )
+        .context("deserializing fieldsV1")?;
+
+        let fields_data = fields_v1_raw_parsed
+            .pointer_mut("/f:data")
+            .context("no /f:data")?
             .as_object_mut()
             .context("data not an object")?;
 
-        let (existing_apps_domain_key, existing_apps_domain_value) = managed_data
+        let (existing_apps_domain_key, existing_apps_domain_value) = fields_data
             .into_iter()
             .filter(|(k, _v)| k.starts_with("f:apps."))
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -104,8 +125,27 @@ pub(crate) async fn fix_router_certs(
             .context("no apps.* key")?
             .clone();
 
-        managed_data.insert(format!("f:apps.{}", cluster_domain), existing_apps_domain_value);
-        managed_data.remove(&existing_apps_domain_key);
+        fields_data.insert(format!("f:apps.{}", cluster_domain), existing_apps_domain_value);
+        fields_data.remove(&existing_apps_domain_key);
+
+        let serialized = serde_json::Value::String(serde_json::to_string(&fields_v1_raw_parsed).context("serializing fieldsV1")?);
+
+        let byte_array = serde_json::Value::Array(
+            serialized
+                .as_str()
+                .context("serialized not a string")?
+                .as_bytes()
+                .iter()
+                .map(|b| serde_json::Value::Number(serde_json::Number::from(*b)))
+                .collect(),
+        );
+
+        managed_field
+            .pointer_mut("/fieldsV1")
+            .context("no /fieldsV1")?
+            .as_object_mut()
+            .context("/fieldsV1 not an object")?
+            .insert("raw".to_string(), byte_array);
 
         anyhow::Ok(())
     })?;
@@ -121,7 +161,7 @@ pub(crate) async fn fix_loadbalancer_serving_certkey(
     name: &str,
 ) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-kube-apiserver"), "Secret", name, "v1");
-    let mut secret = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut secret = get_etcd_json(etcd_client, &k8s_resource_location)
         .await
         .context(format!("getting {} from etcd", name))?
         .context("no secret")?;
@@ -156,7 +196,7 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                     .with_context(|| format!("deserializing value of key {:?}", key,))?;
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut machineconfig = get_etcd_yaml(etcd_client, &k8s_resource_location)
+                let mut machineconfig = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("no machineconfig")?;
 
@@ -176,7 +216,7 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
 pub(crate) async fn fix_apiserver_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-apiserver"), "Configmap", "config", "v1");
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("getting configmap")?;
     let data = &mut configmap
@@ -215,7 +255,7 @@ pub(crate) async fn fix_apiserver_config(etcd_client: &Arc<InMemoryK8sEtcd>, clu
 pub(crate) async fn fix_authentication_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location =
         K8sResourceLocation::new(Some("openshift-authentication"), "Configmap", "v4-0-config-system-cliconfig", "v1");
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location).await?.context("no configmap")?;
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("no configmap")?;
     let data = &mut configmap
         .pointer_mut("/data")
         .context("no /data")?
@@ -290,7 +330,7 @@ pub(crate) async fn fix_authentication_system_metadata(
     cluster_domain: &str,
     k8s_resource_location: K8sResourceLocation,
 ) -> Result<()> {
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location).await?.context("no configmap")?;
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("no configmap")?;
 
     let data = &mut configmap.pointer_mut("/data").context("no /data")?;
 
@@ -322,7 +362,7 @@ pub(crate) async fn fix_authentication_system_metadata(
 
 pub(crate) async fn fix_monitoring_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-config-managed"), "Configmap", "monitoring-shared-config", "v1");
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find monitoring-shared-config")?;
     let data = &mut configmap
@@ -370,7 +410,7 @@ pub(crate) async fn fix_monitoring_config(etcd_client: &Arc<InMemoryK8sEtcd>, cl
 
 pub(crate) async fn fix_console_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-console"), "Configmap", "console-config", "v1");
-    let configmap = get_etcd_yaml(etcd_client, &k8s_resource_location).await?;
+    let configmap = get_etcd_json(etcd_client, &k8s_resource_location).await?;
 
     if let Some(mut configmap) = configmap {
         let data = &mut configmap
@@ -421,7 +461,7 @@ pub(crate) async fn fix_console_config(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
 pub(crate) async fn fix_console_public_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-config-managed"), "Configmap", "console-public", "v1");
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find console-public")?;
     let data = &mut configmap.pointer_mut("/data");
@@ -429,13 +469,16 @@ pub(crate) async fn fix_console_public_config(etcd_client: &Arc<InMemoryK8sEtcd>
     if let Some(data) = data {
         let data = data.as_object_mut().context("data not an object")?;
 
-        data.insert(
-            "consoleURL".to_string(),
-            serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
-        )
-        .context("could not find original consoleURL")?;
+        // Some clusters have console disabled, so there's nothing to replace
+        if data.contains_key("consoleURL") {
+            data.insert(
+                "consoleURL".to_string(),
+                serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
+            )
+            .context("could not find original consoleURL")?;
 
-        put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+            put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+        }
     }
 
     Ok(())
@@ -443,7 +486,7 @@ pub(crate) async fn fix_console_public_config(etcd_client: &Arc<InMemoryK8sEtcd>
 
 pub(crate) async fn fix_console_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Console", "cluster", "config.openshift.io");
-    let mut config = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find console cluster config")?;
     let status = &mut config
@@ -466,7 +509,7 @@ pub(crate) async fn fix_console_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd
 
 pub(crate) async fn fix_dns_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Dns", "cluster", "config.openshift.io");
-    let mut config = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find dns cluster config")?;
     let spec = &mut config
@@ -485,7 +528,7 @@ pub(crate) async fn fix_dns_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, c
 
 pub(crate) async fn fix_console_cli_downloads(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "ConsoleCLIDownload", "oc-cli-downloads", "console.openshift.io");
-    let consoleclidownload = get_etcd_yaml(etcd_client, &k8s_resource_location).await?;
+    let consoleclidownload = get_etcd_json(etcd_client, &k8s_resource_location).await?;
 
     if let Some(mut consoleclidownload) = consoleclidownload {
         let spec = &mut consoleclidownload
@@ -528,7 +571,7 @@ pub(crate) async fn fix_console_cli_downloads(etcd_client: &Arc<InMemoryK8sEtcd>
 
 pub(crate) async fn fix_ingresses_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Ingress", "cluster", "config.openshift.io");
-    let mut config = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find ingress cluster config")?;
     let spec = &mut config
@@ -576,7 +619,7 @@ pub(crate) async fn fix_infrastructure_cluster_config(
     infra_id: &str,
 ) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Infrastructure", "cluster", "config.openshift.io");
-    let mut config = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find infrastructure cluster config")?;
     let status = &mut config
@@ -624,7 +667,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
                     .with_context(|| format!("deserializing value of key {:?}", key,))?;
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+                let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("could not find configmap")?;
 
@@ -702,7 +745,7 @@ pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id:
                     .with_context(|| format!("deserializing value of key {:?}", key,))?;
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+                let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("could not find configmap")?;
 
@@ -758,7 +801,7 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                     .with_context(|| format!("deserializing value of key {:?}", key,))?;
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+                let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("could not find configmap")?;
 
@@ -793,7 +836,7 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
 pub(crate) async fn fix_ovnkube_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ovn-kubernetes"), "Configmap", "ovnkube-config", "v1");
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find configmap")?;
 
@@ -846,7 +889,7 @@ pub(crate) async fn fix_install_config(
     cluster_base_domain: &str,
     k8s_resource_location: K8sResourceLocation,
 ) -> Result<()> {
-    let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find configmap")?;
 
@@ -915,7 +958,7 @@ pub(crate) async fn fix_kcm_pods(etcd_client: &Arc<InMemoryK8sEtcd>, generated_i
                     .with_context(|| format!("deserializing value of key {:?}", key,))?;
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut configmap = get_etcd_yaml(etcd_client, &k8s_resource_location)
+                let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("could not find configmap")?;
 
@@ -959,7 +1002,7 @@ pub(crate) async fn fix_cvo_deployment(etcd_client: &Arc<InMemoryK8sEtcd>, clust
         "cluster-version-operator",
         "apps/v1",
     );
-    let mut deployment = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find deployment")?;
     let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
@@ -977,7 +1020,7 @@ pub(crate) async fn fix_cvo_deployment(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
 pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-multus"), "DaemonSet", "multus", "apps/v1");
-    let mut daemonset = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut daemonset = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
@@ -991,7 +1034,7 @@ pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cl
     put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
 
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-multus"), "DaemonSet", "multus-additional-cni-plugins", "apps/v1");
-    let mut daemonset = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut daemonset = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
@@ -1009,7 +1052,7 @@ pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cl
 
 pub(crate) async fn fix_ovn_daemonset(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ovn-kubernetes"), "DaemonSet", "ovnkube-node", "apps/v1");
-    let mut daemonset = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut daemonset = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
@@ -1027,7 +1070,7 @@ pub(crate) async fn fix_ovn_daemonset(etcd_client: &Arc<InMemoryK8sEtcd>, cluste
 
 pub(crate) async fn fix_router_default(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ingress"), "Deployment", "router-default", "apps/v1");
-    let mut deployment = get_etcd_yaml(etcd_client, &k8s_resource_location)
+    let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find deployment")?;
     let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
@@ -1101,7 +1144,7 @@ async fn fix_route(
     new_host: String,
     optional: bool,
 ) -> Result<()> {
-    let route = get_etcd_yaml(etcd_client, &k8s_resource_location).await?;
+    let route = get_etcd_json(etcd_client, &k8s_resource_location).await?;
 
     if let Some(route) = route {
         let mut route = route;

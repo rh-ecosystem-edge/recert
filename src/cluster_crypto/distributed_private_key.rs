@@ -1,6 +1,6 @@
 use super::{
     distributed_public_key::DistributedPublicKey,
-    k8s_etcd::get_etcd_yaml,
+    k8s_etcd::get_etcd_json,
     keys::{PrivateKey, PublicKey},
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
     pem_utils,
@@ -76,7 +76,7 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_k8s_private_key(&self, etcd_client: &InMemoryK8sEtcd, k8slocation: &K8sLocation) -> Result<()> {
-        let mut resource = get_etcd_yaml(etcd_client, &k8slocation.resource_location)
+        let mut resource = get_etcd_json(etcd_client, &k8slocation.resource_location)
             .await?
             .context("resource disappeared")?;
         add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;

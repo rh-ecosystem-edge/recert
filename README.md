@@ -22,7 +22,7 @@ For more information see the [design doc](docs/design.md)
 
 ### Local Development
 
-You need protoc (dnf install protobuf-compiler), podman, etcdctl, [ouger](https://github.com/omertuc/ouger), meld, and an IBU backup seed image. Then run `./run_seed.sh <seed pullspec>`
+You need protoc (dnf install protobuf-compiler), podman, etcdctl, meld, and an IBU seed image. Then run `./run_seed.sh <seed pullspec>`
 
 ### Run on a cluster
 

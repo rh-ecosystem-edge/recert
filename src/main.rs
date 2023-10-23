@@ -13,11 +13,11 @@ use std::{
 mod cli;
 mod cluster_crypto;
 mod cnsanreplace;
+mod etcd_encoding;
 mod file_utils;
 mod json_tools;
 mod k8s_etcd;
 mod ocp_postprocess;
-mod ouger;
 mod rsa_key_pool;
 mod rules;
 mod runtime;
@@ -60,8 +60,6 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
 }
 
 async fn run(parsed_cli: ParsedCLI, cluster_crypto: &mut ClusterCryptoObjects) -> std::result::Result<(), anyhow::Error> {
-    let _ouger_child_process = ouger::launch_ouger_server().await?;
-
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match parsed_cli.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)

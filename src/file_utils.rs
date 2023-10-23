@@ -1,5 +1,5 @@
 use crate::cluster_crypto::{
-    locations::{FileLocation, LocationValueType, YamlLocation},
+    locations::{FileLocation, JsonLocation, LocationValueType},
     pem_utils,
 };
 use anyhow::{bail, Context, Result};
@@ -57,7 +57,7 @@ pub(crate) enum RecreateYamlEncoding {
 
 pub(crate) fn recreate_yaml_at_location_with_new_pem(
     mut resource: Value,
-    yaml_location: &YamlLocation,
+    yaml_location: &JsonLocation,
     new_pem: &pem::Pem,
     encoding: RecreateYamlEncoding,
 ) -> Result<String> {
@@ -66,14 +66,16 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
     match &yaml_location.value {
         LocationValueType::Pem(pem_location_info) => {
             let newbundle = pem_utils::pem_bundle_replace_pem_at_index(
-                decode_resource_data_entry(yaml_location, value_at_json_pointer.as_str().context("value no longer string")?)?,
+                decode_resource_data_entry(yaml_location, value_at_json_pointer)?,
                 pem_location_info.pem_bundle_index,
                 new_pem,
             )?;
             let encoded = encode_resource_data_entry(yaml_location, &newbundle);
 
             if let Value::String(value_at_json_pointer) = value_at_json_pointer {
-                *value_at_json_pointer = encoded;
+                *value_at_json_pointer = encoded.as_str().context("encoded value not string")?.to_string();
+            } else if let Value::Array(value_at_json_pointer) = value_at_json_pointer {
+                *value_at_json_pointer = encoded.as_array().context("encoded value not array")?.clone();
             } else {
                 bail!("value not string");
             }
@@ -120,22 +122,31 @@ pub(crate) fn dataurl_encode(data: &str) -> String {
     format!("data:,{}", dataurl_escape(data))
 }
 
-pub(crate) fn encode_resource_data_entry(k8slocation: &YamlLocation, value: &String) -> String {
+pub(crate) fn encode_resource_data_entry(k8slocation: &JsonLocation, value: &String) -> Value {
     match k8slocation.encoding {
-        crate::cluster_crypto::locations::FieldEncoding::None => value.to_string(),
-        crate::cluster_crypto::locations::FieldEncoding::Base64 => base64_standard.encode(value.as_bytes()),
-        crate::cluster_crypto::locations::FieldEncoding::DataUrl => dataurl_encode(value),
+        crate::cluster_crypto::locations::FieldEncoding::None => Value::String(value.clone()),
+        crate::cluster_crypto::locations::FieldEncoding::Base64 => Value::String(base64_standard.encode(value.as_bytes())),
+        crate::cluster_crypto::locations::FieldEncoding::DataUrl => Value::String(dataurl_encode(value)),
+        crate::cluster_crypto::locations::FieldEncoding::ByteArray => Value::Array(
+            value
+                .as_bytes()
+                .iter()
+                .map(|byte| Value::Number(serde_json::Number::from(*byte)))
+                .collect(),
+        ),
     }
 }
 
-pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_json_pointer: &str) -> Result<String> {
+pub(crate) fn decode_resource_data_entry(yaml_location: &JsonLocation, value_at_json_pointer: &Value) -> Result<String> {
     Ok(match yaml_location.encoding {
-        crate::cluster_crypto::locations::FieldEncoding::None => value_at_json_pointer.to_string(),
+        crate::cluster_crypto::locations::FieldEncoding::None => {
+            value_at_json_pointer.as_str().context("value no longer string")?.to_string()
+        }
         crate::cluster_crypto::locations::FieldEncoding::Base64 => {
-            String::from_utf8(base64_standard.decode(value_at_json_pointer.as_bytes())?)?
+            String::from_utf8(base64_standard.decode(value_at_json_pointer.as_str().context("value no longer string")?.as_bytes())?)?
         }
         crate::cluster_crypto::locations::FieldEncoding::DataUrl => {
-            let (decoded, _fragment) = data_url::DataUrl::process(value_at_json_pointer)
+            let (decoded, _fragment) = data_url::DataUrl::process(value_at_json_pointer.as_str().context("value no longer string")?)
                 .ok()
                 .context("dataurl processing")?
                 .decode_to_vec()
@@ -143,6 +154,15 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_
                 .context("dataurl decoding")?;
             String::from_utf8(decoded)?
         }
+        crate::cluster_crypto::locations::FieldEncoding::ByteArray => value_at_json_pointer
+            .as_array()
+            .context("value no longer array")?
+            .iter()
+            .map(|byte| -> Result<_> { Ok(byte.as_u64().context("byte not u64")? as u8) })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .map(|byte| byte as char)
+            .collect::<String>(),
     }
     .clone())
 }
@@ -164,7 +184,7 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &YamlLocation, value_at_
 /// This annotation is purely informational and is not used programmatically by recert itself. It's
 /// used to help troubleshooters notice this is not a "natural" cryptographic object, but instead
 /// one that was manipulated by recert.
-pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: &YamlLocation) -> Result<()> {
+pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: &JsonLocation) -> Result<()> {
     if resource.pointer_mut("/metadata/annotations").is_none() {
         resource
             .pointer_mut("/metadata")
