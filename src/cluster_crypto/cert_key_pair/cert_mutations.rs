@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use bcder::OctetString as BcderOctetString;
 use bcder::Oid;
 use bcder::Tag;
+use chrono::{DateTime, Utc};
 use der::asn1::Ia5String;
 use der::{Decode, Encode};
 use x509_cert::ext::pkix::name::GeneralName::{DnsName, IpAddress};
@@ -16,22 +17,60 @@ pub(crate) fn mutate_cert(
     tbs_certificate: &mut TbsCertificate,
     cn_san_replace_rules: &CnSanReplaceRules,
     extend_expiration: bool,
+    force_expire: bool,
 ) -> Result<()> {
     mutate_cert_cn_san(tbs_certificate, cn_san_replace_rules).context("mutating CN/SAN")?;
-    mutate_expiration(tbs_certificate, extend_expiration).context("extending expiration")?;
+    mutate_expiration(tbs_certificate, extend_expiration, force_expire).context("extending expiration")?;
     Ok(())
 }
 
-fn mutate_expiration(tbs_certificate: &mut TbsCertificate, extend_expiration: bool) -> Result<()> {
-    if !extend_expiration {
-        return Ok(());
-    }
+fn mutate_expiration(tbs_certificate: &mut TbsCertificate, extend_expiration: bool, force_expire: bool) -> Result<()> {
+    match (extend_expiration, force_expire) {
+        (true, true) => bail!("cannot both extend expiration and force expire"),
+        (true, false) => extend_certificate_expiration(tbs_certificate).context("extending expiration")?,
+        (false, true) => certficate_force_expire(tbs_certificate).context("forcefully expiring")?,
+        (false, false) => (),
+    };
+    Ok(())
+}
 
-    let (not_before, not_after) = match &tbs_certificate.validity.not_before {
+fn certficate_force_expire(tbs_certificate: &mut TbsCertificate) -> Result<()> {
+    let (current_not_before, current_not_after) = get_certificate_expiration(tbs_certificate).context("evaluating current expiration")?;
+
+    // Set not_after to now (by decreasing the not_after by the difference between now and
+    // not_after), this essentially expires the certificate as now is immediately in the past.
+
+    // We also rewind not_before by the same amount, so that we can still infer the original
+    // duration of the certificate (it's still the difference between not after and not before) -
+    // this is useful for the certificate expiration extension done by
+    // extend_certificate_expiration in future invocations of recert
+    let rewind_duration = current_not_after - chrono::Utc::now();
+
+    tbs_certificate.validity.not_before = (current_not_before - rewind_duration).into();
+    tbs_certificate.validity.not_after = (current_not_after - rewind_duration).into();
+
+    Ok(())
+}
+
+fn extend_certificate_expiration(tbs_certificate: &mut TbsCertificate) -> Result<()> {
+    let (current_not_before, current_not_after) = get_certificate_expiration(tbs_certificate).context("evaluating current expiration")?;
+
+    let now = chrono::Utc::now();
+
+    let certificate_duration = current_not_after - current_not_before;
+
+    tbs_certificate.validity.not_before = now.into();
+    tbs_certificate.validity.not_after = (now + certificate_duration).into();
+
+    Ok(())
+}
+
+fn get_certificate_expiration(tbs_certificate: &mut TbsCertificate) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let (current_not_before, current_not_after) = match &tbs_certificate.validity.not_before {
         x509_certificate::asn1time::Time::UtcTime(not_before) => {
             match &tbs_certificate.validity.not_after {
                 x509_certificate::asn1time::Time::UtcTime(not_after) => {
-                    // Dereferncing is the only way to get a chrono::DateTime out of the
+                    // Dereferencing is the only way to get a chrono::DateTime out of the
                     // x509_certificate::asn1time::UtcTime struct.
                     (*(not_before.clone()), *(not_after.clone()))
                 }
@@ -40,17 +79,7 @@ fn mutate_expiration(tbs_certificate: &mut TbsCertificate, extend_expiration: bo
         }
         x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
     };
-
-    let now = chrono::Utc::now();
-    let extended_not_before = now;
-
-    let extension = now - not_before;
-    let extended_not_after = not_after + extension;
-
-    tbs_certificate.validity.not_before = extended_not_before.into();
-    tbs_certificate.validity.not_after = extended_not_after.into();
-
-    Ok(())
+    Ok((current_not_before, current_not_after))
 }
 
 pub(crate) fn mutate_cert_cn_san(
