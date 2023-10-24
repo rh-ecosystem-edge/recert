@@ -78,6 +78,10 @@ other words, allow the use of image based installation, while avoiding shared
 cryptography. Of course there are many additional issues to solve with image
 based installation, but this is one of them and on which we will focus.
 
+
+<details>
+  <summary>Cryptography background</summary>
+
 ## Symmetric Cryptography
 
 Symmetric cryptography is cryptography in which both sides of the conversation
@@ -657,6 +661,8 @@ different key algorithms.
 
 Their PEM tag is "PRIVATE KEY". You can read about their ASN.1 structure
 [here](https://datatracker.ietf.org/doc/html/rfc5208#section-5).
+
+</details>
 
 # recert
 
