@@ -1,5 +1,6 @@
 use super::{
     cert_key_pair::{CertKeyPair, SerialNumberEdits, SkidEdits},
+    crypto_utils::SigningKey,
     distributed_jwt::DistributedJwt,
     keys,
 };
@@ -7,7 +8,6 @@ use crate::{rsa_key_pool::RsaKeyPool, Customizations};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::{self, cell::RefCell, rc::Rc};
-use x509_certificate::InMemorySigningKeyPair;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Signee {
@@ -31,7 +31,7 @@ impl Signee {
     pub(crate) fn regenerate(
         &mut self,
         original_signing_public_key: &keys::PublicKey,
-        new_signing_key: Option<&InMemorySigningKeyPair>,
+        new_signing_key: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
         customizations: &Customizations,
         skid_edits: Option<&mut SkidEdits>,

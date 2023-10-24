@@ -1,8 +1,7 @@
 use self::key_identifiers::{HashableKeyID, HashableSerialNumber};
-
 use super::{
     certificate::Certificate,
-    crypto_utils::{self, encode_tbs_cert_to_der},
+    crypto_utils::{self, encode_tbs_cert_to_der, sign, SigningKey},
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
@@ -21,14 +20,13 @@ use anyhow::{bail, ensure, Context, Result};
 use bcder::{BitString, Oid};
 use bytes::Bytes;
 use fn_error_context::context;
-use rsa::signature::Signer;
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
 use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
 use x509_certificate::{
     rfc5280::{self, AlgorithmIdentifier, CertificateSerialNumber},
-    CapturedX509Certificate, EcdsaCurve, InMemorySigningKeyPair, KeyAlgorithm, Sign, X509Certificate,
+    CapturedX509Certificate, EcdsaCurve, KeyAlgorithm, Sign, X509Certificate,
 };
 
 mod cert_mutations;
@@ -58,7 +56,7 @@ pub(crate) type SerialNumberEdits = HashMap<key_identifiers::HashableSerialNumbe
 impl CertKeyPair {
     pub(crate) fn regenerate(
         &mut self,
-        sign_with: Option<&InMemorySigningKeyPair>,
+        sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
         customizations: &Customizations,
         skid_edits: &mut SkidEdits,
@@ -92,7 +90,7 @@ impl CertKeyPair {
                 if let Some(associated_public_key) = &mut self.associated_public_key {
                     (*associated_public_key)
                         .borrow_mut()
-                        .regenerate((&new_cert_subject_key_pair).try_into()?)?;
+                        .regenerate((&new_cert_subject_key_pair.in_memory_signing_key_pair).try_into()?)?;
                 }
 
                 // This condition exists because not all certs originally had a private key associated with
@@ -100,7 +98,8 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
-                    (**distributed_private_key).borrow_mut().key_regenerated = Some((&new_cert_subject_key_pair).try_into()?);
+                    (**distributed_private_key).borrow_mut().key_regenerated =
+                        Some((&new_cert_subject_key_pair.in_memory_signing_key_pair).try_into()?);
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
@@ -134,12 +133,12 @@ impl CertKeyPair {
     #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
     pub(crate) fn re_sign_cert(
         &mut self,
-        sign_with: Option<&InMemorySigningKeyPair>,
+        sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
         customizations: &Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
-    ) -> Result<(InMemorySigningKeyPair, CapturedX509Certificate)> {
+    ) -> Result<(SigningKey, CapturedX509Certificate)> {
         // Clone the to-be-signed part of the certificate from the original certificate
         let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.cert;
         let certificate: &rfc5280::Certificate = cert.as_ref();
@@ -192,8 +191,8 @@ impl CertKeyPair {
         // Replace just the public key info in the to-be-signed part with the newly generated RSA
         // key
         tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
-            algorithm: KeyAlgorithm::from(&self_new_key_pair).into(),
-            subject_public_key: BitString::new(0, self_new_key_pair.public_key_data()),
+            algorithm: KeyAlgorithm::from(&self_new_key_pair.in_memory_signing_key_pair).into(),
+            subject_public_key: BitString::new(0, self_new_key_pair.in_memory_signing_key_pair.public_key_data()),
         };
 
         // If we weren't given a key to sign with, we use the new key we just generated
@@ -206,7 +205,7 @@ impl CertKeyPair {
 
         // TODO: No need to change the signature algorithm once we know how to re-sign ECDSA,
         // we're only forced to change this because we make all certs RSA
-        let signature_algorithm: AlgorithmIdentifier = signing_key.signature_algorithm()?.into();
+        let signature_algorithm: AlgorithmIdentifier = signing_key.in_memory_signing_key_pair.signature_algorithm()?.into();
         tbs_certificate.signature = signature_algorithm.clone();
 
         // Fix SKID
@@ -257,11 +256,11 @@ impl CertKeyPair {
         )
         .context("mutating cert")?;
 
-        // The to-be-signed ceritifcate, encoded to DER, is the bytes we sign
+        // The to-be-signed certificate, encoded to DER, is the bytes we sign
         let tbs_der = encode_tbs_cert_to_der(&tbs_certificate)?;
 
         // Generate the actual signature
-        let signature = signing_key.try_sign(&tbs_der)?;
+        let signature = sign(signing_key, &tbs_der).context("signing")?;
 
         // Create a full certificate by combining the to-be-signed part with the signature itself
         let cert = rfc5280::Certificate {

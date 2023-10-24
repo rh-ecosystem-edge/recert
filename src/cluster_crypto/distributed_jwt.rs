@@ -1,5 +1,5 @@
 use super::{
-    crypto_utils::verify_jwt,
+    crypto_utils::{verify_jwt, SigningKey},
     jwt::Jwt,
     jwt::JwtSigner,
     keys::PublicKey,
@@ -27,7 +27,7 @@ pub(crate) struct DistributedJwt {
 }
 
 impl DistributedJwt {
-    pub(crate) fn regenerate(&mut self, original_signing_key: &PublicKey, new_signing_key: &InMemorySigningKeyPair) -> Result<()> {
+    pub(crate) fn regenerate(&mut self, original_signing_key: &PublicKey, new_signing_key: &SigningKey) -> Result<()> {
         let new_key = match &self.signer {
             JwtSigner::Unknown => bail!("cannot regenerate jwt with unknown signer"),
             JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key)?,
@@ -38,8 +38,8 @@ impl DistributedJwt {
         Ok(())
     }
 
-    fn resign(&self, original_public_key: &PublicKey, new_signing_key_pair: &InMemorySigningKeyPair) -> Result<String> {
-        match new_signing_key_pair {
+    fn resign(&self, original_public_key: &PublicKey, new_signing_key_pair: &SigningKey) -> Result<String> {
+        match &new_signing_key_pair.in_memory_signing_key_pair {
             InMemorySigningKeyPair::Ecdsa(_, _, _) => {
                 bail!("ecdsa unsupported");
             }

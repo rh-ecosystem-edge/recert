@@ -23,7 +23,6 @@ use std::{
 };
 use x509_certificate::X509CertificateError;
 
-mod cert_key_pair;
 mod crypto_objects;
 mod distributed_cert;
 mod distributed_jwt;
@@ -33,6 +32,7 @@ mod json_crawl;
 mod jwt;
 mod signee;
 
+pub(crate) mod cert_key_pair;
 pub(crate) mod certificate;
 pub(crate) mod crypto_utils;
 pub(crate) mod keys;
