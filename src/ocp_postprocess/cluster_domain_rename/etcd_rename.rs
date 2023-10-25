@@ -461,23 +461,25 @@ pub(crate) async fn fix_console_config(etcd_client: &Arc<InMemoryK8sEtcd>, clust
 
 pub(crate) async fn fix_console_public_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-config-managed"), "Configmap", "console-public", "v1");
-    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
-        .await?
-        .context("could not find console-public")?;
-    let data = &mut configmap.pointer_mut("/data");
 
-    if let Some(data) = data {
-        let data = data.as_object_mut().context("data not an object")?;
+    // Some clusters have console disabled, and the entire configmap is missing, not just the
+    // consoleURL key
+    if let Some(mut configmap) = get_etcd_json(etcd_client, &k8s_resource_location).await? {
+        let data = &mut configmap.pointer_mut("/data");
 
-        // Some clusters have console disabled, so there's nothing to replace
-        if data.contains_key("consoleURL") {
-            data.insert(
-                "consoleURL".to_string(),
-                serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
-            )
-            .context("could not find original consoleURL")?;
+        if let Some(data) = data {
+            let data = data.as_object_mut().context("data not an object")?;
 
-            put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+            // Some clusters have console disabled, so there's nothing to replace
+            if data.contains_key("consoleURL") {
+                data.insert(
+                    "consoleURL".to_string(),
+                    serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
+                )
+                .context("could not find original consoleURL")?;
+
+                put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+            }
         }
     }
 
@@ -489,20 +491,21 @@ pub(crate) async fn fix_console_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd
     let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find console cluster config")?;
-    let status = &mut config
-        .pointer_mut("/status")
-        .context("no /status")?
-        .as_object_mut()
-        .context("status not an object")?;
 
-    status
-        .insert(
-            "consoleURL".to_string(),
-            serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
-        )
-        .context("could not find original consoleURL")?;
+    let status_value = config.pointer_mut("/status");
 
-    put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
+    if let Some(status) = status_value {
+        let status_object = &mut status.as_object_mut().context("status not an object")?;
+
+        status_object
+            .insert(
+                "consoleURL".to_string(),
+                serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
+            )
+            .context("could not find original consoleURL")?;
+
+        put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
+    }
 
     Ok(())
 }
