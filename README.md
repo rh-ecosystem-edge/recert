@@ -22,7 +22,10 @@ For more information see the [design doc](docs/design.md)
 
 ### Local Development
 
-You need protoc (dnf install protobuf-compiler), podman, etcdctl, meld, and an IBU seed image. Then run `./run_seed.sh <seed pullspec>`
+You need protoc, podman, openssl, etcdctl, meld, and an IBU seed image. Then
+run `./run_seed.sh <seed pullspec>`
+
+On Fedora a lot of these can be installed using: `sudo dnf install protobuf-compiler podman openssl etcd meld`
 
 ### Run on a cluster
 
