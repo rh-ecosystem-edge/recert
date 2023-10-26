@@ -17,8 +17,8 @@ impl std::fmt::Display for CnSanReplace {
 
 impl CnSanReplace {
     pub(crate) fn cli_parse(value: &str) -> Result<Self> {
-        // TODO: ' ' is legacy, remove eventually
-        let split = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
+        // Also allow comma separation to support IPv6
+        let split = if value.contains(',') { value.split(',') } else { value.split(':') }.collect::<Vec<_>>();
 
         ensure!(
             split.len() == 2,
