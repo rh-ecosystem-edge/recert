@@ -3,8 +3,14 @@
 set -e
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
-
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:backup}
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+if [[ ! -f ouger/go.mod ]] || [[ ! -f etcddump/Cargo.toml ]]; then
+    echo "ouger or etcddump not found, please run git submodule update --init"
+    exit 1
+fi
 
 if [[ ! -d backup ]]; then
     podman pull $BACKUP_IMAGE
@@ -30,7 +36,7 @@ pushd ouger && go install cmd/server/ouger_server.go && popd
 ETCD_IMAGE=${ETCD_IMAGE:-"$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"}
 podman run --network=host --name editor \
     --detach \
-    --authfile ~/repos/bootstrap-in-place-poc/registry-config.json \
+    --authfile ~/omer-ps \
     --entrypoint etcd \
     -v $PWD/backup/var/lib/etcd:/store \
     ${ETCD_IMAGE} --name editor --data-dir /store
