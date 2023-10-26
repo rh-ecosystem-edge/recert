@@ -44,7 +44,7 @@ docker build . -t recert
   <summary>TODO List</summary>
 
 - [ ] Remove OLM package server hack
-- [ ] Convert from resource YAML to etcd key-value key more gracefuly
+- [ ] Convert from resource YAML to etcd key-value key more gracefully
 - [ ] Find proof that root-ca private key is actually missing
 - [ ] When shelling out to openssl to check if cert A signed cert B, construct the command in such a way that if A == B, then it will not give a green result when said cert is not self signed
 - [ ] Fix all code TODO comments
