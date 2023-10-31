@@ -32,6 +32,7 @@ podman kill editor >/dev/null || true
 podman rm editor >/dev/null || true
 
 pushd ouger && go install cmd/server/ouger_server.go && popd
+pushd ouger && go install cmd/ouger/ouger.go && popd
 
 ETCD_IMAGE=${ETCD_IMAGE:-"$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"}
 podman run --network=host --name editor \
