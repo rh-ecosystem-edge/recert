@@ -23,26 +23,36 @@ use x509_certificate::X509Certificate;
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
     let mut pem_strings = vec![];
 
-    let yaml = get_etcd_json(
-        &in_memory_etcd_client,
-        &(K8sResourceLocation {
+    for location in [
+        K8sResourceLocation {
             namespace: Some("openshift-apiserver-operator".into()),
             kind: "ConfigMap".into(),
             apiversion: "v1".into(),
             name: "trusted-ca-bundle".into(),
-        }),
-    )
-    .await
-    .context("getting trusted-ca-bundle")?
-    .context("not found")?;
+        },
+        K8sResourceLocation {
+            namespace: Some("openshift-config".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "user-ca-bundle".into(),
+        },
+    ] {
+        let json = get_etcd_json(&in_memory_etcd_client, &location)
+            .await
+            .context("getting trusted-ca-bundle")?;
 
-    pem_strings.push(
-        yaml.pointer("/data/ca-bundle.crt")
-            .context("parsing ca-bundle.crt")?
-            .as_str()
-            .context("must be string")?
-            .to_string(),
-    );
+        if let Some(json) = json {
+            pem_strings.push(
+                json.pointer("/data/ca-bundle.crt")
+                    .context("parsing ca-bundle.crt")?
+                    .as_str()
+                    .context("must be string")?
+                    .to_string(),
+            );
+        } else {
+            println!("INFO: {:?} not found, will not be considered in external certs", location);
+        }
+    }
 
     let yaml = get_etcd_json(
         &in_memory_etcd_client,
