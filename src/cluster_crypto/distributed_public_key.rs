@@ -51,16 +51,27 @@ impl DistributedPublicKey {
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in self.locations.0.iter() {
-            match location {
-                Location::K8s(k8slocation) => {
-                    self.commit_k8s_public_key(etcd_client, k8slocation).await?;
-                }
-                Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_public_key(filelocation).await?;
-                }
-            }
+            self.commit_at_location(location, etcd_client)
+                .await
+                .context(format!("committing public key to location {}", location))?;
         }
 
+        Ok(())
+    }
+
+    async fn commit_at_location(&self, location: &Location, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
+        match location {
+            Location::K8s(k8slocation) => {
+                self.commit_k8s_public_key(etcd_client, k8slocation)
+                    .await
+                    .context("committing to k8s")?;
+            }
+            Location::Filesystem(filelocation) => {
+                self.commit_filesystem_public_key(filelocation)
+                    .await
+                    .context("committing to filesystem")?;
+            }
+        };
         Ok(())
     }
 
@@ -76,7 +87,12 @@ impl DistributedPublicKey {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &self.key_regenerated.clone().context("key was not regenerated")?.pem(),
+                    &self
+                        .key_regenerated
+                        .clone()
+                        .context("key was not regenerated")?
+                        .pem()
+                        .context("key to pem")?,
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()

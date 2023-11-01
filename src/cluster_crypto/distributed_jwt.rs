@@ -64,18 +64,9 @@ impl DistributedJwt {
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         if let Some(jwt_regenerated) = &self.jwt_regenerated {
             for location in &self.locations.0 {
-                match location {
-                    Location::K8s(k8slocation) => {
-                        Self::commit_to_etcd(jwt_regenerated, etcd_client, k8slocation)
-                            .await
-                            .context("committing etcd JWT")?;
-                    }
-                    Location::Filesystem(filelocation) => {
-                        Self::commit_to_filesystem(jwt_regenerated, filelocation)
-                            .await
-                            .context("committing filesystem JWT")?;
-                    }
-                }
+                Self::commit_at_location(location, jwt_regenerated, etcd_client)
+                    .await
+                    .context(format!("committing JWT to location {}", location))?;
             }
         }
 
@@ -136,6 +127,22 @@ impl DistributedJwt {
         )
         .await?;
 
+        Ok(())
+    }
+
+    async fn commit_at_location(location: &Location, jwt_regenerated: &Jwt, etcd_client: &InMemoryK8sEtcd) -> Result<(), anyhow::Error> {
+        match location {
+            Location::K8s(k8slocation) => {
+                Self::commit_to_etcd(jwt_regenerated, etcd_client, k8slocation)
+                    .await
+                    .context("committing etcd JWT")?;
+            }
+            Location::Filesystem(filelocation) => {
+                Self::commit_to_filesystem(jwt_regenerated, filelocation)
+                    .await
+                    .context("committing filesystem JWT")?;
+            }
+        };
         Ok(())
     }
 }
