@@ -92,10 +92,14 @@ impl Serialize for PublicKey {
     where
         S: serde::Serializer,
     {
-        match self {
-            Self::Rsa(rsa_bytes) => serializer.serialize_str(&base64_standard.encode(rsa_bytes.as_ref())),
-            Self::Ec(ec_bytes) => serializer.serialize_str(&base64_standard.encode(ec_bytes.as_ref())),
-        }
+        serializer.serialize_str(
+            &base64_standard.encode(
+                self.pem()
+                    .context("converting to PEM")
+                    .map_err(serde::ser::Error::custom)?
+                    .to_string(),
+            ),
+        )
     }
 }
 
@@ -162,10 +166,10 @@ impl PublicKey {
         Ok(PublicKey::Ec(output.stdout.into()))
     }
 
-    pub(crate) fn pem(&self) -> pem::Pem {
-        match &self {
+    pub(crate) fn pem(&self) -> Result<pem::Pem> {
+        Ok(match &self {
             PublicKey::Rsa(rsa_der_bytes) => pem::Pem::new("RSA PUBLIC KEY", rsa_der_bytes.as_ref()),
-            PublicKey::Ec(_) => todo!("Unsupported"),
-        }
+            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes).context("ec bytes as pem").context("bytes as PEM")?,
+        })
     }
 }

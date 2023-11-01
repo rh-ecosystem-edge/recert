@@ -277,24 +277,37 @@ impl CertKeyPair {
     }
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
-        self.commit_pair_certificate(etcd_client).await?;
-        self.commit_pair_key(etcd_client).await
+        self.commit_pair_certificate(etcd_client).await.context("committing cert")?;
+        self.commit_pair_key(etcd_client).await.context("committing key")?;
+
+        Ok(())
     }
 
     pub(crate) async fn commit_pair_certificate(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         let locations = (*self.distributed_cert).borrow().locations.0.clone();
 
         for location in locations {
-            match location {
-                Location::K8s(k8slocation) => {
-                    self.commit_k8s_cert(etcd_client, &k8slocation).await?;
-                }
-                Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_cert(&filelocation).await?;
-                }
-            }
+            self.commit_pair_certificate_at_location(&location, etcd_client)
+                .await
+                .context(format!("failed to commit certificate to location {:?}", location))?;
         }
 
+        Ok(())
+    }
+
+    async fn commit_pair_certificate_at_location(&self, location: &Location, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
+        match location {
+            Location::K8s(k8slocation) => {
+                self.commit_k8s_cert(etcd_client, k8slocation)
+                    .await
+                    .context("committing cert to k8s")?;
+            }
+            Location::Filesystem(filelocation) => {
+                self.commit_filesystem_cert(filelocation)
+                    .await
+                    .context("committing cert to filesystem")?;
+            }
+        };
         Ok(())
     }
 

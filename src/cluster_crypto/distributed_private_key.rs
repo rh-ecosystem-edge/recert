@@ -62,16 +62,27 @@ impl DistributedPrivateKey {
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         for location in self.locations.0.iter() {
-            match location {
-                Location::K8s(k8slocation) => {
-                    self.commit_k8s_private_key(etcd_client, k8slocation).await?;
-                }
-                Location::Filesystem(filelocation) => {
-                    self.commit_filesystem_private_key(filelocation).await?;
-                }
-            }
+            self.commit_at_location(location, etcd_client)
+                .await
+                .context(format!("failed to commit private key to location {:?}", location))?;
         }
 
+        Ok(())
+    }
+
+    async fn commit_at_location(&self, location: &Location, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
+        match location {
+            Location::K8s(k8slocation) => {
+                self.commit_k8s_private_key(etcd_client, k8slocation)
+                    .await
+                    .context("commit private key to k8s")?;
+            }
+            Location::Filesystem(filelocation) => {
+                self.commit_filesystem_private_key(filelocation)
+                    .await
+                    .context("commit private key to filesystem")?;
+            }
+        };
         Ok(())
     }
 
