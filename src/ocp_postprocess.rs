@@ -16,8 +16,8 @@ pub(crate) mod cluster_domain_rename;
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_rename_params: Option<ClusterRenameParameters>,
-    static_dirs: Vec<ClioPath>,
+    cluster_rename_params: &Option<ClusterRenameParameters>,
+    static_dirs: &Vec<ClioPath>,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -130,8 +130,8 @@ pub(crate) async fn delete_pods(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()
 /// kubeconfigs have a server URL that we should change to the new cluster's API server URL.
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_rename: ClusterRenameParameters,
-    static_dirs: Vec<ClioPath>,
+    cluster_rename: &ClusterRenameParameters,
+    static_dirs: &Vec<ClioPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
     cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs)
