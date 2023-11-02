@@ -9,17 +9,10 @@ pub(crate) fn set_max_open_files_limit() -> Result<()> {
         }
     }
 
-    println!(
-        "Current max open files soft {} hard {}",
-        current_limit.rlim_cur, current_limit.rlim_max
-    );
-
     let new_limit = libc::rlimit {
         rlim_cur: current_limit.rlim_max,
         rlim_max: current_limit.rlim_max,
     };
-
-    println!("Setting max open files soft {} hard {}", new_limit.rlim_cur, new_limit.rlim_max);
 
     match unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &new_limit) } {
         0 => {}
