@@ -515,17 +515,22 @@ pub(crate) async fn fix_dns_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, c
     let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find dns cluster config")?;
+
+    fix_dns(&mut config, cluster_domain)?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
+
+    Ok(())
+}
+
+fn fix_dns(config: &mut Value, cluster_domain: &str) -> Result<(), anyhow::Error> {
     let spec = &mut config
         .pointer_mut("/spec")
         .context("no /spec")?
         .as_object_mut()
         .context("spec not an object")?;
-
     spec.insert("baseDomain".to_string(), serde_json::Value::String(cluster_domain.to_string()))
         .context("could not find original baseDomain")?;
-
-    put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
-
     Ok(())
 }
 
@@ -625,32 +630,35 @@ pub(crate) async fn fix_infrastructure_cluster_config(
     let mut config = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("could not find infrastructure cluster config")?;
+
+    fix_infra(&mut config, infra_id, cluster_domain)?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
+
+    Ok(())
+}
+
+fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result<(), anyhow::Error> {
     let status = &mut config
         .pointer_mut("/status")
         .context("no /status")?
         .as_object_mut()
         .context("status not an object")?;
-
     status
         .insert(
             "apiServerInternalURI".to_string(),
             serde_json::Value::String(format!("https://api-int.{cluster_domain}:6443")),
         )
         .context("could not find original apiServerInternalURI")?;
-
     status
         .insert(
             "apiServerURL".to_string(),
             serde_json::Value::String(format!("https://api.{cluster_domain}:6443")),
         )
         .context("could not find original apiServerURL")?;
-
     status
         .insert("infrastructureName".to_string(), serde_json::Value::String(infra_id.to_string()))
         .context("could not find original baseDomain")?;
-
-    put_etcd_yaml(etcd_client, &k8s_resource_location, config).await?;
-
     Ok(())
 }
 
@@ -1086,6 +1094,33 @@ pub(crate) async fn fix_router_default(etcd_client: &Arc<InMemoryK8sEtcd>, clust
     .context("fixing pod")?;
     fix_pod(pod, format!("apps.{cluster_domain}").as_str(), "router", "ROUTER_DOMAIN").context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_controller_config(
+    etcd_client: &Arc<InMemoryK8sEtcd>,
+    generated_infra_id: &str,
+    cluster_domain: &str,
+) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(
+        None,
+        "ControllerConfig",
+        "machine-config-controller",
+        "machineconfiguration.openshift.io/v1",
+    );
+
+    let mut controller_config = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context("could not find controller config")?;
+
+    let dns = &mut controller_config.pointer_mut("/spec/dns").context("no /spec/dns")?;
+    fix_dns(dns, cluster_domain).context("fixing dns")?;
+
+    let infra = &mut controller_config.pointer_mut("/spec/infra").context("no /spec/infra")?;
+    fix_infra(infra, generated_infra_id, cluster_domain).context("fixing infra")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, controller_config).await?;
 
     Ok(())
 }
