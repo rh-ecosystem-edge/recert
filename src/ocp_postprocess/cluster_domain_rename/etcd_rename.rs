@@ -790,7 +790,7 @@ pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id:
     Ok(())
 }
 
-pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str, cluster_name: &str) -> Result<()> {
     join_all(
         etcd_client
             .list_keys("configmaps/openshift-kube-controller-manager/controller-manager-kubeconfig")
@@ -825,7 +825,9 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                 let mut config: Value = serde_yaml::from_slice(data["kubeconfig"].as_str().context("kubeconfig not a string")?.as_bytes())
                     .context("deserializing kubeconfig")?;
 
-                fix_kubeconfig(cluster_domain, &mut config).await?;
+                fix_kubeconfig(cluster_name, cluster_domain, &mut config)
+                    .await
+                    .context(format!("fixing kubeconfig for {:?}", k8s_resource_location))?;
 
                 data.insert(
                     "kubeconfig".to_string(),
