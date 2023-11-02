@@ -312,7 +312,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
 }
 
 async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCryptoObect>> {
-    let contents = read_file_to_string(file_path.to_path_buf()).await?;
+    let contents = read_file_to_string(&file_path).await?;
 
     anyhow::Ok(
         if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?

@@ -17,7 +17,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
-use std::{self, cell::RefCell, rc::Rc};
+use std::{self, cell::RefCell, path::PathBuf, rc::Rc};
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DistributedPrivateKey {
@@ -120,7 +120,7 @@ impl DistributedPrivateKey {
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
                     LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                        String::from_utf8((read_file_to_string(filelocation.path.clone().into()).await)?.into_bytes())?,
+                        String::from_utf8((read_file_to_string(&PathBuf::from(&filelocation.path)).await)?.into_bytes())?,
                         pem_location_info.pem_bundle_index,
                         &private_key_pem,
                     )?,

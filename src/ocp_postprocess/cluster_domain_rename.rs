@@ -13,6 +13,7 @@ pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterRenameParameters,
     static_dirs: &Vec<ClioPath>,
+    static_files: &Vec<ClioPath>,
 ) -> Result<(), anyhow::Error> {
     let cluster_domain = cluster_rename.cluster_domain();
     let generated_infra_id = rename_utils::generate_infra_id(cluster_rename.cluster_name.to_string())?;
@@ -21,7 +22,7 @@ pub(crate) async fn rename_all(
         .await
         .context("renaming etcd resources")?;
 
-    fix_filesystem_resources(&cluster_domain, static_dirs, generated_infra_id.clone())
+    fix_filesystem_resources(&cluster_domain, static_dirs, static_files, generated_infra_id.clone())
         .await
         .context("renaming filesystem resources")?;
 
@@ -31,10 +32,15 @@ pub(crate) async fn rename_all(
 async fn fix_filesystem_resources(
     cluster_domain: &str,
     static_dirs: &Vec<ClioPath>,
+    static_files: &Vec<ClioPath>,
     generated_infra_id: String,
 ) -> Result<(), anyhow::Error> {
     for dir in static_dirs {
         fix_dir_resources(cluster_domain, dir, &generated_infra_id).await?;
+    }
+
+    for file in static_files {
+        fix_file_resources(cluster_domain, file).await?;
     }
 
     Ok(())
@@ -62,6 +68,13 @@ async fn fix_dir_resources(cluster_domain: &str, dir: &Path, generated_infra_id:
     filesystem_rename::fix_filesystem_currentconfig(cluster_domain, dir)
         .await
         .context("renaming currentconfig")?;
+    Ok(())
+}
+
+async fn fix_file_resources(cluster_domain: &str, file: &Path) -> Result<(), anyhow::Error> {
+    filesystem_rename::fix_filesystem_mcs_machine_config_content(cluster_domain, file)
+        .await
+        .context("fix filesystem mcs machine config content")?;
     Ok(())
 }
 

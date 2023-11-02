@@ -65,6 +65,7 @@ async fn run(parsed_cli: &ParsedCLI, cluster_crypto: &mut ClusterCryptoObjects) 
         cluster_crypto,
         &parsed_cli.cluster_rename,
         &parsed_cli.static_dirs,
+        &parsed_cli.static_files,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
         parsed_cli.dry_run,
     )
@@ -109,6 +110,7 @@ async fn finalize(
     cluster_crypto: &mut ClusterCryptoObjects,
     cluster_rename: &Option<ClusterRenameParameters>,
     static_dirs: &Vec<ClioPath>,
+    static_files: &Vec<ClioPath>,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
 ) -> Result<()> {
@@ -118,7 +120,7 @@ async fn finalize(
         .context("commiting the cryptographic objects back to memory etcd and to disk")?;
 
     if in_memory_etcd_client.etcd_client.is_some() {
-        ocp_postprocess::ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs)
+        ocp_postprocess::ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs, static_files)
             .await
             .context("performing ocp specific post-processing")?;
     }
