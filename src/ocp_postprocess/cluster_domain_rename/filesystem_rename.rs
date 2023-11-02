@@ -22,7 +22,7 @@ pub(crate) async fn fix_filesystem_kcm_pods(generated_infra_id: &str, dir: &Path
                 let generated_infra_id = generated_infra_id.to_string();
                 tokio::spawn(async move {
                     async move {
-                        let contents = read_file_to_string(file_path.clone())
+                        let contents = read_file_to_string(&file_path)
                             .await
                             .context("reading kube-controller-manager-pod.yaml")?;
                         let mut pod: Value = serde_yaml::from_str(&contents).context("parsing kube-controller-manager-pod.yaml")?;
@@ -61,7 +61,7 @@ pub(crate) async fn fix_filesystem_kcm_configs(generated_infra_id: &str, dir: &P
                 let generated_infra_id = generated_infra_id.to_string();
                 tokio::spawn(async move {
                     async move {
-                        let contents = read_file_to_string(file_path.clone())
+                        let contents = read_file_to_string(&file_path)
                             .await
                             .context("reading kube-controller-manager config.yaml")?;
                         let mut config: Value = serde_yaml::from_str(&contents).context("parsing kube-controller-manager config.yaml")?;
@@ -100,7 +100,7 @@ pub(crate) async fn fix_filesystem_kube_apiserver_configs(cluster_domain: &str, 
                 let cluster_domain = cluster_domain.to_string();
                 tokio::spawn(async move {
                     async move {
-                        let contents = read_file_to_string(file_path.clone())
+                        let contents = read_file_to_string(&file_path)
                             .await
                             .context("reading kube-apiserver config.yaml")?;
                         let mut config: Value = serde_yaml::from_str(&contents).context("parsing kube-apiserver config.yaml")?;
@@ -139,7 +139,7 @@ pub(crate) async fn fix_filesystem_kube_apiserver_oauth_metadata(cluster_domain:
                 let cluster_domain = cluster_domain.to_string();
                 tokio::spawn(async move {
                     async move {
-                        let contents = read_file_to_string(file_path.clone())
+                        let contents = read_file_to_string(&file_path)
                             .await
                             .context("reading kube-apiserver oauthMetadata")?;
                         let mut config: Value = serde_yaml::from_str(&contents).context("parsing kube-apiserver oauthMetadata")?;
@@ -175,7 +175,7 @@ pub(crate) async fn fix_filesystem_currentconfig(cluster_domain: &str, dir: &Pat
         let cluster_domain = cluster_domain.to_string();
         tokio::spawn(async move {
             async move {
-                let contents = read_file_to_string(file_path.clone())
+                let contents = read_file_to_string(&file_path)
                     .await
                     .context("reading kube-apiserver oauthMetadata")?;
                 let mut config: Value = serde_json::from_str(&contents).context("parsing currentconfig")?;
@@ -207,7 +207,7 @@ pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str,
         let kubeconfig_path = file_path.clone();
         tokio::spawn(async move {
             async move {
-                let contents = read_file_to_string(file_path.clone()).await.context("reading apiserver-url.env")?;
+                let contents = read_file_to_string(&file_path).await.context("reading apiserver-url.env")?;
 
                 // write back to disk
                 commit_file(file_path, fix_apiserver_url_file(contents.as_bytes().into(), &cluster_domain)?)
@@ -243,7 +243,7 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path)
                 let kubeconfig_path = file_path.clone();
                 tokio::spawn(async move {
                     async move {
-                        let contents = read_file_to_string(file_path.clone()).await.context("reading kubeconfig")?;
+                        let contents = read_file_to_string(&file_path).await.context("reading kubeconfig")?;
                         let mut yaml_value = serde_yaml::from_str::<Value>(contents.as_str())
                             .context(format!("parsing kubeconfig {:?} as yaml", contents))?;
 
@@ -267,6 +267,28 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path)
     .collect::<core::result::Result<Vec<_>, _>>()?
     .into_iter()
     .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_filesystem_mcs_machine_config_content(cluster_domain: &str, file_path: &Path) -> Result<()> {
+    if let Some(file_name) = file_path.file_name() {
+        if let Some(file_name) = file_name.to_str() {
+            if file_name == "mcs-machine-config-content.json" {
+                let contents = read_file_to_string(file_path)
+                    .await
+                    .context("reading kube-apiserver oauthMetadata")?;
+
+                let mut config: Value = serde_json::from_str(&contents).context("parsing currentconfig")?;
+
+                fix_machineconfig(&mut config, cluster_domain)?;
+
+                commit_file(file_path, serde_json::to_string(&config).context("serializing currentconfig")?)
+                    .await
+                    .context("writing currentconfig to disk")?;
+            }
+        }
+    }
 
     Ok(())
 }

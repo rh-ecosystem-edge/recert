@@ -39,15 +39,15 @@ pub(crate) fn globvec(location: &Path, globstr: &str) -> Result<Vec<PathBuf>> {
     .collect::<Vec<_>>())
 }
 
-pub(crate) async fn read_file_to_string(file_path: PathBuf) -> Result<String> {
-    let mut file = tokio::fs::File::open(file_path.clone()).await?;
+pub(crate) async fn read_file_to_string(file_path: &Path) -> Result<String> {
+    let mut file = tokio::fs::File::open(file_path).await?;
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.context("failed to read file")?;
     Ok(contents)
 }
 
 pub(crate) async fn get_filesystem_yaml(file_location: &FileLocation) -> Result<Value> {
-    serde_yaml::from_str(read_file_to_string(file_location.path.clone().into()).await?.as_str()).context("failed to parse yaml")
+    serde_yaml::from_str(read_file_to_string(&PathBuf::from(&file_location.path)).await?.as_str()).context("failed to parse yaml")
 }
 
 pub(crate) enum RecreateYamlEncoding {

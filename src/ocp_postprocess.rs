@@ -18,6 +18,7 @@ pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,
     static_dirs: &Vec<ClioPath>,
+    static_files: &Vec<ClioPath>,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -30,7 +31,7 @@ pub(crate) async fn ocp_postprocess(
         .context("deleting node-kubeconfigs")?;
 
     if let Some(cluster_rename_params) = cluster_rename_params {
-        cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs)
+        cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs, static_files)
             .await
             .context("renaming cluster")?;
     }
@@ -127,14 +128,14 @@ pub(crate) async fn delete_pods(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()
     Ok(())
 }
 
-/// kubeconfigs have a server URL that we should change to the new cluster's API server URL.
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterRenameParameters,
     static_dirs: &Vec<ClioPath>,
+    static_files: &Vec<ClioPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
-    cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs)
+    cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs, static_files)
         .await
         .context("renaming all")?;
 
