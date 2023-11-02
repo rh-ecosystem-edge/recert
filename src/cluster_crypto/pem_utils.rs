@@ -12,8 +12,6 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
     }
     Ok(pem::encode_many_config(
         &newpems,
-        pem::EncodeConfig {
-            line_ending: pem::LineEnding::LF,
-        },
+        pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF),
     ))
 }
