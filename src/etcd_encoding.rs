@@ -1,21 +1,17 @@
-use self::k8s_etcd_protobuf::k8s::io::apimachinery::pkg::runtime::TypeMeta;
-use anyhow::{bail, Context, Result};
-use k8s_etcd_protobuf::github::com::openshift::api::route::v1::Route;
-use k8s_etcd_protobuf::k8s::io::{
-    api::{
-        admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
-        apps::v1::{DaemonSet, Deployment},
-        core::v1::{ConfigMap, Secret},
+use super::protobuf_gen::{
+    github::com::openshift::api::route::v1::Route,
+    k8s::io::{
+        api::{
+            admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
+            apps::v1::{DaemonSet, Deployment},
+            core::v1::{ConfigMap, Secret},
+        },
+        apimachinery::pkg::runtime::{TypeMeta, Unknown},
     },
-    apimachinery::pkg::runtime::Unknown,
 };
+use anyhow::{bail, Context, Result};
 use prost::Message;
 use serde_json::Value;
-
-mod k8s_etcd_protobuf {
-    #![allow(clippy::all)]
-    include!(concat!(env!("OUT_DIR"), "/_includes.rs"));
-}
 
 macro_rules! k8s_type {
     ($name:ident, $type:ident) => {
