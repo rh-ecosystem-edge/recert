@@ -3,12 +3,21 @@ extern crate prost_build;
 use std::io::Result;
 
 fn main() -> Result<()> {
+    if cfg!(feature = "generate") {
+        generate_protobuf_code()?
+    }
+    Ok(())
+}
+
+fn generate_protobuf_code() -> Result<()> {
     let mut prost_build = prost_build::Config::new();
 
     prost_build.type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]");
     prost_build.type_attribute(".", "#[serde(rename_all = \"camelCase\")]");
 
-    prost_build.include_file("_includes.rs");
+    prost_build.out_dir("src/protobuf_gen");
+
+    prost_build.include_file("protobufs.rs");
 
     prost_build.compile_protos(
         &[

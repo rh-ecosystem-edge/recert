@@ -18,6 +18,7 @@ mod file_utils;
 mod json_tools;
 mod k8s_etcd;
 mod ocp_postprocess;
+mod protobuf_gen;
 mod rsa_key_pool;
 mod rules;
 mod runtime;
