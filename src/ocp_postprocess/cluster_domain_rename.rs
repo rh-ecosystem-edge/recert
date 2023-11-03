@@ -16,27 +16,35 @@ pub(crate) async fn rename_all(
     static_files: &Vec<ClioPath>,
 ) -> Result<(), anyhow::Error> {
     let cluster_domain = cluster_rename.cluster_domain();
-    let generated_infra_id = rename_utils::generate_infra_id(cluster_rename.cluster_name.to_string())?;
+    let cluster_name = cluster_rename.cluster_name.clone();
+    let generated_infra_id = rename_utils::generate_infra_id(&cluster_rename.cluster_name)?;
 
     fix_etcd_resources(etcd_client, &cluster_domain, generated_infra_id.clone(), cluster_rename)
         .await
         .context("renaming etcd resources")?;
 
-    fix_filesystem_resources(&cluster_domain, static_dirs, static_files, generated_infra_id.clone())
-        .await
-        .context("renaming filesystem resources")?;
+    fix_filesystem_resources(
+        &cluster_name,
+        &cluster_domain,
+        static_dirs,
+        static_files,
+        generated_infra_id.clone(),
+    )
+    .await
+    .context("renaming filesystem resources")?;
 
     Ok(())
 }
 
 async fn fix_filesystem_resources(
+    cluster_name: &str,
     cluster_domain: &str,
     static_dirs: &Vec<ClioPath>,
     static_files: &Vec<ClioPath>,
     generated_infra_id: String,
 ) -> Result<(), anyhow::Error> {
     for dir in static_dirs {
-        fix_dir_resources(cluster_domain, dir, &generated_infra_id).await?;
+        fix_dir_resources(cluster_name, cluster_domain, dir, &generated_infra_id).await?;
     }
 
     for file in static_files {
@@ -46,8 +54,8 @@ async fn fix_filesystem_resources(
     Ok(())
 }
 
-async fn fix_dir_resources(cluster_domain: &str, dir: &Path, generated_infra_id: &str) -> Result<(), anyhow::Error> {
-    filesystem_rename::fix_filesystem_kubeconfigs(cluster_domain, dir)
+async fn fix_dir_resources(cluster_name: &str, cluster_domain: &str, dir: &Path, generated_infra_id: &str) -> Result<(), anyhow::Error> {
+    filesystem_rename::fix_filesystem_kubeconfigs(cluster_name, cluster_domain, dir)
         .await
         .context("renaming kubeconfigs")?;
     filesystem_rename::fix_filesystem_apiserver_url_env_files(cluster_domain, dir)
@@ -160,7 +168,7 @@ async fn fix_etcd_resources(
     etcd_rename::fix_kcm_config(etcd_client, &generated_infra_id)
         .await
         .context("fixing kcm config")?;
-    etcd_rename::fix_kcm_kubeconfig(etcd_client, cluster_domain)
+    etcd_rename::fix_kcm_kubeconfig(etcd_client, cluster_domain, &cluster_rename.cluster_name)
         .await
         .context("fixing kcm kubeconfig")?;
     etcd_rename::fix_ovnkube_config(etcd_client, cluster_domain)

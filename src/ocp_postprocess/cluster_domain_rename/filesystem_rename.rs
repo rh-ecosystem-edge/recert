@@ -229,7 +229,7 @@ pub(crate) async fn fix_filesystem_apiserver_url_env_files(cluster_domain: &str,
     Ok(())
 }
 
-pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path) -> Result<()> {
+pub(crate) async fn fix_filesystem_kubeconfigs(cluster_name: &str, cluster_domain: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/*kubeconfig")?
             .into_iter()
@@ -240,6 +240,7 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path)
             .into_iter()
             .map(|file_path| {
                 let cluster_domain = cluster_domain.to_string();
+                let cluster_name = cluster_name.to_string();
                 let kubeconfig_path = file_path.clone();
                 tokio::spawn(async move {
                     async move {
@@ -247,7 +248,7 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_domain: &str, dir: &Path)
                         let mut yaml_value = serde_yaml::from_str::<Value>(contents.as_str())
                             .context(format!("parsing kubeconfig {:?} as yaml", contents))?;
 
-                        fix_kubeconfig(&cluster_domain, &mut yaml_value)
+                        fix_kubeconfig(&cluster_name, &cluster_domain, &mut yaml_value)
                             .await
                             .context("fixing kubeconfig")?;
 

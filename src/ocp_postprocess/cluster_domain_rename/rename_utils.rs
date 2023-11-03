@@ -72,7 +72,7 @@ pub(crate) fn fix_api_server_arguments(config: &mut Value, cluster_domain: &str)
 }
 
 /// Based on https://github.com/openshift/installer/blob/e91df626c10e569e7613249053b7b9b264db42df/pkg/asset/installconfig/clusterid.go#L57-L79
-pub(crate) fn generate_infra_id(cluster_name: String) -> Result<String> {
+pub(crate) fn generate_infra_id(cluster_name: &str) -> Result<String> {
     const CLUSTER_INFRA_ID_RANDOM_LEN: usize = 5;
     const CLUSTER_INFRA_ID_MAX_LEN: usize = 27;
     const MAX_NORMALIZED_CLUSTER_NAME_LEN: usize = CLUSTER_INFRA_ID_MAX_LEN - (CLUSTER_INFRA_ID_RANDOM_LEN + 1);
@@ -81,7 +81,7 @@ pub(crate) fn generate_infra_id(cluster_name: String) -> Result<String> {
     const REPEATED_DASH_SEQUENCES: &str = r"-{2,}";
 
     let normalized_cluster_name = regex::Regex::new(REPEATED_DASH_SEQUENCES)?
-        .replace_all(&regex::Regex::new(NON_ALPHANUM)?.replace_all(&cluster_name, "-"), "-")
+        .replace_all(&regex::Regex::new(NON_ALPHANUM)?.replace_all(cluster_name, "-"), "-")
         .to_string();
 
     let truncated_cluster_name = normalized_cluster_name
@@ -117,51 +117,113 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
     Ok(())
 }
 
-pub(crate) async fn fix_kubeconfig(cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
+pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
+    let is_kubelet_kubeconfig = kubeconfig
+        .pointer_mut("/contexts")
+        .context("contexts not found")?
+        .as_array()
+        .context("contexts not an array")?
+        .iter()
+        .any(|context| context.get("name") == Some(&serde_json::Value::String("kubelet".to_string())));
+
     let clusters = &mut kubeconfig
         .pointer_mut("/clusters")
         .context("clusters not found")?
         .as_array_mut()
-        .context("clusters not an object")?;
+        .context("clusters not an array")?;
 
     if clusters.is_empty() {
         bail!("expected at least one cluster in kubeconfig");
     }
 
     clusters.iter_mut().try_for_each(|cluster| {
+        // Only the kubelet kubeconfig contains the cluster's name as a .clusters[].cluster.name,
+        // so it's the only one that needs to be modified
+        if is_kubelet_kubeconfig {
+            fix_kubeconfig_cluster_cluster_name(cluster.as_object_mut().context("cluster not an object")?, cluster_name)
+                .context("fixing cluster name")?;
+        }
+        // Every cluster has a nested field also called cluster, which is where we find the cluster
+        // server URL
         let cluster = cluster
             .pointer_mut("/cluster")
             .context("cluster not found")?
             .as_object_mut()
             .context("cluster not an object")?;
 
-        let previous_server = cluster
-            .get_mut("server")
-            .context("server not found")?
-            .as_str()
-            .context("server not a string")?;
-
-        if previous_server.starts_with("https://api.") {
-            cluster.insert(
-                "server".to_string(),
-                serde_json::Value::String(format!("https://api.{}:6443", cluster_domain)),
-            );
-        } else if previous_server.starts_with("https://api-int.") {
-            cluster.insert(
-                "server".to_string(),
-                serde_json::Value::String(format!("https://api-int.{}:6443", cluster_domain)),
-            );
-        } else if previous_server.starts_with("https://[api-int.") {
-            cluster.insert(
-                "server".to_string(),
-                serde_json::Value::String(format!("https://[api-int.{}]:6443", cluster_domain)),
-            );
-        } else {
-            // Could be something like `https://localhost:6443`, ignore
-        }
+        fix_kubeconfig_server(cluster, cluster_domain).context("fixing server")?;
 
         anyhow::Ok(())
     })?;
+
+    // Also fix the context reference to the cluster
+    if is_kubelet_kubeconfig {
+        let contexts = &mut kubeconfig
+            .pointer_mut("/contexts")
+            .context("contexts not found")?
+            .as_array_mut()
+            .context("contexts not an array")?;
+
+        contexts.iter_mut().try_for_each(|context| {
+            // Every context has a nested field also called context, which is where we find the
+            // cluster reference
+            let context = context
+                .pointer_mut("/context")
+                .context("context not found")?
+                .as_object_mut()
+                .context("context not an object")?;
+
+            fix_kubeconfig_context_cluster_name(context, cluster_name).context("fixing context name")?;
+
+            anyhow::Ok(())
+        })?;
+    }
+
+    Ok(())
+}
+
+fn fix_kubeconfig_server(cluster: &mut serde_json::Map<String, Value>, cluster_domain: &str) -> Result<()> {
+    let previous_server = cluster
+        .get_mut("server")
+        .context("server not found")?
+        .as_str()
+        .context("server not a string")?;
+    if previous_server.starts_with("https://api.") {
+        cluster.insert(
+            "server".to_string(),
+            serde_json::Value::String(format!("https://api.{}:6443", cluster_domain)),
+        )
+    } else if previous_server.starts_with("https://api-int.") {
+        cluster.insert(
+            "server".to_string(),
+            serde_json::Value::String(format!("https://api-int.{}:6443", cluster_domain)),
+        )
+    } else if previous_server.starts_with("https://[api-int.") {
+        cluster.insert(
+            "server".to_string(),
+            serde_json::Value::String(format!("https://[api-int.{}]:6443", cluster_domain)),
+        )
+    } else {
+        // Could be something like `https://localhost:6443`, ignore
+        return Ok(());
+    }
+    .context("no previous value")?;
+
+    Ok(())
+}
+
+fn fix_kubeconfig_cluster_cluster_name(cluster: &mut serde_json::Map<String, Value>, cluster_name: &str) -> Result<()> {
+    cluster
+        .insert("name".to_string(), serde_json::Value::String(cluster_name.to_string()))
+        .context("no previous value")?;
+
+    Ok(())
+}
+
+fn fix_kubeconfig_context_cluster_name(cluster: &mut serde_json::Map<String, Value>, cluster_name: &str) -> Result<()> {
+    cluster
+        .insert("cluster".to_string(), serde_json::Value::String(cluster_name.to_string()))
+        .context("no previous value")?;
 
     Ok(())
 }
