@@ -23,8 +23,7 @@ futures-util = "0.3.28"
 rand = "0.8.5"
 hmac = "0.12.1"
 sha2 = "0.10.6"
-jwt-simple = "0.11.5"
-serde = { version = "1.0.163", features = ["rc"] }
+serde = { version = "1.0.163", features = ["rc", "derive"] }
 clap = { version = "4.4.2", features = ["derive"] }
 p256 = "0.13.2"
 tempfile = "3.5.0"

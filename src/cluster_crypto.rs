@@ -1,6 +1,7 @@
 use self::{
     cert_key_pair::CertKeyPair,
     crypto_objects::DiscoveredCryptoObect,
+    crypto_utils::jwt::verify,
     distributed_jwt::DistributedJwt,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
@@ -235,26 +236,27 @@ impl ClusterCryptoObjects {
             let mut maybe_signer = jwt::JwtSigner::Unknown;
 
             if let Some(last_signer) = &last_signer {
-                match crypto_utils::verify_jwt(&PublicKey::try_from(&(*last_signer).borrow().key)?, &(**distributed_jwt).borrow()) {
-                    Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
-                        maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(last_signer));
-                    }
-                    Err(_error) => {}
+                if verify(
+                    &(**distributed_jwt).borrow().jwt.str,
+                    &PublicKey::try_from(&(*last_signer).borrow().key)?,
+                )
+                .context("verifying last signer")?
+                {
+                    maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(last_signer));
                 }
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
                 for distributed_private_key in self.distributed_private_keys.values() {
-                    match crypto_utils::verify_jwt(
+                    if verify(
+                        &(**distributed_jwt).borrow().jwt.str,
                         &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
-                        &(**distributed_jwt).borrow(),
-                    ) {
-                        Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
-                            maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(distributed_private_key));
-                            last_signer = Some(Rc::clone(distributed_private_key));
-                            break;
-                        }
-                        Err(_error) => {}
+                    )
+                    .context("verifying private key signer")?
+                    {
+                        maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(distributed_private_key));
+                        last_signer = Some(Rc::clone(distributed_private_key));
+                        break;
                     }
                 }
             }
@@ -262,15 +264,14 @@ impl ClusterCryptoObjects {
             if maybe_signer == jwt::JwtSigner::Unknown {
                 for cert_key_pair in &self.cert_key_pairs {
                     if let Some(distributed_private_key) = &(**cert_key_pair).borrow().distributed_private_key {
-                        match crypto_utils::verify_jwt(
+                        if verify(
+                            &(**distributed_jwt).borrow().jwt.str,
                             &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
-                            &(**distributed_jwt).borrow(),
-                        ) {
-                            Ok(_claims /* We don't care about the claims, only that the signature is correct */) => {
-                                maybe_signer = jwt::JwtSigner::CertKeyPair(Rc::clone(cert_key_pair));
-                                break;
-                            }
-                            Err(_error) => {}
+                        )
+                        .context("verifying cert-key-pair signer")?
+                        {
+                            maybe_signer = jwt::JwtSigner::CertKeyPair(Rc::clone(cert_key_pair));
+                            break;
                         }
                     }
                 }

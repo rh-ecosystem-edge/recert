@@ -1,8 +1,8 @@
+use super::crypto_utils::jwt;
 use super::{
-    crypto_utils::{verify_jwt, SigningKey},
+    crypto_utils::SigningKey,
     jwt::Jwt,
     jwt::JwtSigner,
-    keys::PublicKey,
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
 };
 use crate::{
@@ -10,12 +10,8 @@ use crate::{
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as base64_url, Engine as _};
-use jwt_simple::prelude::RSAKeyPairLike;
 use serde::Serialize;
 use serde_json::Value;
-use sha2::Digest;
-use x509_certificate::InMemorySigningKeyPair;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DistributedJwt {
@@ -27,38 +23,19 @@ pub(crate) struct DistributedJwt {
 }
 
 impl DistributedJwt {
-    pub(crate) fn regenerate(&mut self, original_signing_key: &PublicKey, new_signing_key: &SigningKey) -> Result<()> {
+    pub(crate) fn regenerate(&mut self, new_signing_key: &SigningKey) -> Result<()> {
         let new_key = match &self.signer {
             JwtSigner::Unknown => bail!("cannot regenerate jwt with unknown signer"),
-            JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(original_signing_key, new_signing_key)?,
-            JwtSigner::PrivateKey(_private_key) => self.resign(original_signing_key, new_signing_key)?,
+            JwtSigner::CertKeyPair(_cert_key_pair) => self.resign(new_signing_key)?,
+            JwtSigner::PrivateKey(_private_key) => self.resign(new_signing_key)?,
         };
         self.jwt_regenerated = Some(Jwt { str: new_key });
 
         Ok(())
     }
 
-    fn resign(&self, original_public_key: &PublicKey, new_signing_key_pair: &SigningKey) -> Result<String> {
-        match &new_signing_key_pair.in_memory_signing_key_pair {
-            InMemorySigningKeyPair::Ecdsa(_, _, _) => {
-                bail!("ecdsa unsupported");
-            }
-            InMemorySigningKeyPair::Ed25519(_) => {
-                bail!("ed unsupported");
-            }
-            InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => {
-                let claims = verify_jwt(original_public_key, self)?;
-
-                let mut sha256 = sha2::Sha256::new();
-                sha256.update(bytes);
-                let kid = base64_url.encode(sha256.finalize());
-
-                Ok(jwt_simple::prelude::RS256KeyPair::from_der(bytes)?
-                    .with_key_id(&kid)
-                    .sign(claims)?
-                    .to_string())
-            }
-        }
+    fn resign(&self, new_signing_key_pair: &SigningKey) -> Result<String> {
+        jwt::resign(&self.jwt.str, new_signing_key_pair).context("resigning jwt")
     }
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {

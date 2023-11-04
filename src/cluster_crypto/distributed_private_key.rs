@@ -40,14 +40,7 @@ impl DistributedPrivateKey {
         let self_new_key_pair = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
 
         for signee in &mut self.signees {
-            signee.regenerate(
-                &original_signing_public_key,
-                Some(&self_new_key_pair),
-                rsa_key_pool,
-                customizations,
-                None,
-                None,
-            )?;
+            signee.regenerate(Some(&self_new_key_pair), rsa_key_pool, customizations, None, None)?;
         }
 
         let regenerated_private_key: PrivateKey = (&self_new_key_pair.in_memory_signing_key_pair).try_into()?;
