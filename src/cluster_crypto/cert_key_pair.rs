@@ -71,15 +71,14 @@ impl CertKeyPair {
             // This is the classic case, user has not provided any replacement cert for this cert,
             // so simply regenerate the cert and all of its children
             None => {
-                let (new_cert_subject_key_pair, new_cert) =
+                let (new_cert_subject_signing_key, new_cert) =
                     self.re_sign_cert(sign_with, rsa_key_pool, customizations, skid_edits, serial_number_edits)?;
                 let new_cert = Certificate::try_from(&new_cert)?;
                 (*self.distributed_cert).borrow_mut().certificate_regenerated = Some(new_cert.clone());
 
                 for signee in &mut self.signees {
                     signee.regenerate(
-                        &new_cert.public_key,
-                        Some(&new_cert_subject_key_pair),
+                        Some(&new_cert_subject_signing_key),
                         rsa_key_pool,
                         customizations,
                         Some(skid_edits),
@@ -90,7 +89,7 @@ impl CertKeyPair {
                 if let Some(associated_public_key) = &mut self.associated_public_key {
                     (*associated_public_key)
                         .borrow_mut()
-                        .regenerate((&new_cert_subject_key_pair.in_memory_signing_key_pair).try_into()?)?;
+                        .regenerate((&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?)?;
                 }
 
                 // This condition exists because not all certs originally had a private key associated with
@@ -99,7 +98,7 @@ impl CertKeyPair {
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
                     (**distributed_private_key).borrow_mut().key_regenerated =
-                        Some((&new_cert_subject_key_pair.in_memory_signing_key_pair).try_into()?);
+                        Some((&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?);
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace

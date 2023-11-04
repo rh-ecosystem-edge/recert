@@ -1,16 +1,15 @@
 use super::certificate;
-use super::{distributed_jwt, keys};
 use anyhow::{bail, Context, Result};
 use bcder::{encode::Values, Mode};
-use jwt_simple::prelude::RSAPublicKeyLike;
 use pkcs1::DecodeRsaPrivateKey;
 use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
-use serde_json::{Map, Value};
 use std::io::Write;
 use std::process::Stdio;
 use std::{path::PathBuf, process::Command as StdCommand};
 use tokio::process::Command;
 use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair};
+
+pub(crate) mod jwt;
 
 pub(crate) struct SigningKey {
     pub in_memory_signing_key_pair: InMemorySigningKeyPair,
@@ -49,17 +48,6 @@ pub(crate) fn openssl_is_signed(potential_signer: &certificate::Certificate, sig
         .arg(signed_cert_file.path());
     let openssl_verify_output = openssl_verify_command.output()?;
     Ok(openssl_verify_output.status.success())
-}
-
-pub(crate) fn verify_jwt(
-    public_key: &keys::PublicKey,
-    distributed_jwt: &distributed_jwt::DistributedJwt,
-) -> Result<jwt_simple::prelude::JWTClaims<Map<String, Value>>, jwt_simple::Error> {
-    match &public_key {
-        keys::PublicKey::Rsa(bytes) => jwt_simple::prelude::RS256PublicKey::from_der(bytes)?,
-        keys::PublicKey::Ec(_) => bail!("EC public keys are not supported"),
-    }
-    .verify_token::<Map<String, Value>>(&distributed_jwt.jwt.str, None)
 }
 
 pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<SigningKey> {
@@ -193,6 +181,27 @@ pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> 
         .take()
         .context("getting openssl dgst stdin")?
         .write_all(signing_key.pkcs8_pem.as_slice())
+        .context("writing to openssl dgst stdin")?;
+
+    Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
+}
+
+pub(crate) fn sha256(data: &[u8]) -> Result<Vec<u8>> {
+    // We don't use native Rust sha256 libraries on purpose, because FIPS compliance is a
+    // requirement for us, and we don't know if the native libraries are FIPS compliant.
+
+    let mut command = StdCommand::new("openssl")
+        .args(["dgst", "-sha256", "-binary"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("openssl dgst")?;
+
+    command
+        .stdin
+        .take()
+        .context("getting openssl dgst stdin")?
+        .write_all(data)
         .context("writing to openssl dgst stdin")?;
 
     Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
