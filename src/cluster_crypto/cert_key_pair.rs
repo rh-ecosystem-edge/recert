@@ -5,6 +5,7 @@ use super::{
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
+    keys::PublicKey,
     locations::{FileContentLocation, FileLocation, K8sLocation, Location},
     pem_utils,
     signee::Signee,
@@ -20,6 +21,8 @@ use anyhow::{bail, ensure, Context, Result};
 use bcder::{BitString, Oid};
 use bytes::Bytes;
 use fn_error_context::context;
+use p256::pkcs8::DecodePublicKey;
+use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
@@ -167,10 +170,14 @@ impl CertKeyPair {
             println!("Using key from file: {:?} because CN rules match", use_key_path);
             key_from_file(&use_key_path).context("getting rsa key from file")?
         } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid.clone() {
-            // TODO: Find a less hacky way to get the key size. It's ugly but if we get this wrong, the
-            // only thing that happens is that we don't get to enjoy the pool's cache or we generate a
-            // key too large
-            let rsa_key_size = tbs_certificate.subject_public_key_info.subject_public_key.bit_len() - 112;
+            let rsa_key_size = match &(*self.distributed_cert).borrow().certificate.public_key {
+                PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
+                    .context("getting rsa key")?
+                    .n()
+                    .to_radix_le(2)
+                    .len(),
+                PublicKey::Ec(_) => bail!("key algorithm mismatch"),
+            };
 
             // Draw an new RSA key from the pool for this cert
             rsa_key_pool.get(rsa_key_size).context("getting rsa key")?

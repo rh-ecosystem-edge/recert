@@ -36,14 +36,6 @@ impl RsaKeyPool {
     }
 
     pub(crate) fn get(&mut self, size: usize) -> Result<SigningKey> {
-        let size = if size != 512 && size != 1024 && size != 2048 && size != 4096 {
-            // HACK: If the size is not a power of 2, this is probably not RSA.
-            // TODO: Remove this hack once we support non-RSA keys
-            4096
-        } else {
-            size
-        };
-
         if size == 2048 {
             if let Some(key) = self.keys_2048.pop() {
                 return Ok(key);
@@ -55,6 +47,8 @@ impl RsaKeyPool {
                 return Ok(key);
             }
         }
+
+        println!("WARNING: Cache miss for RSA key of size {size}");
 
         generate_rsa_key(size)
     }

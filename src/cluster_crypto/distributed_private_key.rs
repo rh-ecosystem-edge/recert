@@ -1,7 +1,7 @@
 use super::{
     distributed_public_key::DistributedPublicKey,
     k8s_etcd::get_etcd_json,
-    keys::{PrivateKey, PublicKey},
+    keys::PrivateKey,
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
     pem_utils,
     signee::Signee,
@@ -16,6 +16,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use pkcs1::EncodeRsaPrivateKey;
+use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 use std::{self, cell::RefCell, path::PathBuf, rc::Rc};
 
@@ -30,11 +31,9 @@ pub(crate) struct DistributedPrivateKey {
 
 impl DistributedPrivateKey {
     pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, customizations: &Customizations) -> Result<()> {
-        let original_signing_public_key = PublicKey::try_from(&self.key)?;
-
-        let num_bits = match &original_signing_public_key {
-            PublicKey::Rsa(bytes) => bytes.len() * 8 - 304,
-            PublicKey::Ec(_) => 0,
+        let num_bits = match &self.key {
+            PrivateKey::Rsa(key) => key.n().to_radix_le(2).len(),
+            PrivateKey::Ec(_) => bail!("cannot regenerate standalone EC key"),
         };
 
         let self_new_key_pair = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
