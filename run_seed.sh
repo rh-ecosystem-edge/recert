@@ -58,7 +58,7 @@ cargo run --release -- \
     --cn-san-replace api.test-cluster.redhat.com:api.new-name.foo.com \
     --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
     --cn-san-replace 192.168.127.10:192.168.127.11 \
-    --cluster-rename new-name:foo.com \
+    --cluster-rename new-name:foo.com:some-random-infra-id \
     --summary-file summary.yaml \
     --summary-file-clean summary_redacted.yaml \
     --extend-expiration

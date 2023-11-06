@@ -17,7 +17,11 @@ pub(crate) async fn rename_all(
 ) -> Result<(), anyhow::Error> {
     let cluster_domain = cluster_rename.cluster_domain();
     let cluster_name = cluster_rename.cluster_name.clone();
-    let generated_infra_id = rename_utils::generate_infra_id(&cluster_rename.cluster_name)?;
+
+    let generated_infra_id = match cluster_rename.infra_id.clone() {
+        Some(infra_id) => infra_id,
+        None => rename_utils::generate_infra_id(&cluster_rename.cluster_name).context("generating random infra ID")?,
+    };
 
     fix_etcd_resources(etcd_client, &cluster_domain, generated_infra_id.clone(), cluster_rename)
         .await
