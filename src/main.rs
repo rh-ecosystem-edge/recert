@@ -92,7 +92,7 @@ async fn recertify(
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, static_files));
-    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(100, 20));
+    let rsa_keys = tokio::spawn(rsa_key_pool::RsaKeyPool::fill(120, 10));
 
     // Wait for the parallelizable tasks to finish and get their results
     let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning etcd/filesystem")?;
