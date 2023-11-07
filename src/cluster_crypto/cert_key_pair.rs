@@ -11,11 +11,12 @@ use super::{
     signee::Signee,
 };
 use crate::{
+    cli::config,
+    cli::config::Customizations,
     cluster_crypto::{crypto_utils::key_from_file, locations::LocationValueType},
     file_utils::{add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
-    Customizations,
 };
 use anyhow::{bail, ensure, Context, Result};
 use bcder::{BitString, Oid};
@@ -61,7 +62,7 @@ impl CertKeyPair {
         &mut self,
         sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
-        customizations: &Customizations,
+        customizations: &config::Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {

@@ -1,12 +1,11 @@
 use crate::{
-    cnsanreplace::{CnSanReplace, CnSanReplaceRules},
-    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters,
-    use_cert::{UseCert, UseCertRules},
-    use_key::{UseKey, UseKeyRules},
+    cnsanreplace::CnSanReplace, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCert, use_key::UseKey,
 };
-use anyhow::Result;
+use anyhow::{ensure, Context, Result};
 use clap::Parser;
-use clio::*;
+use clio::ClioPath;
+
+pub(crate) mod config;
 
 /// A program to regenerate cluster certificates, keys and tokens
 #[derive(Parser)]
@@ -60,7 +59,7 @@ pub(crate) struct Cli {
 
     /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and
     /// change their issue date to now.
-    #[clap(long, default_value_t = false, group = "expiration")]
+    #[clap(long, default_value_t = false, groups = &["expiration", "dry"])]
     pub(crate) extend_expiration: bool,
 
     /// Threads to use for parallel processing. Defaults to using as many threads as there are
@@ -94,48 +93,22 @@ pub(crate) struct Cli {
     pub(crate) force_expire: bool,
 }
 
-/// All the user requested customizations, coalesced into a single struct for convenience
-pub(crate) struct Customizations {
-    pub(crate) cn_san_replace_rules: CnSanReplaceRules,
-    pub(crate) use_key_rules: UseKeyRules,
-    pub(crate) use_cert_rules: UseCertRules,
-    pub(crate) extend_expiration: bool,
-    pub(crate) force_expire: bool,
-}
+pub(crate) fn parse_cli() -> Result<config::RecertConfig> {
+    Ok(match std::env::var("RECERT_CONFIG") {
+        Ok(var) => {
+            let num_args = std::env::args().len();
 
-/// All parsed CLI arguments, coalesced into a single struct for convenience
-pub(crate) struct ParsedCLI {
-    pub(crate) dry_run: bool,
-    pub(crate) etcd_endpoint: Option<String>,
-    pub(crate) static_dirs: Vec<ClioPath>,
-    pub(crate) static_files: Vec<ClioPath>,
-    pub(crate) customizations: Customizations,
-    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
-    pub(crate) threads: Option<usize>,
-    pub(crate) regenerate_server_ssh_keys: Option<ClioPath>,
-    pub(crate) summary_file: Option<ClioPath>,
-    pub(crate) summary_file_clean: Option<ClioPath>,
-}
+            ensure!(
+                num_args == 1,
+                "RECERT_CONFIG is set, but there are {num_args} CLI arguments. RECERT_CONFIG is meant to be used with no arguments."
+            );
 
-pub(crate) fn parse_cli() -> Result<ParsedCLI> {
-    let cli = Cli::parse();
-
-    Ok(ParsedCLI {
-        dry_run: cli.dry_run,
-        etcd_endpoint: cli.etcd_endpoint,
-        static_dirs: cli.static_dir,
-        static_files: cli.static_file,
-        customizations: Customizations {
-            cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
-            use_key_rules: UseKeyRules(cli.use_key),
-            use_cert_rules: UseCertRules(cli.use_cert),
-            extend_expiration: cli.extend_expiration,
-            force_expire: cli.force_expire,
-        },
-        cluster_rename: cli.cluster_rename,
-        threads: cli.threads,
-        regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys,
-        summary_file: cli.summary_file,
-        summary_file_clean: cli.summary_file_clean,
+            config::RecertConfig::parse_from_config_file(&std::fs::read(&var).context(format!("reading RECERT_CONFIG file {}", var))?)
+                .context(format!("parsing RECERT_CONFIG file {}", var))?
+        }
+        Err(_) => {
+            let cli = Cli::parse();
+            config::parse_from_cli(cli)
+        }
     })
 }

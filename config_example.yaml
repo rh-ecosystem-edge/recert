@@ -1,0 +1,48 @@
+# This is an example YAML configuration file for recert
+#
+# To make recert use a configuration file, run recert with the RECERT_CONFIG
+# environment variable set to the path of the configuration file you wish to
+# use.
+#
+# The config file format resembles the CLI arguments of the recert tool, for
+# help, run recert with the --help flag or read the src/cli.rs file
+#
+# If RECERT_CONFIG is set, you must not pass any CLI flags to recert
+#################
+
+# dry_run: false
+#
+# etcd_endpoint: "localhost:2379"
+#
+# static_dirs: 
+# - backup/etc/kubernetes
+# - backup/var/lib/kubelet
+# - backup/etc/machine-config-daemon
+#
+# static_files:
+# - backup/etc/mcs-machine-config-content.json
+#
+# cn_san_replace_rules:
+# - api-int.test-cluster.redhat.com:api-int.new-name.foo.com
+# - api.test-cluster.redhat.com:api.new-name.foo.com
+# - "*.apps.test-cluster.redhat.com:*.apps.new-name.foo.com"
+# - 192.168.127.10:192.168.127.11
+#
+# use_key:
+# - kube-apiserver-lb-signer:/opt/openshift/loadbalancer-serving-signer.key
+# - kube-apiserver-localhost-signer:/opt/openshift/localhost-serving-signer.key
+# - kube-apiserver-service-network-signer:/opt/openshift/service-network-serving-signer.key
+#
+# cluster_rename: new-name:foo.com
+#
+# summary_file: summary.yaml
+#
+# summary_file_clean: summary_redacted.yaml
+#
+# extend_expiration: true
+#
+# force_expire: true
+#
+# threads: 1
+#
+# regenerate_server_ssh_keys: /etc/ssh

@@ -1,9 +1,10 @@
+use crate::{cli::config::Customizations, rsa_key_pool::RsaKeyPool};
+
 use super::{
     cert_key_pair::{CertKeyPair, SerialNumberEdits, SkidEdits},
     crypto_utils::SigningKey,
     distributed_jwt::DistributedJwt,
 };
-use crate::{rsa_key_pool::RsaKeyPool, Customizations};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::{self, cell::RefCell, rc::Rc};

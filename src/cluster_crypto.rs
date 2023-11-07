@@ -9,11 +9,12 @@ use self::{
     locations::Locations,
 };
 use crate::{
+    cli::config,
+    cli::config::Customizations,
     cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
-    Customizations,
 };
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -446,7 +447,7 @@ impl ClusterCryptoObjects {
     pub(crate) fn process_objects(
         &mut self,
         discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
-        customizations: &Customizations,
+        customizations: &config::Customizations,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);

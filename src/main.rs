@@ -1,6 +1,6 @@
 use crate::{cluster_crypto::scanning, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters};
 use anyhow::{Context, Result};
-use cli::{Customizations, ParsedCLI};
+use cli::config::{Customizations, RecertConfig};
 use clio::ClioPath;
 use cluster_crypto::{ClusterCryptoObjects, REDACT_SECRETS};
 use etcd_client::Client as EtcdClient;
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     runtime::prepare_tokio_runtime(parsed_cli.threads)?.block_on(async { main_internal(parsed_cli).await })
 }
 
-async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
+async fn main_internal(parsed_cli: RecertConfig) -> Result<()> {
     let mut cluster_crypto = ClusterCryptoObjects::new();
     file_utils::DRY_RUN.store(parsed_cli.dry_run, Relaxed);
     let run_result = run(&parsed_cli, &mut cluster_crypto).await;
@@ -41,7 +41,7 @@ async fn main_internal(parsed_cli: ParsedCLI) -> Result<()> {
     run_result
 }
 
-async fn run(parsed_cli: &ParsedCLI, cluster_crypto: &mut ClusterCryptoObjects) -> std::result::Result<(), anyhow::Error> {
+async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterCryptoObjects) -> std::result::Result<(), anyhow::Error> {
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &parsed_cli.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)
