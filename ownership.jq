@@ -23,24 +23,26 @@ def ownershipKind(kind):
         | sort_by("\(.Namespace)/\(.Name)")[]
     end;
 
+def ser:
+    "\(.Namespace):\(.Name)";
+
 # Name our input parameters
 . as $root 
 | $root[0] as $recert 
 | $root[1] as $ownership 
 
 # Get the secrets and configmaps from the recert summary
-| [ $recert | recertKind("Secret")] as $recert_secrets
-| [ $recert | recertKind("ConfigMap")] as $recert_configmaps
+| [ $recert | recertKind("Secret")] | map(ser) as $recert_secrets
+| [ $recert | recertKind("ConfigMap")] | map(ser) as $recert_configmaps
 
 # Get the secrets and configmaps from the recert summary
-| [ $ownership | ownershipKind("Secret")] as $ownership_secrets
-| [ $ownership | ownershipKind("ConfigMap")] as $ownership_configmaps
+| [ $ownership | ownershipKind("Secret")] | map(ser) as $ownership_secrets
+| [ $ownership | ownershipKind("ConfigMap")] | map(ser) as $ownership_configmaps
 
 # Check missing
-| [$ownership_secrets[] | select($recert_secrets | contains(.) | not)] as $missing_secrets
-| [$ownership_configmaps[] | select($recert_configmaps | contains(.) | not)] as $missing_configmaps
+| [$ownership_secrets[] | . as $object | select($recert_secrets | index($object) | not)] as $missing_secrets
+| [$ownership_configmaps[] | . as $object | select($recert_configmaps | index($object) | not)] as $missing_configmaps
 
-# Print
 | {
     "MissingSecrets": $missing_secrets,
     "MissingConfigMaps": $missing_configmaps
