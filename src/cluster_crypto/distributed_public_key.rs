@@ -1,4 +1,6 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use p256::pkcs8::DecodePublicKey;
+use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 
 use super::{
@@ -11,6 +13,7 @@ use crate::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
     },
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
+    rsa_key_pool::RsaKeyPool,
 };
 use std::{fmt::Display, path::PathBuf};
 
@@ -39,6 +42,34 @@ impl Display for DistributedPublicKey {
 impl DistributedPublicKey {
     pub(crate) fn regenerate(&mut self, new_private: PrivateKey) -> Result<()> {
         self.key_regenerated = Some(PublicKey::try_from(&new_private)?);
+
+        Ok(())
+    }
+
+    /// For when we want to generate a standalone public key that doesn't have any assocation, we
+    /// just generate a temproary private key, derive the public key from it and then discard the
+    /// private key.
+    pub(crate) fn regenerate_no_private(&mut self, rsa_key_pool: &mut RsaKeyPool) -> Result<()> {
+        ensure!(
+            !self.associated,
+            "public keys with an association should only be regenerated indirectly through their association"
+        );
+
+        let num_bits = match &self.key {
+            PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
+                .context("getting rsa key")?
+                .n()
+                .to_radix_le(2)
+                .len(),
+            PublicKey::Ec(_) => bail!("key algorithm mismatch"),
+        };
+
+        let signing_key = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
+
+        let regenerated_private_key: PrivateKey = (&signing_key.in_memory_signing_key_pair)
+            .try_into()
+            .context("signing key to private key")?;
+        self.key_regenerated = Some((&regenerated_private_key).try_into().context("private to public key")?);
 
         Ok(())
     }
@@ -81,60 +112,57 @@ impl DistributedPublicKey {
             .context("resource disappeared")?;
         add_recert_edited_annotation(&mut resource, &k8slocation.yaml_location)?;
 
-        if let Some(public_key) = &self.key_regenerated {
-            etcd_client
-                .put(
-                    &k8slocation.resource_location.as_etcd_key(),
-                    recreate_yaml_at_location_with_new_pem(
-                        resource,
-                        &k8slocation.yaml_location,
-                        &public_key.clone().pem().context("key to pem")?,
-                        crate::file_utils::RecreateYamlEncoding::Json,
-                    )?
-                    .as_bytes()
-                    .to_vec(),
-                )
-                .await;
-        } else {
-            println!("WARNING: Public key was not regenerated, so not committing to k8s")
-        }
+        etcd_client
+            .put(
+                &k8slocation.resource_location.as_etcd_key(),
+                recreate_yaml_at_location_with_new_pem(
+                    resource,
+                    &k8slocation.yaml_location,
+                    &self
+                        .key_regenerated
+                        .clone()
+                        .context("key was not regenerated")?
+                        .pem()
+                        .context("key to pem")?,
+                    crate::file_utils::RecreateYamlEncoding::Json,
+                )?
+                .as_bytes()
+                .to_vec(),
+            )
+            .await;
 
         Ok(())
     }
 
     async fn commit_filesystem_public_key(&self, filelocation: &FileLocation) -> Result<()> {
-        if let Some(public_key) = &self.key_regenerated {
-            let public_key_pem = match public_key.clone() {
-                PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
-                PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
-            };
+        let public_key_pem = match &self.key_regenerated.clone().context("key was not regenerated")? {
+            PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
+            PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
+        };
 
-            commit_file(
-                &filelocation.path,
-                match &filelocation.content_location {
-                    FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
-                        LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                            String::from_utf8((read_file_to_string(&PathBuf::from(filelocation.path.clone())).await?).into_bytes())?,
-                            pem_location_info.pem_bundle_index,
-                            &public_key_pem,
-                        )?,
-                        _ => bail!("cannot commit non-PEM location to filesystem"),
-                    },
-                    FileContentLocation::Yaml(yaml_location) => {
-                        let resource = get_filesystem_yaml(filelocation).await?;
-                        recreate_yaml_at_location_with_new_pem(
-                            resource,
-                            yaml_location,
-                            &public_key_pem,
-                            crate::file_utils::RecreateYamlEncoding::Yaml,
-                        )?
-                    }
+        commit_file(
+            &filelocation.path,
+            match &filelocation.content_location {
+                FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
+                    LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
+                        String::from_utf8((read_file_to_string(&PathBuf::from(filelocation.path.clone())).await?).into_bytes())?,
+                        pem_location_info.pem_bundle_index,
+                        &public_key_pem,
+                    )?,
+                    _ => bail!("cannot commit non-PEM location to filesystem"),
                 },
-            )
-            .await?;
-        } else {
-            println!("WARNING: Public key was not regenerated, so not committing to filesystem")
-        }
+                FileContentLocation::Yaml(yaml_location) => {
+                    let resource = get_filesystem_yaml(filelocation).await?;
+                    recreate_yaml_at_location_with_new_pem(
+                        resource,
+                        yaml_location,
+                        &public_key_pem,
+                        crate::file_utils::RecreateYamlEncoding::Yaml,
+                    )?
+                }
+            },
+        )
+        .await?;
         Ok(())
     }
 }

@@ -168,6 +168,15 @@ impl ClusterCryptoObjects {
             (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, customizations)?
         }
 
+        for public_key in self.distributed_public_keys.values() {
+            if (**public_key).borrow().associated {
+                // Associated public keys are already regenerated as part of their association
+                continue;
+            }
+
+            (**public_key).borrow_mut().regenerate_no_private(&mut rsa_key_pool)?
+        }
+
         Ok(())
     }
 
@@ -441,12 +450,11 @@ impl ClusterCryptoObjects {
             if !(*public_key).borrow().associated {
                 // Looks like not always all public keys are associated with a private
                 // key/cert-key-pair. Probably because they got rotated and there are some
-                // leftovers in etcd/filesystem. So we don't bail
-                //
-                // bail!(
-                //     "Public key {} not associated with a cert-key pair or standalone private key",
-                //     public_key.borrow()
-                // );
+                // leftovers in etcd/filesystem. So we just warn
+                println!(
+                    "WARNING: found a standalone public key not associated with a private key or cert-key-pair, it can be found in these locations: {}. Key will be regenerated anyway.",
+                    (*public_key).borrow().locations
+                );
             }
         }
 
