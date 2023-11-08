@@ -169,7 +169,7 @@ impl PublicKey {
     pub(crate) fn pem(&self) -> Result<pem::Pem> {
         Ok(match &self {
             PublicKey::Rsa(rsa_der_bytes) => pem::Pem::new("RSA PUBLIC KEY", rsa_der_bytes.as_ref()),
-            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes).context("ec bytes as pem").context("bytes as PEM")?,
+            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes).context(format!("ec bytes to pem {:?}", pem_bytes))?,
         })
     }
 }

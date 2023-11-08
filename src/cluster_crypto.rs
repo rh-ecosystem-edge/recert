@@ -241,8 +241,11 @@ impl ClusterCryptoObjects {
                     &(**distributed_jwt).borrow().jwt.str,
                     &PublicKey::try_from(&(*last_signer).borrow().key)?,
                 )
-                .context("verifying last signer")?
-                {
+                .context(format!(
+                    "verifying last signer {} for jwt {}",
+                    (*last_signer).borrow().locations,
+                    (**distributed_jwt).borrow().locations
+                ))? {
                     maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(last_signer));
                 }
             }
@@ -253,8 +256,11 @@ impl ClusterCryptoObjects {
                         &(**distributed_jwt).borrow().jwt.str,
                         &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
                     )
-                    .context("verifying private key signer")?
-                    {
+                    .context(format!(
+                        "verifying private key signer {} for jwt {}",
+                        (*distributed_private_key).borrow().locations,
+                        (**distributed_jwt).borrow().locations
+                    ))? {
                         maybe_signer = jwt::JwtSigner::PrivateKey(Rc::clone(distributed_private_key));
                         last_signer = Some(Rc::clone(distributed_private_key));
                         break;
@@ -269,8 +275,11 @@ impl ClusterCryptoObjects {
                             &(**distributed_jwt).borrow().jwt.str,
                             &PublicKey::try_from(&(**distributed_private_key).borrow().key)?,
                         )
-                        .context("verifying cert-key-pair signer")?
-                        {
+                        .context(format!(
+                            "verifying cert key pair signer {} for jwt {}",
+                            (*distributed_private_key).borrow().locations,
+                            (**distributed_jwt).borrow().locations
+                        ))? {
                             maybe_signer = jwt::JwtSigner::CertKeyPair(Rc::clone(cert_key_pair));
                             break;
                         }

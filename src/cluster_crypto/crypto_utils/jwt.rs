@@ -8,6 +8,10 @@ use std::{io::Write, process::Command};
 use x509_certificate::InMemorySigningKeyPair;
 
 pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
+    if let PublicKey::Ec(_) = public_key {
+        return Ok(false);
+    };
+
     let pub_pem = public_key.pem()?.to_string();
 
     let parts = jwt.split('.').collect::<Vec<_>>();
@@ -29,7 +33,8 @@ pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
         .context("alg not string")?;
 
     if alg != "RS256" {
-        bail!("unsupported alg {}", alg);
+        println!("WARNING: unsupported alg {}", alg);
+        return Ok(false);
     }
 
     let mut cert_file = tempfile::NamedTempFile::new()?;
