@@ -106,9 +106,6 @@ pub(crate) fn parse_cli() -> Result<config::RecertConfig> {
             config::RecertConfig::parse_from_config_file(&std::fs::read(&var).context(format!("reading RECERT_CONFIG file {}", var))?)
                 .context(format!("parsing RECERT_CONFIG file {}", var))?
         }
-        Err(_) => {
-            let cli = Cli::parse();
-            config::parse_from_cli(cli)
-        }
+        Err(_) => config::RecertConfig::parse_from_cli(Cli::parse()),
     })
 }
