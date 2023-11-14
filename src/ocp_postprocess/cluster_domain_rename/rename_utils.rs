@@ -7,6 +7,11 @@ use std::io::BufRead;
 use crate::file_utils;
 
 pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &str) -> Result<String> {
+    // In 4.15 this file might just be empty (e.g. /etc/machine-config-daemon/noorig/etc/kubernetes/apiserver-url.env.mcdnoorig)
+    if original_data.len() == 0 {
+        return Ok("".to_string());
+    }
+
     let mut found = false;
     let new = original_data
         .lines()
