@@ -48,7 +48,7 @@ impl RsaKeyPool {
             }
         }
 
-        println!("WARNING: Cache miss for RSA key of size {size}");
+        log::warn!("Cache miss for RSA key of size {size}");
 
         generate_rsa_key(size)
     }

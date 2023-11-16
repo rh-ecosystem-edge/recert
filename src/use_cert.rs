@@ -6,7 +6,7 @@ use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
 
 use crate::cluster_crypto::certificate::Certificate;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct UseCert {
     pub(crate) cert: Certificate,
 }
@@ -35,6 +35,7 @@ impl UseCert {
     }
 }
 
+#[derive(serde::Serialize)]
 pub(crate) struct UseCertRules(pub Vec<UseCert>);
 
 impl UseCertRules {

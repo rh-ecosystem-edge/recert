@@ -3,7 +3,7 @@ use std::{net::IpAddr, str::FromStr};
 use anyhow::{ensure, Result};
 use der::asn1::OctetString;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct CnSanReplace {
     pub(crate) old: String,
     pub(crate) new: String,
@@ -37,6 +37,7 @@ impl CnSanReplace {
 }
 
 /// A collection of CnSanReplace, see cn_san_replace CLI argument for more information
+#[derive(serde::Serialize)]
 pub(crate) struct CnSanReplaceRules(pub Vec<CnSanReplace>);
 
 impl CnSanReplaceRules {

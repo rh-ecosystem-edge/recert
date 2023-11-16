@@ -28,10 +28,13 @@
 # - "*.apps.test-cluster.redhat.com:*.apps.new-name.foo.com"
 # - 192.168.127.10:192.168.127.11
 #
-# use_key:
+# use_key_rules:
 # - kube-apiserver-lb-signer:/opt/openshift/loadbalancer-serving-signer.key
 # - kube-apiserver-localhost-signer:/opt/openshift/localhost-serving-signer.key
 # - kube-apiserver-service-network-signer:/opt/openshift/service-network-serving-signer.key
+#
+# use_cert_rules:
+# - /opt/openshift/certs/admin-kubeconfig-client-ca.crt
 #
 # cluster_rename: new-name:foo.com
 #

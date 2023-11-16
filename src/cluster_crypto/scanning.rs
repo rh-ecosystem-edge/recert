@@ -5,12 +5,12 @@ use super::{
 };
 use crate::{
     cluster_crypto::{crypto_objects::process_unknown_value, json_crawl},
+    config::ConfigPath,
     file_utils::{self, read_file_to_string},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rules,
 };
 use anyhow::{bail, ensure, Context, Result};
-use clio::ClioPath;
 use futures_util::future::join_all;
 use serde_json::Value;
 use std::{
@@ -50,7 +50,7 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
                     .to_string(),
             );
         } else {
-            println!("INFO: {:?} not found, will not be considered in external certs", location);
+            log::info!("{:?} not found, will not be considered in external certs", location);
         }
     }
 
@@ -99,8 +99,8 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<ClioPath>,
-    static_files: Vec<ClioPath>,
+    static_dirs: Vec<ConfigPath>,
+    static_files: Vec<ConfigPath>,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     // Launch separate paralllel long running background tasks
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
@@ -120,7 +120,9 @@ pub(crate) async fn crypto_scan(
         .collect::<Vec<_>>())
 }
 
-fn scan_static_dirs(static_dirs: Vec<ClioPath>) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+fn scan_static_dirs(
+    static_dirs: Vec<ConfigPath>,
+) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(
@@ -148,7 +150,7 @@ fn scan_static_dirs(static_dirs: Vec<ClioPath>) -> tokio::task::JoinHandle<std::
 }
 
 fn scan_static_files(
-    static_files: Vec<ClioPath>,
+    static_files: Vec<ConfigPath>,
 ) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
     tokio::spawn(async move {
         anyhow::Ok(

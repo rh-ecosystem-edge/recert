@@ -1,11 +1,11 @@
 use self::cluster_domain_rename::params::ClusterRenameParameters;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
+    config::ConfigPath,
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
-use clio::ClioPath;
 use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
@@ -17,8 +17,8 @@ pub(crate) mod cluster_domain_rename;
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,
-    static_dirs: &Vec<ClioPath>,
-    static_files: &Vec<ClioPath>,
+    static_dirs: &Vec<ConfigPath>,
+    static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -131,8 +131,8 @@ pub(crate) async fn delete_pods(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterRenameParameters,
-    static_dirs: &Vec<ClioPath>,
-    static_files: &Vec<ClioPath>,
+    static_dirs: &Vec<ConfigPath>,
+    static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
     cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs, static_files)

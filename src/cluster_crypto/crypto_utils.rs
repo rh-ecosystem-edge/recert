@@ -1,11 +1,14 @@
 use super::certificate;
 use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcder::{encode::Values, Mode};
 use pkcs1::DecodeRsaPrivateKey;
 use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
+use serde::ser::SerializeStruct;
 use std::io::Write;
+use std::path::Path;
+use std::process::Command as StdCommand;
 use std::process::Stdio;
-use std::{path::PathBuf, process::Command as StdCommand};
 use tokio::process::Command;
 use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair};
 
@@ -14,6 +17,26 @@ pub(crate) mod jwt;
 pub(crate) struct SigningKey {
     pub in_memory_signing_key_pair: InMemorySigningKeyPair,
     pub pkcs8_pem: Vec<u8>,
+}
+
+impl Clone for SigningKey {
+    fn clone(&self) -> Self {
+        Self {
+            in_memory_signing_key_pair: InMemorySigningKeyPair::from_pkcs8_pem(&self.pkcs8_pem).unwrap(),
+            pkcs8_pem: self.pkcs8_pem.clone(),
+        }
+    }
+}
+
+impl serde::Serialize for SigningKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut st = serializer.serialize_struct("SigningKey", 2)?;
+        st.serialize_field("pkcs8_pem", &base64_standard.encode(&self.pkcs8_pem))?;
+        st.end()
+    }
 }
 
 /// Shell out to openssl to verify that a certificate is signed by a given signing certificate. We
@@ -115,7 +138,7 @@ pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
     })
 }
 
-pub(crate) fn key_from_pkcs8_file(path: &PathBuf) -> Result<SigningKey> {
+pub(crate) fn key_from_pkcs8_file(path: &Path) -> Result<SigningKey> {
     let pkcs8_pem_data = std::fs::read_to_string(path).context("reading private key file")?;
     let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem_data).context("pair from der");
 
@@ -125,7 +148,7 @@ pub(crate) fn key_from_pkcs8_file(path: &PathBuf) -> Result<SigningKey> {
     })
 }
 
-pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<SigningKey> {
+pub(crate) fn rsa_key_from_pkcs1_file(path: &Path) -> Result<SigningKey> {
     let rsa_private_key = RsaPrivateKey::from_pkcs1_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
         .context("private from pem")?;
     let pkcs8_pem_data: Vec<u8> = rsa_private_key
@@ -141,7 +164,7 @@ pub(crate) fn rsa_key_from_pkcs1_file(path: &PathBuf) -> Result<SigningKey> {
     })
 }
 
-pub(crate) fn key_from_file(path: &PathBuf) -> Result<SigningKey> {
+pub(crate) fn key_from_file(path: &Path) -> Result<SigningKey> {
     let parsed_pem = pem::parse(std::fs::read(path).context("reading private key file")?).context("parsing private key file")?;
     let pem_tag = parsed_pem.tag();
 

@@ -7,7 +7,7 @@ use super::{
     signee::Signee,
 };
 use crate::{
-    cli::config,
+    config::Customizations,
     file_utils::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
     },
@@ -30,7 +30,7 @@ pub(crate) struct DistributedPrivateKey {
 }
 
 impl DistributedPrivateKey {
-    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, customizations: &config::Customizations) -> Result<()> {
+    pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, customizations: &Customizations) -> Result<()> {
         let num_bits = match &self.key {
             PrivateKey::Rsa(key) => key.n().to_radix_le(2).len(),
             PrivateKey::Ec(_) => bail!("cannot regenerate standalone EC key"),
