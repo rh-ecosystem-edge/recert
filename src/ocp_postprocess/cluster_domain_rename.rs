@@ -1,7 +1,6 @@
 use self::params::ClusterRenameParameters;
-use crate::{cluster_crypto::locations::K8sResourceLocation, k8s_etcd::InMemoryK8sEtcd};
+use crate::{cluster_crypto::locations::K8sResourceLocation, config::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
-use clio::ClioPath;
 use std::{path::Path, sync::Arc};
 
 mod etcd_rename;
@@ -12,8 +11,8 @@ mod rename_utils;
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterRenameParameters,
-    static_dirs: &Vec<ClioPath>,
-    static_files: &Vec<ClioPath>,
+    static_dirs: &Vec<ConfigPath>,
+    static_files: &Vec<ConfigPath>,
 ) -> Result<(), anyhow::Error> {
     let cluster_domain = cluster_rename.cluster_domain();
     let cluster_name = cluster_rename.cluster_name.clone();
@@ -43,8 +42,8 @@ pub(crate) async fn rename_all(
 async fn fix_filesystem_resources(
     cluster_name: &str,
     cluster_domain: &str,
-    static_dirs: &Vec<ClioPath>,
-    static_files: &Vec<ClioPath>,
+    static_dirs: &Vec<ConfigPath>,
+    static_files: &Vec<ConfigPath>,
     generated_infra_id: String,
 ) -> Result<(), anyhow::Error> {
     for dir in static_dirs {

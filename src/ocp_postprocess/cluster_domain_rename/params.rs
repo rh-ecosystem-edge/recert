@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct ClusterRenameParameters {
     pub(crate) cluster_name: String,
     pub(crate) cluster_base_domain: String,

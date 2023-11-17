@@ -9,9 +9,8 @@ use self::{
     locations::Locations,
 };
 use crate::{
-    cli::config,
-    cli::config::Customizations,
     cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
+    config::Customizations,
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
@@ -219,8 +218,8 @@ impl ClusterCryptoObjects {
                 }
 
                 if true_signing_cert.is_none() {
-                    println!(
-                        "warning: no signing cert found for cert in {}",
+                    log::warn!(
+                        "no signing cert found for cert in {}",
                         (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
                     );
                 }
@@ -297,7 +296,7 @@ impl ClusterCryptoObjects {
             }
 
             if maybe_signer == jwt::JwtSigner::Unknown {
-                println!(
+                log::warn!(
                     "no signer found for jwt in location {}",
                     (**distributed_jwt)
                         .borrow()
@@ -451,8 +450,8 @@ impl ClusterCryptoObjects {
                 // Looks like not always all public keys are associated with a private
                 // key/cert-key-pair. Probably because they got rotated and there are some
                 // leftovers in etcd/filesystem. So we just warn
-                println!(
-                    "WARNING: found a standalone public key not associated with a private key or cert-key-pair, it can be found in these locations: {}. Key will be regenerated anyway.",
+                log::warn!(
+                    "found a standalone public key not associated with a private key or cert-key-pair, it can be found in these locations: {}. Key will be regenerated anyway.",
                     (*public_key).borrow().locations
                 );
             }
@@ -464,7 +463,7 @@ impl ClusterCryptoObjects {
     pub(crate) fn process_objects(
         &mut self,
         discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
-        customizations: &config::Customizations,
+        customizations: &Customizations,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);

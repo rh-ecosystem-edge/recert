@@ -1,11 +1,8 @@
 use crate::{
     cnsanreplace::CnSanReplace, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCert, use_key::UseKey,
 };
-use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use clio::ClioPath;
-
-pub(crate) mod config;
 
 /// A program to regenerate cluster certificates, keys and tokens
 #[derive(Parser)]
@@ -91,21 +88,4 @@ pub(crate) struct Cli {
     /// those intentionally expired dates.
     #[clap(long, groups = &["dry", "expiration"])]
     pub(crate) force_expire: bool,
-}
-
-pub(crate) fn parse_cli() -> Result<config::RecertConfig> {
-    Ok(match std::env::var("RECERT_CONFIG") {
-        Ok(var) => {
-            let num_args = std::env::args().len();
-
-            ensure!(
-                num_args == 1,
-                "RECERT_CONFIG is set, but there are {num_args} CLI arguments. RECERT_CONFIG is meant to be used with no arguments."
-            );
-
-            config::RecertConfig::parse_from_config_file(&std::fs::read(&var).context(format!("reading RECERT_CONFIG file {}", var))?)
-                .context(format!("parsing RECERT_CONFIG file {}", var))?
-        }
-        Err(_) => config::RecertConfig::parse_from_cli(Cli::parse()),
-    })
 }

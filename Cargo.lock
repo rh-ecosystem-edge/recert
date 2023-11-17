@@ -1400,6 +1400,7 @@ dependencies = [
  "lazy-regex",
  "lazy_static",
  "libc",
+ "log",
  "num-bigint",
  "p256",
  "pem 3.0.2",

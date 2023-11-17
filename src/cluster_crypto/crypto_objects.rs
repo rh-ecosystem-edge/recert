@@ -74,10 +74,7 @@ pub(crate) fn process_unknown_value(value: String, location: &Location) -> Resul
                 return Ok(objects);
             }
         }
-        Err(err) => println!(
-            "warning: ignoring error from processing pem-looking text at location {}: {}",
-            location, err
-        ),
+        Err(err) => log::warn!("ignoring error from processing pem-looking text at location {}: {}", location, err),
     };
 
     // If we didn't find any PEM objects, try to process the value as a JWT

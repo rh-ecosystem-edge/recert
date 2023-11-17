@@ -33,7 +33,7 @@ pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
         .context("alg not string")?;
 
     if alg != "RS256" {
-        println!("WARNING: unsupported alg {}", alg);
+        log::warn!("unsupported alg {}", alg);
         return Ok(false);
     }
 

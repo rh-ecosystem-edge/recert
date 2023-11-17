@@ -11,9 +11,8 @@ use super::{
     signee::Signee,
 };
 use crate::{
-    cli::config,
-    cli::config::Customizations,
-    cluster_crypto::{crypto_utils::key_from_file, locations::LocationValueType},
+    cluster_crypto::locations::LocationValueType,
+    config::Customizations,
     file_utils::{add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
@@ -62,7 +61,7 @@ impl CertKeyPair {
         &mut self,
         sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
-        customizations: &config::Customizations,
+        customizations: &Customizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
@@ -163,13 +162,13 @@ impl CertKeyPair {
         // mkoid 1.2.840.10045.2.1
         let ec_public_key_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 206, 61, 2, 1]));
 
-        let self_new_key_pair = if let Some(use_key_path) = customizations
+        let self_new_key_pair = if let Some(use_key_rule) = customizations
             .use_key_rules
             .key_file(tbs_certificate.subject.clone())
-            .context("getting use key file from cert")?
+            .context("getting use key file for cert")?
         {
-            println!("Using key from file: {:?} because CN rules match", use_key_path);
-            key_from_file(&use_key_path).context("getting rsa key from file")?
+            log::info!("{}", use_key_rule);
+            use_key_rule.signing_key
         } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid.clone() {
             let rsa_key_size = match &(*self.distributed_cert).borrow().certificate.public_key {
                 PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)

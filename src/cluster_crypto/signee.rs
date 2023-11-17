@@ -1,4 +1,4 @@
-use crate::{cli::config::Customizations, rsa_key_pool::RsaKeyPool};
+use crate::{config::Customizations, rsa_key_pool::RsaKeyPool};
 
 use super::{
     cert_key_pair::{CertKeyPair, SerialNumberEdits, SkidEdits},
