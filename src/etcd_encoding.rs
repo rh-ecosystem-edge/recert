@@ -1,5 +1,5 @@
 use super::protobuf_gen::{
-    github::com::openshift::api::route::v1::Route,
+    github::com::openshift::api::{oauth::v1::OAuthClient, route::v1::Route},
     k8s::io::{
         api::{
             admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
@@ -54,6 +54,7 @@ k8s_type!(ConfigMapWithMeta, ConfigMap);
 k8s_type!(SecretWithMeta, Secret);
 k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration);
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
+k8s_type!(OAuthClientWithMeta, OAuthClient);
 
 pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
     if !data.starts_with("k8s\x00".as_bytes()) {
@@ -71,6 +72,7 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         "Secret" => serde_json::to_vec(&SecretWithMeta::try_from(unknown)?)?,
         "ValidatingWebhookConfiguration" => serde_json::to_vec(&ValidatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "MutatingWebhookConfiguration" => serde_json::to_vec(&MutatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
+        "OAuthClient" => serde_json::to_vec(&OAuthClientWithMeta::try_from(unknown)?)?,
         _ => bail!("unknown kind {}", kind),
     })
 }
@@ -94,6 +96,7 @@ pub(crate) async fn encode(data: &[u8]) -> Result<Vec<u8>> {
             "DaemonSet" => Unknown::from(serde_json::from_slice::<DaemonsSetWithMeta>(data)?),
             "ValidatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<ValidatingWebhookConfigurationWithMeta>(data)?),
             "MutatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<MutatingWebhookConfigurationWithMeta>(data)?),
+            "OAuthClient" => Unknown::from(serde_json::from_slice::<OAuthClientWithMeta>(data)?),
             _ => return Ok(data.to_vec()),
         }
         .encode_to_vec(),

@@ -2,6 +2,11 @@ pub mod github {
     pub mod com {
         pub mod openshift {
             pub mod api {
+                pub mod oauth {
+                    pub mod v1 {
+                        include!("github.com.openshift.api.oauth.v1.rs");
+                    }
+                }
                 pub mod route {
                     pub mod v1 {
                         include!("github.com.openshift.api.route.v1.rs");

@@ -1,11 +1,12 @@
 use super::rename_utils::{
-    fix_api_server_arguments, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig, fix_oauth_metadata, fix_pod,
+    self, fix_api_server_arguments, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig, fix_oauth_metadata,
+    fix_pod_container_env,
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use fn_error_context::context;
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -34,6 +35,12 @@ pub(crate) async fn delete_resources(etcd_client: &Arc<InMemoryK8sEtcd>) -> Resu
             .chain(
                 etcd_client
                     .list_keys("controlplane.operator.openshift.io/podnetworkconnectivitychecks/")
+                    .await?
+                    .into_iter(),
+            )
+            .chain(
+                etcd_client
+                    .list_keys("configmaps/openshift-kube-controller-manager/cluster-policy-controller-lock")
                     .await?
                     .into_iter(),
             )
@@ -154,6 +161,113 @@ pub(crate) async fn fix_router_certs(
     Ok(())
 }
 
+pub(crate) async fn fix_oauth_client(
+    etcd_client: &Arc<InMemoryK8sEtcd>,
+    cluster_domain: &str,
+    k8s_resource_location: K8sResourceLocation,
+) -> Result<()> {
+    let mut oauth_client = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context(format!("{} not found", k8s_resource_location.as_etcd_key()))?;
+
+    let existing_uris = &mut oauth_client
+        .pointer_mut("/redirectUrIs")
+        .context("no /redirectUrIs")?
+        .as_array_mut()
+        .context("data not an object")?;
+
+    ensure!(
+        existing_uris.len() == 1,
+        "expected exactly one redirectURI, found {}",
+        existing_uris.len()
+    );
+
+    let existing_uri_value = &existing_uris.remove(0);
+    let existing_uri = existing_uri_value.as_str().context("redirectURI not a string")?;
+
+    ensure!(
+        existing_uri.starts_with("https://oauth-openshift.apps."),
+        "expected redirectURI to start with https://oauth-openshift.apps., found {}",
+        existing_uri
+    );
+
+    let existing_uri_path = url::Url::parse(existing_uri)?.path().to_string();
+    let existing_uri_path = existing_uri_path.trim_start_matches('/');
+    let new_uri = format!("https://oauth-openshift.apps.{cluster_domain}/{existing_uri_path}");
+    existing_uris.push(serde_json::Value::String(new_uri.clone()));
+
+    let metadata = &mut oauth_client
+        .pointer_mut("/metadata")
+        .context("no /metadata")?
+        .as_object_mut()
+        .context("data not an object")?;
+
+    let managed_fields = metadata
+        .get_mut("managedFields")
+        .context("no managedFields")?
+        .as_array_mut()
+        .context("managedFields not an array")?;
+
+    managed_fields.iter_mut().try_for_each(|managed_field| {
+        let fields_v1_raw_byte_array = managed_field
+            .pointer("/fieldsV1/raw")
+            .context("no /fieldsV1/raw")?
+            .as_array()
+            .context("/fieldsV1/raw not an array")?;
+
+        let mut fields_v1_raw_parsed: Value = serde_json::from_str(
+            &String::from_utf8(
+                fields_v1_raw_byte_array
+                    .iter()
+                    .map(|v| v.as_u64().context("fieldsV1 not a number"))
+                    .collect::<Result<Vec<_>>>()
+                    .context("parsing byte array")?
+                    .into_iter()
+                    .map(|v| v as u8)
+                    .collect::<Vec<_>>(),
+            )
+            .context("fieldsV1 not valid utf8")?,
+        )
+        .context("deserializing fieldsV1")?;
+
+        let fields_redirect_uris = fields_v1_raw_parsed
+            .pointer_mut("/f:redirectURIs")
+            .context("no /f:redirectURIs")?
+            .as_object_mut()
+            .context("redirectURIs not an object")?;
+
+        fields_redirect_uris
+            .remove(&(format!("v:\"{}\"", existing_uri)))
+            .context("could not find original managed field")?;
+
+        fields_redirect_uris.insert(format!("v:\"{}\"", &new_uri), serde_json::Value::Object(serde_json::Map::new()));
+
+        let serialized = serde_json::Value::String(serde_json::to_string(&fields_v1_raw_parsed).context("serializing fieldsV1")?);
+
+        let byte_array = serde_json::Value::Array(
+            serialized
+                .as_str()
+                .context("serialized not a string")?
+                .as_bytes()
+                .iter()
+                .map(|b| serde_json::Value::Number(serde_json::Number::from(*b)))
+                .collect(),
+        );
+
+        managed_field
+            .pointer_mut("/fieldsV1")
+            .context("no /fieldsV1")?
+            .as_object_mut()
+            .context("/fieldsV1 not an object")?
+            .insert("raw".to_string(), byte_array);
+
+        anyhow::Ok(())
+    })?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, oauth_client).await?;
+    Ok(())
+}
+
 pub(crate) async fn fix_loadbalancer_serving_certkey(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_domain: &str,
@@ -214,7 +328,7 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, clust
     Ok(())
 }
 
-pub(crate) async fn fix_apiserver_config(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-apiserver"), "Configmap", "config", "v1");
     let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
@@ -228,6 +342,96 @@ pub(crate) async fn fix_apiserver_config(etcd_client: &Arc<InMemoryK8sEtcd>, clu
     let mut config: Value = serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
         .context("deserializing config.yaml")?;
 
+    fix_openshift_apiserver_config(&mut config, cluster_domain).context("fixing config")?;
+
+    data.insert(
+        "config.yaml".to_string(),
+        serde_json::Value::String(serde_json::to_string(&config).context("serializing config.yaml")?),
+    )
+    .context("could not find original config.yaml")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_openshift_apiserver_openshiftapiserver(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(None, "OpenShiftAPIServer", "cluster", "operator.openshift.io/v1");
+
+    let mut openshiftapiserver = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await
+        .context("getting openshiftapiserver")?
+        .context(format!("{} not found", k8s_resource_location.as_etcd_key()))?;
+
+    let config = &mut openshiftapiserver
+        .pointer_mut("/spec/observedConfig")
+        .context("no /spec/observedConfig")?;
+
+    fix_openshift_apiserver_config(config, cluster_domain).context("fixing config")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, openshiftapiserver).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_kube_apiserver_kubeapiserver(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(None, "KubeAPIServer", "cluster", "operator.openshift.io/v1");
+
+    let mut kubeapiserver = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await
+        .context("getting kubeapiserver")?
+        .context(format!("{} not found", k8s_resource_location.as_etcd_key()))?;
+
+    let config = &mut kubeapiserver
+        .pointer_mut("/spec/observedConfig")
+        .context("no /spec/observedConfig")?;
+
+    fix_api_server_arguments(config, cluster_domain).context("fixing config")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, kubeapiserver).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_kubecontrollermanager(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(None, "KubeControllerManager", "cluster", "operator.openshift.io/v1");
+
+    let mut kubecontrollermanager = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await
+        .context("getting kubecontrollermanager")?
+        .context(format!("{} not found", k8s_resource_location.as_etcd_key()))?;
+
+    let config = &mut kubecontrollermanager
+        .pointer_mut("/spec/observedConfig")
+        .context("no /spec/observedConfig")?;
+
+    fix_kcm_extended_args(config, cluster_domain).context("fixing config")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, kubecontrollermanager).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_authentication(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(None, "Authentication", "cluster", "operator.openshift.io/v1");
+
+    let mut authentication = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await
+        .context("getting authentication")?
+        .context(format!("{} not found", k8s_resource_location.as_etcd_key()))?;
+
+    let config = &mut authentication
+        .pointer_mut("/spec/observedConfig/oauthServer")
+        .context("no /spec/observedConfig/oauthServer")?;
+
+    fix_oauth_server_authentication_config(config, cluster_domain).context("fixing config")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, authentication).await?;
+
+    Ok(())
+}
+
+pub(crate) fn fix_openshift_apiserver_config(config: &mut Value, cluster_domain: &str) -> Result<()> {
     config
         .pointer_mut("/routingConfig")
         .context("routingConfig not found")?
@@ -239,15 +443,7 @@ pub(crate) async fn fix_apiserver_config(etcd_client: &Arc<InMemoryK8sEtcd>, clu
         )
         .context("missing subdomain")?;
 
-    // NOTE: If we ever stop using a fake internal IP, we need to change .storageConfig.urls[0] to be the new IP here
-
-    data.insert(
-        "config.yaml".to_string(),
-        serde_json::Value::String(serde_json::to_string(&config).context("serializing config.yaml")?),
-    )
-    .context("could not find original config.yaml")?;
-
-    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+    // TODO: If we ever stop using a fake internal IP, we need to change .storageConfig.urls[0] to be the new IP here
 
     Ok(())
 }
@@ -270,6 +466,20 @@ pub(crate) async fn fix_authentication_config(etcd_client: &Arc<InMemoryK8sEtcd>
     )
     .context("deserializing v4-0-config-system-cliconfig")?;
 
+    fix_oauth_server_authentication_config(&mut config, cluster_domain)?;
+
+    data.insert(
+        "v4-0-config-system-cliconfig".to_string(),
+        serde_json::Value::String(serde_json::to_string(&config).context("v4-0-config-system-cliconfig")?),
+    )
+    .context("could not find original v4-0-config-system-cliconfig")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+
+    Ok(())
+}
+
+fn fix_oauth_server_authentication_config(config: &mut Value, cluster_domain: &str) -> Result<()> {
     let oauth_config = &mut config
         .pointer_mut("/oauthConfig")
         .context("oauthConfig not found")?
@@ -278,31 +488,43 @@ pub(crate) async fn fix_authentication_config(etcd_client: &Arc<InMemoryK8sEtcd>
 
     oauth_config
         .insert(
-            "assetPublicURL".to_string(),
-            serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
-        )
-        .context("missing assetPublicURL")?;
-
-    oauth_config
-        .insert(
             "loginURL".to_string(),
             serde_json::Value::String(format!("https://api.{cluster_domain}:6443")),
         )
         .context("missing loginURL")?;
 
-    oauth_config
-        .insert(
-            "masterPublicURL".to_string(),
-            serde_json::Value::String(format!("https://oauth-openshift.apps.{cluster_domain}")),
-        )
-        .context("missing masterPublicURL")?;
+    // Don't simply insert as sometimes this is empty (when console is disabled) and we don't want
+    // to introduce it
+    if let Some(asset_public_url) = oauth_config.get("assetPublicURL") {
+        if asset_public_url
+            .as_str()
+            .context("assetPublicURL not a string")?
+            .starts_with("https://console-openshift-console.apps.")
+        {
+            oauth_config
+                .insert(
+                    "assetPublicURL".to_string(),
+                    serde_json::Value::String(format!("https://console-openshift-console.apps.{cluster_domain}")),
+                )
+                .context("missing assetPublicURL")?;
+        }
+    }
+
+    // The operator.openshift.io/v1 Authentication resource observedConfig doesn't have this key
+    if oauth_config.get("masterPublicURL").is_some() {
+        oauth_config
+            .insert(
+                "masterPublicURL".to_string(),
+                serde_json::Value::String(format!("https://oauth-openshift.apps.{cluster_domain}")),
+            )
+            .context("missing masterPublicURL")?;
+    }
 
     let serving_info = &mut config
         .pointer_mut("/servingInfo")
         .context("servingInfo not found")?
         .as_object_mut()
         .context("servingInfo not an object")?;
-
     serving_info
         .insert(
             "namedCertificates".to_string(),
@@ -313,15 +535,6 @@ pub(crate) async fn fix_authentication_config(etcd_client: &Arc<InMemoryK8sEtcd>
             })]),
         )
         .context("missing namedCertificates")?;
-
-    data.insert(
-        "v4-0-config-system-cliconfig".to_string(),
-        serde_json::Value::String(serde_json::to_string(&config).context("v4-0-config-system-cliconfig")?),
-    )
-    .context("could not find original v4-0-config-system-cliconfig")?;
-
-    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
-
     Ok(())
 }
 
@@ -1019,11 +1232,12 @@ pub(crate) async fn fix_cvo_deployment(etcd_client: &Arc<InMemoryK8sEtcd>, clust
         .await?
         .context("could not find deployment")?;
     let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod(
+    fix_pod_container_env(
         pod,
         format!("api-int.{cluster_domain}").as_str(),
         "cluster-version-operator",
         "KUBERNETES_SERVICE_HOST",
+        false,
     )
     .context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
@@ -1037,11 +1251,12 @@ pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cl
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod(
+    fix_pod_container_env(
         pod,
         format!("api-int.{cluster_domain}").as_str(),
         "kube-multus",
         "KUBERNETES_SERVICE_HOST",
+        false,
     )
     .context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
@@ -1051,11 +1266,12 @@ pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cl
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod(
+    fix_pod_container_env(
         pod,
         format!("api-int.{cluster_domain}").as_str(),
         "whereabouts-cni",
         "KUBERNETES_SERVICE_HOST",
+        true,
     )
     .context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
@@ -1069,11 +1285,12 @@ pub(crate) async fn fix_ovn_daemonset(etcd_client: &Arc<InMemoryK8sEtcd>, cluste
         .await?
         .context("could not find daemonset")?;
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod(
+    fix_pod_container_env(
         pod,
         format!("api-int.{cluster_domain}").as_str(),
         "ovnkube-node",
         "KUBERNETES_SERVICE_HOST",
+        false,
     )
     .context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
@@ -1087,14 +1304,15 @@ pub(crate) async fn fix_router_default(etcd_client: &Arc<InMemoryK8sEtcd>, clust
         .await?
         .context("could not find deployment")?;
     let pod = &mut deployment.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod(
+    fix_pod_container_env(
         pod,
         format!("router-default.apps.{cluster_domain}").as_str(),
         "router",
         "ROUTER_CANONICAL_HOSTNAME",
+        false,
     )
     .context("fixing pod")?;
-    fix_pod(pod, format!("apps.{cluster_domain}").as_str(), "router", "ROUTER_DOMAIN").context("fixing pod")?;
+    fix_pod_container_env(pod, format!("apps.{cluster_domain}").as_str(), "router", "ROUTER_DOMAIN", false).context("fixing pod")?;
     put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
 
     Ok(())
@@ -1174,6 +1392,19 @@ pub(crate) async fn fix_routes(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domai
     )
     .await?;
 
+    fix_route(
+        etcd_client,
+        K8sResourceLocation::new(
+            Some("openshift-authentication"),
+            "Route",
+            "oauth-openshift",
+            "route.openshift.io/v1",
+        ),
+        format!("oauth-openshift.apps.{cluster_domain}"),
+        false,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -1200,6 +1431,26 @@ async fn fix_route(
     } else if !optional {
         bail!("could not find route");
     }
+
+    Ok(())
+}
+
+pub(crate) async fn fix_mcs_daemonset(etcd_client: &InMemoryK8sEtcd, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(
+        Some("openshift-machine-config-operator"),
+        "DaemonSet",
+        "machine-config-server",
+        "apps/v1",
+    );
+    let mut daemonset = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context("could not find daemonset")?;
+
+    let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
+
+    rename_utils::fix_mcd_pod_container_args(pod, cluster_domain, "machine-config-server").context("fixing pod")?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
 
     Ok(())
 }

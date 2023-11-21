@@ -25,6 +25,7 @@ fn generate_protobuf_code() -> Result<()> {
             "k8s.io/api/admissionregistration/v1/generated.proto",
             "k8s.io/api/apps/v1/generated.proto",
             "route/v1/generated.proto",
+            "oauth/v1/generated.proto",
         ],
         &["./src/protobuf"],
     )?;
