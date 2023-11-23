@@ -17,6 +17,9 @@ lazy_static! {
             ("controlplanemachineset", "controlplanemachinesets"),
             ("performanceprofile", "performanceprofiles"),
             ("oauth", "oauths"),
+            // TODO: This is a weird one, the resource kind is OAuthClient but the keys are e.g.
+            // openshift.io/oauth/clients/openshift-challenging-client
+            ("oauthclient", "oauth/clients"),
             ("serviceca", "servicecas"),
             ("metal3remediationtemplate", "metal3remediationtemplates"),
             ("prometheus", "prometheuses"),
@@ -471,17 +474,19 @@ impl K8sResourceLocation {
     pub(crate) fn as_etcd_key(&self) -> String {
         let apiversion_first_component = self.apiversion.as_str().split('/').next();
 
+        let is_openshift = matches!(self.apiversion.as_str(), "route.openshift.io/v1" | "oauth.openshift.io/v1");
+
         format!(
             "/{}/{}{}/{}{}",
-            if self.apiversion == "route.openshift.io/v1" {
-                "openshift.io"
-            } else {
-                "kubernetes.io"
-            },
+            if is_openshift { "openshift.io" } else { "kubernetes.io" },
             match apiversion_first_component {
                 Some(apiversion_first_component_value) => {
                     match apiversion_first_component_value {
-                        "apiregistration.k8s.io" | "machineconfiguration.openshift.io" | "config.openshift.io" | "console.openshift.io" => {
+                        "operator.openshift.io"
+                        | "apiregistration.k8s.io"
+                        | "machineconfiguration.openshift.io"
+                        | "config.openshift.io"
+                        | "console.openshift.io" => {
                             format!("{}/", apiversion_first_component_value)
                         }
                         _ => "".to_string(),

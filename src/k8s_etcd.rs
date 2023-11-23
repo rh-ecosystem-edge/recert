@@ -173,7 +173,7 @@ pub(crate) async fn get_etcd_json(client: &InMemoryK8sEtcd, k8slocation: &K8sRes
         .with_context(|| format!("etcd get {}", k8slocation.as_etcd_key()))?;
 
     Ok(if let Some(etcd_result) = etcd_result {
-        Some(serde_json::from_str(&String::from_utf8(etcd_result.value)?)?)
+        Some(serde_json::from_str(&String::from_utf8(etcd_result.value).context("etcd to utf-8")?).context("parsing json")?)
     } else {
         None
     })

@@ -24,8 +24,10 @@ pub(crate) async fn ocp_postprocess(
         .await
         .context("fixing olm secret hash annotation")?;
 
-    delete_leases(in_memory_etcd_client).await.context("deleting leases")?;
-    delete_pods(in_memory_etcd_client).await.context("deleting leases")?;
+    // Leases are meaningless when the cluster is down, so delete them to help the node come up
+    // faster
+    delete_all(in_memory_etcd_client, "leases/").await?;
+
     delete_node_kubeconfigs(in_memory_etcd_client)
         .await
         .context("deleting node-kubeconfigs")?;
@@ -103,28 +105,20 @@ pub(crate) async fn delete_node_kubeconfigs(in_memory_etcd_client: &Arc<InMemory
     Ok(())
 }
 
-/// Delete all the leases to help the node come up faster
-pub(crate) async fn delete_leases(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
-    join_all(etcd_client.list_keys("leases/").await?.into_iter().map(|key| async move {
-        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
-        Ok(())
-    }))
+pub(crate) async fn delete_all(etcd_client: &Arc<InMemoryK8sEtcd>, resource_etcd_key_prefix: &str) -> Result<()> {
+    join_all(
+        etcd_client
+            .list_keys(resource_etcd_key_prefix)
+            .await?
+            .into_iter()
+            .map(|key| async move {
+                etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+                Ok(())
+            }),
+    )
     .await
     .into_iter()
     .collect::<Result<Vec<_>>>()?;
-
-    Ok(())
-}
-
-pub(crate) async fn delete_pods(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
-    join_all(etcd_client.list_keys("pods/").await?.into_iter().map(|key| async move {
-        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
-        Ok(())
-    }))
-    .await
-    .into_iter()
-    .collect::<Result<Vec<_>>>()?;
-
     Ok(())
 }
 
@@ -135,6 +129,34 @@ pub(crate) async fn cluster_rename(
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
+
+    for resource_key_prefix_to_delete in [
+        // CSRs are always junk, so delete them as they contain the old node name
+        "certificatesigningrequests/",
+        // Delete all node-specific resources
+        "tuned.openshift.io/profiles",
+        "csinodes/",
+        "ptp.openshift.io/nodeptpdevices/",
+        "minions/",
+        "sriovnetwork.openshift.io/sriovnetworknodestates/",
+        // Delete all events as they contain the name
+        "events/",
+        // Delete all endsponts and endpointslices as they contain node names and pod references
+        "services/endpoints/",
+        "endpointslices/",
+        // Delete ptp-configmap as it contains node-specific PTP config
+        "configmaps/openshift-ptp/ptp-configmap",
+        // The existing pods and replicasets are likely to misbehave after all the renaming we're doing
+        "pods/",
+        "replicasets/",
+    ]
+    .iter()
+    {
+        delete_all(in_memory_etcd_client, resource_key_prefix_to_delete)
+            .await
+            .context(format!("deleting {}", resource_key_prefix_to_delete))?;
+    }
+
     cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs, static_files)
         .await
         .context("renaming all")?;

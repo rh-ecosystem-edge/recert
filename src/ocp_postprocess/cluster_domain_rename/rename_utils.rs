@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -279,16 +279,24 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_name: &str) -> Result<()> {
+pub(crate) fn fix_pod_container_env(pod: &mut Value, domain: &str, container_name: &str, env_name: &str, init: bool) -> Result<()> {
     let containers = &mut pod
-        .pointer_mut("/spec/containers")
+        .pointer_mut(&format!("/spec/{}", if init { "initContainers" } else { "containers" }))
         .context("clusters not found")?
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+
+    ensure!(
+        containers
+            .iter()
+            .filter(|container| container["name"] == container_name)
+            .collect::<Vec<_>>()
+            .len()
+            == 1,
+        format!("expected exactly one container named {}", container_name)
+    );
 
     containers
         .iter_mut()
@@ -306,11 +314,48 @@ pub(crate) fn fix_pod(pod: &mut Value, domain: &str, container_name: &str, env_n
 
             env.iter_mut()
                 .find_map(|var| (var.get("name")? == env_name).then_some(var))
-                .context("name not found")?
+                .context(format!("env var {} not found", env_name))?
                 .as_object_mut()
                 .context("env var not an object")?
                 .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
                 .context("no previous value")?;
+
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
+pub(crate) fn fix_mcd_pod_container_args(pod: &mut Value, cluster_domain: &str, container_name: &str) -> Result<()> {
+    let containers = &mut pod
+        .pointer_mut("/spec/containers")
+        .context("clusters not found")?
+        .as_array_mut()
+        .context("clusters not an object")?;
+
+    if containers.is_empty() {
+        bail!("expected at least one container in pod.yaml");
+    }
+
+    containers
+        .iter_mut()
+        .filter(|container| container["name"] == container_name)
+        .try_for_each(|container| {
+            let args = container
+                .pointer_mut("/args")
+                .context("args not found")?
+                .as_array_mut()
+                .context("args not an array")?;
+
+            ensure!(!args.is_empty(), "expected at least one arg in container");
+
+            let arg_idx = args
+                .iter_mut()
+                .enumerate()
+                .find_map(|(i, arg)| arg.as_str()?.starts_with("--apiserver-url=").then_some(i))
+                .context("name not found")?;
+
+            args[arg_idx] = serde_json::Value::String(format!("--apiserver-url=https://api-int.{}:6443", cluster_domain));
 
             Ok(())
         })?;
