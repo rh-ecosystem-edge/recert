@@ -36,7 +36,16 @@ async fn main_internal(config: RecertConfig) -> Result<()> {
 
     let run_result = recert::run(&config, &mut cluster_crypto).await;
 
-    logging::generate_summary(config, cluster_crypto)?;
+    let run_times = match &run_result {
+        Ok(run_times) => Some(run_times.clone()),
+        Err(_) => None,
+    };
 
-    run_result
+    logging::generate_summary(config, cluster_crypto, run_times)?;
+
+    if let Err(err) = run_result {
+        Err(err)
+    } else {
+        Ok(())
+    }
 }

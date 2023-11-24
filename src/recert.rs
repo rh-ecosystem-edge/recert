@@ -9,7 +9,35 @@ use anyhow::{Context, Result};
 use etcd_client::Client as EtcdClient;
 use std::{path::Path, sync::Arc};
 
-pub(crate) async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterCryptoObjects) -> std::result::Result<(), anyhow::Error> {
+#[derive(Clone)]
+struct RunTime {
+    start: std::time::Instant,
+    end: std::time::Instant,
+}
+
+impl serde::Serialize for RunTime {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let duration = self.end - self.start;
+        serializer.serialize_str(&format!("{}.{:03}s", duration.as_secs(), duration.subsec_millis()))
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+pub(crate) struct RunTimes {
+    rsa_key_pool_and_scanning_run_time: RunTime,
+    processing_run_time: RunTime,
+    commit_to_etcd_and_disk_run_time: RunTime,
+    ocp_postprocessing_run_time: RunTime,
+    commit_to_actual_etcd_run_time: RunTime,
+}
+
+pub(crate) async fn run(
+    parsed_cli: &RecertConfig,
+    cluster_crypto: &mut ClusterCryptoObjects,
+) -> std::result::Result<RunTimes, anyhow::Error> {
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &parsed_cli.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)
@@ -19,7 +47,7 @@ pub(crate) async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterC
         None => None,
     }));
 
-    recertify(
+    let (rsa_key_pool_and_scanning_run_time, processing_run_time) = recertify(
         cluster_crypto,
         Arc::clone(&in_memory_etcd_client),
         parsed_cli.static_dirs.clone(),
@@ -29,8 +57,8 @@ pub(crate) async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterC
     .await
     .context("scanning and recertification")?;
 
-    finalize(
-        in_memory_etcd_client,
+    let (commit_to_etcd_and_disk_run_time, ocp_postprocessing_run_time, commit_to_actual_etcd_run_time) = finalize(
+        Arc::clone(&in_memory_etcd_client),
         cluster_crypto,
         &parsed_cli.cluster_rename,
         &parsed_cli.static_dirs,
@@ -41,7 +69,13 @@ pub(crate) async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterC
     .await
     .context("finalizing")?;
 
-    Ok(())
+    Ok(RunTimes {
+        rsa_key_pool_and_scanning_run_time,
+        processing_run_time,
+        commit_to_etcd_and_disk_run_time,
+        ocp_postprocessing_run_time,
+        commit_to_actual_etcd_run_time,
+    })
 }
 
 async fn recertify(
@@ -50,7 +84,8 @@ async fn recertify(
     static_dirs: Vec<ConfigPath>,
     static_files: Vec<ConfigPath>,
     customizations: &Customizations,
-) -> Result<()> {
+) -> Result<(RunTime, RunTime)> {
+    let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
         scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
             .await
@@ -66,12 +101,20 @@ async fn recertify(
     let all_discovered_crypto_objects = all_discovered_crypto_objects.await?.context("scanning etcd/filesystem")?;
     let rsa_pool = rsa_keys.await?.context("generating rsa keys")?;
 
+    let end = std::time::Instant::now();
+
+    let rsa_key_pool_and_scanning_run_time = RunTime { start, end };
+
     // We discovered all crypto objects, process them
+    let start = std::time::Instant::now();
     cluster_crypto
         .process_objects(all_discovered_crypto_objects, customizations, rsa_pool)
         .context("processing discovered objects")?;
+    let end = std::time::Instant::now();
 
-    Ok(())
+    let processing_run_time = RunTime { start, end };
+
+    Ok((rsa_key_pool_and_scanning_run_time, processing_run_time))
 }
 
 async fn finalize(
@@ -82,17 +125,24 @@ async fn finalize(
     static_files: &Vec<ConfigPath>,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<(RunTime, RunTime, RunTime)> {
+    let start = std::time::Instant::now();
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
         .await
         .context("commiting the cryptographic objects back to memory etcd and to disk")?;
+    let end = std::time::Instant::now();
+    let commit_to_etcd_and_disk_run_time = RunTime { start, end };
 
+    let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
         ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs, static_files)
             .await
             .context("performing ocp specific post-processing")?;
     }
+    let end = std::time::Instant::now();
+
+    let ocp_postprocessing_run_time = RunTime { start, end };
 
     if let Some(regenerate_server_ssh_keys) = regenerate_server_ssh_keys {
         server_ssh_keys::write_new_keys(
@@ -101,6 +151,8 @@ async fn finalize(
         )
         .context("regenerating new server SSH keys")?;
     }
+
+    let start = std::time::Instant::now();
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done (unless we're doing a dry run)
@@ -111,5 +163,13 @@ async fn finalize(
             .context("commiting etcd cache to actual etcd")?;
     }
 
-    Ok(())
+    let end = std::time::Instant::now();
+
+    let commit_to_actual_etcd_run_time = RunTime { start, end };
+
+    Ok((
+        commit_to_etcd_and_disk_run_time,
+        ocp_postprocessing_run_time,
+        commit_to_actual_etcd_run_time,
+    ))
 }
