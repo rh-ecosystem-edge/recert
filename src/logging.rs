@@ -1,6 +1,7 @@
 use crate::{
     cluster_crypto::{ClusterCryptoObjects, REDACT_SECRETS},
     config::RecertConfig,
+    recert::RunTimes,
 };
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
@@ -64,9 +65,14 @@ struct Summary {
     cluster_crypto: ClusterCryptoObjects,
     recert_config: RecertConfig,
     logs: Vec<String>,
+    run_times: Option<RunTimes>,
 }
 
-pub(crate) fn generate_summary(recert_config: RecertConfig, cluster_crypto: ClusterCryptoObjects) -> Result<()> {
+pub(crate) fn generate_summary(
+    recert_config: RecertConfig,
+    cluster_crypto: ClusterCryptoObjects,
+    run_result: Option<RunTimes>,
+) -> Result<()> {
     let logs = match LOG_RECORDS.lock() {
         Ok(logs) => logs.clone(),
         Err(err) => {
@@ -78,6 +84,7 @@ pub(crate) fn generate_summary(recert_config: RecertConfig, cluster_crypto: Clus
         cluster_crypto,
         recert_config,
         logs,
+        run_times: run_result,
     };
 
     if let Some(summary_file) = summary.recert_config.summary_file.clone() {
