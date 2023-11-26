@@ -10,6 +10,7 @@ use crate::{
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
 };
 use anyhow::{bail, Context, Result};
+use bytes::Bytes;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -59,25 +60,30 @@ impl DistributedJwt {
             .context("value disappeared")?;
 
         match &k8slocation.yaml_location.value {
-            LocationValueType::Pem(_pem_location_info) => {
-                bail!("JWT cannot be in PEM")
-            }
             LocationValueType::Jwt => {
                 if let Value::String(value_at_json_pointer) = value_at_json_pointer {
-                    *value_at_json_pointer = encode_resource_data_entry(&k8slocation.yaml_location, &jwt_regenerated.clone().str)
-                        .as_str()
-                        .context("encoded value not string")?
-                        .to_string();
+                    *value_at_json_pointer = encode_resource_data_entry(
+                        &k8slocation.yaml_location,
+                        Bytes::copy_from_slice(jwt_regenerated.clone().str.as_bytes()),
+                    )
+                    .context("encoding resource_data_entry")?
+                    .as_str()
+                    .context("encoded value not string")?
+                    .to_string();
                 } else if let Value::Array(value_at_json_pointer) = value_at_json_pointer {
-                    *value_at_json_pointer = encode_resource_data_entry(&k8slocation.yaml_location, &jwt_regenerated.clone().str)
-                        .as_array()
-                        .context("encoded value not array")?
-                        .clone();
+                    *value_at_json_pointer = encode_resource_data_entry(
+                        &k8slocation.yaml_location,
+                        Bytes::copy_from_slice(jwt_regenerated.clone().str.as_bytes()),
+                    )
+                    .context("encoding resource_data_entry")?
+                    .as_array()
+                    .context("encoded value not array")?
+                    .clone();
                 } else {
                     bail!("non-string value at json pointer")
                 }
             }
-            LocationValueType::YetUnknown => bail!("cannot commit unknown value type to etcd"),
+            _ => bail!("cannot commit JWT to non-JWT location"),
         }
 
         etcd_client
@@ -95,9 +101,8 @@ impl DistributedJwt {
             &filelocation.path,
             match &filelocation.content_location {
                 FileContentLocation::Raw(pem_location_info) => match &pem_location_info {
-                    LocationValueType::Pem(_) => bail!("JWT cannot be in PEM"),
                     LocationValueType::Jwt => jwt_regenerated.clone().str.clone(),
-                    LocationValueType::YetUnknown => bail!("cannot commit unknown value type"),
+                    _ => todo!("cannot commit JWT to non-JWT location"),
                 },
                 FileContentLocation::Yaml(_) => todo!("filesystem YAML JWTs not implemented"),
             },

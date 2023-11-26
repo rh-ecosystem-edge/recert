@@ -1,14 +1,16 @@
+use super::{cert_key_pair::CertKeyPair, distributed_private_key::DistributedPrivateKey};
 use serde::Serialize;
-
-use super::cert_key_pair::CertKeyPair;
-use super::distributed_private_key::DistributedPrivateKey;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::atomic::Ordering::Relaxed;
+use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering::Relaxed};
 
 #[derive(Eq, PartialEq, Clone, Debug, Hash)]
 pub(crate) struct Jwt {
     pub(crate) str: String,
+}
+
+impl Jwt {
+    pub(crate) fn new(str: String) -> Self {
+        Self { str }
+    }
 }
 
 impl Serialize for Jwt {

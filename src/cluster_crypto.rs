@@ -5,6 +5,7 @@ use self::{
     distributed_jwt::DistributedJwt,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
+    distributed_symmetric_key::DistributedSymmetricKey,
     keys::{PrivateKey, PublicKey},
     locations::Locations,
 };
@@ -29,9 +30,11 @@ mod distributed_cert;
 mod distributed_jwt;
 mod distributed_private_key;
 mod distributed_public_key;
+mod distributed_symmetric_key;
 mod json_crawl;
 mod jwt;
 mod signee;
+mod symmetric_key;
 
 pub(crate) mod cert_key_pair;
 pub(crate) mod certificate;
@@ -60,6 +63,8 @@ pub(crate) struct ClusterCryptoObjects {
     pub(crate) distributed_certs: HashMap<certificate::Certificate, Rc<RefCell<distributed_cert::DistributedCert>>>,
     #[serde(skip_serializing)]
     pub(crate) distributed_jwts: HashMap<jwt::Jwt, Rc<RefCell<DistributedJwt>>>,
+    #[serde(serialize_with = "hashmap_serialize_just_values", rename(serialize = "symmetric_keys"))]
+    pub(crate) distributed_symmetric_keys: HashMap<symmetric_key::SymmetricKey, Rc<RefCell<DistributedSymmetricKey>>>,
 
     /// Every time we encounter a private key, we extract the public key
     /// from it and add to this mapping. This will later allow us to easily
@@ -107,6 +112,7 @@ impl ClusterCryptoObjects {
             distributed_public_keys: HashMap::new(),
             distributed_certs: HashMap::new(),
             distributed_jwts: HashMap::new(),
+            distributed_symmetric_keys: HashMap::new(),
             public_to_private: HashMap::new(),
             cert_key_pairs: Vec::new(),
         }
@@ -142,6 +148,10 @@ impl ClusterCryptoObjects {
             (**public_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
         }
 
+        for symmetric_key in self.distributed_symmetric_keys.values() {
+            (**symmetric_key).borrow().commit_to_etcd_and_disk(etcd_client).await?;
+        }
+
         Ok(())
     }
 
@@ -174,6 +184,10 @@ impl ClusterCryptoObjects {
             }
 
             (**public_key).borrow_mut().regenerate_no_private(&mut rsa_key_pool)?
+        }
+
+        for symmetric_key in self.distributed_symmetric_keys.values() {
+            (**symmetric_key).borrow_mut().regenerate()?
         }
 
         Ok(())
@@ -488,6 +502,7 @@ impl ClusterCryptoObjects {
             crypto_objects::CryptoObject::PublicKey(public_key) => self.register_discovered_public_key(public_key, &location),
             crypto_objects::CryptoObject::Certificate(hashable_cert) => self.register_discovered_certificate(hashable_cert, &location),
             crypto_objects::CryptoObject::Jwt(jwt) => self.register_discovered_jwt(jwt, location),
+            crypto_objects::CryptoObject::SymmetricKey(symmetric_key) => self.register_discovered_symmetric_key(symmetric_key, location),
         }
     }
 
@@ -503,6 +518,21 @@ impl ClusterCryptoObjects {
             }
             Occupied(distributed_jwt) => {
                 (**distributed_jwt.get()).borrow_mut().locations.0.insert(location);
+            }
+        }
+    }
+
+    fn register_discovered_symmetric_key(&mut self, symmetric_key: symmetric_key::SymmetricKey, location: locations::Location) {
+        match self.distributed_symmetric_keys.entry(symmetric_key.clone()) {
+            Vacant(distributed_symmetric_key) => {
+                distributed_symmetric_key.insert(Rc::new(RefCell::new(DistributedSymmetricKey {
+                    locations: Locations(vec![location].into_iter().collect()),
+                    symmetric_key,
+                    symmetric_key_regenerated: None,
+                })));
+            }
+            Occupied(distributed_symmetric_key) => {
+                (**distributed_symmetric_key.get()).borrow_mut().locations.0.insert(location);
             }
         }
     }

@@ -17,7 +17,7 @@ use std::{io::BufRead, sync::Arc};
 pub(crate) async fn delete_resources(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("controllerrevisions/")
+            .list_kubernetes_keys("controllerrevisions/")
             .await?
             .into_iter()
             .filter(|key| {
@@ -34,20 +34,25 @@ pub(crate) async fn delete_resources(etcd_client: &Arc<InMemoryK8sEtcd>) -> Resu
             })
             .chain(
                 etcd_client
-                    .list_keys("controlplane.operator.openshift.io/podnetworkconnectivitychecks/")
+                    .list_kubernetes_keys("controlplane.operator.openshift.io/podnetworkconnectivitychecks/")
                     .await?
                     .into_iter(),
             )
             .chain(
                 etcd_client
-                    .list_keys("configmaps/openshift-kube-controller-manager/cluster-policy-controller-lock")
+                    .list_kubernetes_keys("configmaps/openshift-kube-controller-manager/cluster-policy-controller-lock")
                     .await?
                     .into_iter(),
             )
-            .chain(etcd_client.list_keys("apiserver.openshift.io/apirequestcounts/").await?.into_iter())
             .chain(
                 etcd_client
-                    .list_keys("operator.openshift.io/ingresscontrollers/openshift-ingress-operator/default")
+                    .list_kubernetes_keys("apiserver.openshift.io/apirequestcounts/")
+                    .await?
+                    .into_iter(),
+            )
+            .chain(
+                etcd_client
+                    .list_kubernetes_keys("operator.openshift.io/ingresscontrollers/openshift-ingress-operator/default")
                     .await?
                     .into_iter(),
             )
@@ -297,7 +302,7 @@ pub(crate) async fn fix_loadbalancer_serving_certkey(
 pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("machineconfiguration.openshift.io/machineconfigs")
+            .list_kubernetes_keys("machineconfiguration.openshift.io/machineconfigs")
             .await?
             .into_iter()
             .map(|key| async move {
@@ -878,7 +883,7 @@ fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result
 pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("configmaps/openshift-kube-apiserver/config")
+            .list_kubernetes_keys("configmaps/openshift-kube-apiserver/config")
             .await?
             .into_iter()
             .map(|key| async move {
@@ -928,7 +933,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
 pub(crate) async fn fix_oauth_metadata_configmap(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("configmaps/openshift-kube-apiserver/oauth-metadata")
+            .list_kubernetes_keys("configmaps/openshift-kube-apiserver/oauth-metadata")
             .await?
             .into_iter()
             .map(|key| async move {
@@ -956,7 +961,7 @@ pub(crate) async fn fix_oauth_metadata_configmap(etcd_client: &Arc<InMemoryK8sEt
 pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("configmaps/openshift-kube-controller-manager/config")
+            .list_kubernetes_keys("configmaps/openshift-kube-controller-manager/config")
             .await?
             .into_iter()
             .map(|key| async move {
@@ -1006,12 +1011,12 @@ pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id:
 pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str, cluster_name: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("configmaps/openshift-kube-controller-manager/controller-manager-kubeconfig")
+            .list_kubernetes_keys("configmaps/openshift-kube-controller-manager/controller-manager-kubeconfig")
             .await?
             .into_iter()
             .chain(
                 etcd_client
-                    .list_keys("configmaps/openshift-kube-scheduler/scheduler-kubeconfig")
+                    .list_kubernetes_keys("configmaps/openshift-kube-scheduler/scheduler-kubeconfig")
                     .await?
                     .into_iter(),
             )
@@ -1171,7 +1176,7 @@ pub(crate) async fn fix_install_config(
 pub(crate) async fn fix_kcm_pods(etcd_client: &Arc<InMemoryK8sEtcd>, generated_infra_id: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys("configmaps/openshift-kube-controller-manager/kube-controller-manager-pod")
+            .list_kubernetes_keys("configmaps/openshift-kube-controller-manager/kube-controller-manager-pod")
             .await?
             .into_iter()
             .map(|key| async move {

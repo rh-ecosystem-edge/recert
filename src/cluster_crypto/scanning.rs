@@ -1,12 +1,13 @@
 use self::crypto_objects::DiscoveredCryptoObect;
 use super::{
     crypto_objects,
+    json_crawl::Hint,
     locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType},
 };
 use crate::{
     cluster_crypto::{crypto_objects::process_unknown_value, json_crawl},
     config::ConfigPath,
-    file_utils::{self, read_file_to_string},
+    file_utils::{self, read_file_raw},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rules,
 };
@@ -184,28 +185,32 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
     let key_lists = {
         let etcd_client = &etcd_client;
         [
-            &(etcd_client.list_keys("secrets").await.context("listing secrets")?),
-            &(etcd_client.list_keys("configmaps").await.context("listing configmaps")?),
+            &(etcd_client.list_kubernetes_keys("secrets").await.context("listing secrets")?),
+            &(etcd_client.list_kubernetes_keys("configmaps").await.context("listing configmaps")?),
             &(etcd_client
-                .list_keys("validatingwebhookconfigurations")
+                .list_kubernetes_keys("validatingwebhookconfigurations")
                 .await
                 .context("listing validatingwebhookconfigurations")?),
             &(etcd_client
-                .list_keys("mutatingwebhookconfigurations")
+                .list_kubernetes_keys("mutatingwebhookconfigurations")
                 .await
                 .context("listing validatingwebhookconfigurations")?),
             &(etcd_client
-                .list_keys("apiregistration.k8s.io/apiservices")
+                .list_kubernetes_keys("apiregistration.k8s.io/apiservices")
                 .await
                 .context("listing apiservices")?),
             &(etcd_client
-                .list_keys("machineconfiguration.openshift.io/machineconfigs")
+                .list_kubernetes_keys("machineconfiguration.openshift.io/machineconfigs")
                 .await
                 .context("listing machineconfigs")?),
             &(etcd_client
-                .list_keys("machineconfiguration.openshift.io/controllerconfigs")
+                .list_kubernetes_keys("machineconfiguration.openshift.io/controllerconfigs")
                 .await
                 .context("listing controllerconfigs")?),
+            &(etcd_client
+                .list_openshift_keys("oauth/clients/")
+                .await
+                .context("listing oauth clients")?),
         ]
     };
 
@@ -252,8 +257,8 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                         decoded_yaml_values
                             .into_iter()
                             .flatten()
-                            .map(|(yaml_location, yaml_value)| {
-                                process_unknown_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
+                            .map(|(yaml_location, yaml_value, hint)| {
+                                process_unknown_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location), hint)
                                     .with_context(|| format!("processing yaml value of key {:?} at location {:?}", key, yaml_location))
                             })
                             .collect::<Result<Vec<_>>>()?
@@ -314,7 +319,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
 }
 
 async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCryptoObect>> {
-    let contents = read_file_to_string(&file_path).await?;
+    let contents = read_file_raw(&file_path).await?;
 
     anyhow::Ok(
         if String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())?
@@ -323,7 +328,7 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
         {
-            process_static_resource_yaml(contents, &file_path)
+            process_static_resource_yaml(String::from_utf8(contents.to_vec())?, &file_path)
                 .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
         } else {
             crypto_objects::process_unknown_value(
@@ -332,6 +337,7 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
                     path: file_path.to_string_lossy().to_string(),
                     content_location: FileContentLocation::Raw(LocationValueType::YetUnknown),
                 }),
+                Hint::None,
             )
             .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
         },
@@ -347,10 +353,11 @@ pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -
         .map(|opt| opt.context("failed to decode yaml"))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
-        .map(|(yaml_location, decoded_yaml_value)| {
+        .map(|(yaml_location, decoded_yaml_value, hint)| {
             process_unknown_value(
                 decoded_yaml_value,
                 &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
+                hint,
             )
         })
         .collect::<Result<Vec<_>>>()?

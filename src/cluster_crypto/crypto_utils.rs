@@ -2,6 +2,7 @@ use super::certificate;
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcder::{encode::Values, Mode};
+use bytes::Bytes;
 use pkcs1::DecodeRsaPrivateKey;
 use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
 use serde::ser::SerializeStruct;
@@ -228,4 +229,16 @@ pub(crate) fn sha256(data: &[u8]) -> Result<Vec<u8>> {
         .context("writing to openssl dgst stdin")?;
 
     Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
+}
+
+pub(crate) fn get_random_bytes(len: usize) -> Result<Bytes> {
+    let command = StdCommand::new("openssl")
+        .args(["rand", &len.to_string()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("openssl rand")?;
+
+    Ok(Bytes::copy_from_slice(
+        &command.wait_with_output().context("waiting for openssl rand")?.stdout,
+    ))
 }
