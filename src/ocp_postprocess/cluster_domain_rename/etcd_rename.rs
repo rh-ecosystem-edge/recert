@@ -1279,25 +1279,6 @@ pub(crate) async fn fix_multus_daemonsets(etcd_client: &Arc<InMemoryK8sEtcd>, cl
     Ok(())
 }
 
-pub(crate) async fn fix_ovn_daemonset(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
-    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ovn-kubernetes"), "DaemonSet", "ovnkube-node", "apps/v1");
-    let mut daemonset = get_etcd_json(etcd_client, &k8s_resource_location)
-        .await?
-        .context("could not find daemonset")?;
-    let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
-    fix_pod_container_env(
-        pod,
-        format!("api-int.{cluster_domain}").as_str(),
-        "ovnkube-node",
-        "KUBERNETES_SERVICE_HOST",
-        false,
-    )
-    .context("fixing pod")?;
-    put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
-
-    Ok(())
-}
-
 pub(crate) async fn fix_router_default(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-ingress"), "Deployment", "router-default", "apps/v1");
     let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)

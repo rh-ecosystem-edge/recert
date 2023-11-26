@@ -4,6 +4,7 @@ set -e
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:backup}
+AUTH_FILE=${AUTH_FILE:-~/omer-ps}
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
@@ -35,18 +36,22 @@ pushd ouger && go install cmd/server/ouger_server.go && popd
 pushd ouger && go install cmd/ouger/ouger.go && popd
 
 ETCD_IMAGE=${ETCD_IMAGE:-"$(oc adm release extract --from="$RELEASE_IMAGE" --file=image-references | jq '.spec.tags[] | select(.name == "etcd").from.name' -r)"}
+
+mkdir -p $PWD/backup/var/lib/etcd
 podman run --network=host --name editor \
     --detach \
-    --authfile ~/omer-ps \
+    --authfile ${AUTH_FILE} \
     --entrypoint etcd \
-    -v $PWD/backup/var/lib/etcd:/store \
+    -v $PWD/backup/var/lib/etcd:/store:rw,Z \
     ${ETCD_IMAGE} --name editor --data-dir /store
 
 until etcdctl endpoint health; do
     sleep 1
 done
 
+
 cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd_orig
+
 
 cargo run --release -- \
     --etcd-endpoint localhost:2379 \
