@@ -149,6 +149,8 @@ pub(crate) async fn cluster_rename(
         // The existing pods and replicasets are likely to misbehave after all the renaming we're doing
         "pods/",
         "replicasets/",
+        // Delete ovnkube-node daemonset as it has cluster name in bash script
+        "daemonsets/openshift-ovn-kubernetes/ovnkube-node",
     ]
     .iter()
     {

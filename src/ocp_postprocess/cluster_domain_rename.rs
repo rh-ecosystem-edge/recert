@@ -214,9 +214,6 @@ async fn fix_etcd_resources(
     etcd_rename::fix_multus_daemonsets(etcd_client, cluster_domain)
         .await
         .context("fixing multus daemonsets")?;
-    etcd_rename::fix_ovn_daemonset(etcd_client, cluster_domain)
-        .await
-        .context("fixing ovn daemonset")?;
     etcd_rename::fix_router_default(etcd_client, cluster_domain)
         .await
         .context("fixing router default")?;
