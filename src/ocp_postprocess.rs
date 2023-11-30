@@ -5,13 +5,17 @@ use crate::{
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as base64_standard, URL_SAFE as base64_url},
+    Engine as _,
+};
 use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
 use std::sync::Arc;
 
 pub(crate) mod cluster_domain_rename;
+mod fnv;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
@@ -37,6 +41,20 @@ pub(crate) async fn ocp_postprocess(
             .await
             .context("renaming cluster")?;
     }
+
+    fix_deployment_dep_annotations(
+        in_memory_etcd_client,
+        K8sResourceLocation::new(Some("openshift-apiserver"), "Deployment", "apiserver", "v1"),
+    )
+    .await
+    .context("fixing dep annotations for openshift-apiserver")?;
+
+    fix_deployment_dep_annotations(
+        in_memory_etcd_client,
+        K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "v1"),
+    )
+    .await
+    .context("fixing dep annotations for openshift-oauth-apiserver")?;
 
     Ok(())
 }
@@ -88,6 +106,98 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
         packageserver_serving_cert_secret,
     )
     .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_deployment_dep_annotations(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    k8s_resource_location: K8sResourceLocation,
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context(format!("couldn't find {}", k8s_resource_location))?;
+
+    let metadata_annotations = deployment
+        .pointer_mut("/metadata/annotations")
+        .context("no .metadata.annotations")?
+        .as_object_mut()
+        .context("annotations not an object")?;
+
+    fix_dep_annotations(metadata_annotations, &k8s_resource_location, etcd_client).await?;
+
+    let spec_template_metadata_annotations = deployment
+        .pointer_mut("/spec/template/metadata/annotations")
+        .context("no .spec.template.metadata.annotations")?
+        .as_object_mut()
+        .context("pod template annotations not an object")?;
+
+    fix_dep_annotations(spec_template_metadata_annotations, &k8s_resource_location, etcd_client).await?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
+
+    Ok(())
+}
+
+async fn fix_dep_annotations(
+    annotations: &mut serde_json::Map<String, serde_json::Value>,
+    k8s_resource_location: &K8sResourceLocation,
+    etcd_client: &Arc<InMemoryK8sEtcd>,
+) -> Result<(), anyhow::Error> {
+    for annotation_key in annotations.keys().cloned().collect::<Vec<_>>() {
+        if !annotation_key.starts_with("operator.openshift.io/dep-") {
+            continue;
+        }
+
+        let annotation_parts = annotation_key
+            .split('/')
+            .nth(1)
+            .context("couldn't parse annotation")?
+            .strip_prefix("dep-")
+            .context("couldn't parse annotation")?
+            .split('.')
+            .collect::<Vec<_>>();
+
+        if annotation_parts.len() != 3 {
+            // This avoids the operator.openshift.io/dep-desired.generation annotation
+            continue;
+        }
+
+        let resource_k8s_resource_location = K8sResourceLocation::new(
+            Some(annotation_parts[0]),
+            match annotation_parts[2] {
+                "secret" => "secret",
+                "configmap" => "ConfigMap",
+                kind => {
+                    log::warn!(
+                        "unsupported resource kind {} in annotation {} at {}",
+                        kind,
+                        annotation_key,
+                        k8s_resource_location
+                    );
+                    continue;
+                }
+            },
+            annotation_parts[1],
+            "v1",
+        );
+
+        let data_json = &serde_json::to_string(
+            get_etcd_json(etcd_client, &resource_k8s_resource_location)
+                .await?
+                .context(format!("couldn't find {}", resource_k8s_resource_location))?
+                .pointer("/data")
+                .context("no .data")?,
+        )
+        .context("couldn't serialize data")?;
+
+        annotations.insert(
+            annotation_key,
+            serde_json::Value::String(base64_url.encode(fnv::fnv1_32((format!("{}\n", data_json)).as_bytes()).to_be_bytes())),
+        );
+    }
 
     Ok(())
 }
