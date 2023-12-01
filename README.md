@@ -11,8 +11,8 @@ customizations.
 The motivation for creating this tool was the effort to allow users to install
 a SNO cluster once in a lab, then copy its disk image for immediate deployment
 in many different sites. By running the tool during the first boot of a host
-from said image, the new cluster will then have its own independent secret keys
-that are separate from other clusters deployed in the same manner.
+from said image, the new cluster will then have its own independent crypto
+that is separate from other clusters deployed in the same manner.
 
 # Documentation
 
