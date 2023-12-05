@@ -10,8 +10,10 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
             newpems.push(pem.clone());
         }
     }
-    Ok(pem::encode_many_config(
-        &newpems,
-        pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF),
-    ))
+
+    Ok(newpems
+        .iter()
+        .map(|value| pem::encode_config(value, pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF)))
+        .collect::<Vec<String>>()
+        .join(""))
 }
