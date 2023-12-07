@@ -4,7 +4,7 @@ use crate::{
     config::ConfigPath,
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use base64::{
     engine::general_purpose::{STANDARD as base64_standard, URL_SAFE as base64_url},
     Engine as _,
@@ -32,7 +32,7 @@ pub(crate) async fn ocp_postprocess(
     // faster
     delete_all(in_memory_etcd_client, "leases/").await?;
 
-    delete_node_kubeconfigs(in_memory_etcd_client)
+    delete_secret_kubeconfigs(in_memory_etcd_client)
         .await
         .context("deleting node-kubeconfigs")?;
 
@@ -202,15 +202,26 @@ async fn fix_dep_annotations(
     Ok(())
 }
 
-/// These kubeconfigs nested inside a secret are far too complicated to handle in recert, so we
-/// just delete them and hope that a reconcile will take care of them.
-pub(crate) async fn delete_node_kubeconfigs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+/// These kubeconfigs nested inside secrets are far too complicated to handle in recert, so we just
+/// delete the secrets and hope that a reconcile will take care of them.
+pub(crate) async fn delete_secret_kubeconfigs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
     etcd_client
         .delete(&K8sResourceLocation::new(Some("openshift-kube-apiserver"), "Secret", "node-kubeconfigs", "v1").as_etcd_key())
         .await
         .context("deleting node-kubeconfigs")?;
+
+    let webhook_authenticator_etcd_keys = etcd_client
+        .list_keys("secrets/openshift-kube-apiserver/webhook-authenticator")
+        .await
+        .context("listing webhook authenticator keys")?;
+
+    ensure!(!webhook_authenticator_etcd_keys.is_empty(), "no webhook authenticator keys found");
+
+    for key in webhook_authenticator_etcd_keys {
+        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+    }
 
     Ok(())
 }
