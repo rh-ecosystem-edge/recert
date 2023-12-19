@@ -2,6 +2,7 @@ use self::cluster_domain_rename::params::ClusterRenameParameters;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     config::ConfigPath,
+    file_utils::{self, read_file_to_string},
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
 use anyhow::{Context, Result};
@@ -12,7 +13,7 @@ use base64::{
 use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 pub(crate) mod cluster_domain_rename;
 mod fnv;
@@ -35,6 +36,10 @@ pub(crate) async fn ocp_postprocess(
     delete_node_kubeconfigs(in_memory_etcd_client)
         .await
         .context("deleting node-kubeconfigs")?;
+
+    sync_webhook_authenticators(in_memory_etcd_client, static_dirs)
+        .await
+        .context("syncing webhook authenticators")?;
 
     if let Some(cluster_rename_params) = cluster_rename_params {
         cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs, static_files)
@@ -211,6 +216,84 @@ pub(crate) async fn delete_node_kubeconfigs(in_memory_etcd_client: &Arc<InMemory
         .delete(&K8sResourceLocation::new(Some("openshift-kube-apiserver"), "Secret", "node-kubeconfigs", "v1").as_etcd_key())
         .await
         .context("deleting node-kubeconfigs")?;
+
+    Ok(())
+}
+
+// The webhook authenticator secret has a kubeConfig field that is too complicated to handle in
+// recert. We could simply delete it and it will be reconciled, but that's a bit too slow for us as
+// it causes a kube-apiserver rollout. To speed things up, we'll just "reconcile" it ourselves by
+// copying the kubeConfig contents from the kubeConfig file on disk that we already processed with
+// recert.
+pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>, static_dirs: &[ConfigPath]) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    let namespace = Some("openshift-kube-apiserver");
+    let base_name = "webhook-authenticator";
+
+    let all_static_webhook_authenticator_kubeconfig_files = static_dirs
+        .iter()
+        .map(|dir| file_utils::globvec(dir, &format!("**/{}/kubeConfig", base_name)))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<HashSet<_>>();
+
+    // Get latest revision from kube-apiserver-pod-(\d+) in the file path
+    let regex = regex::Regex::new(r"kube-apiserver-pod-(\d+)").context("compiling regex")?;
+    let captures = &all_static_webhook_authenticator_kubeconfig_files
+        .iter()
+        .filter_map(|file_pathbuf| {
+            let file_path = file_pathbuf.to_str()?;
+            Some((regex.captures(file_path)?[1].parse::<u32>().unwrap(), file_pathbuf))
+        })
+        .collect::<HashSet<_>>();
+    let (latest_revision, latest_kubeconfig) = captures
+        .iter()
+        .max_by_key(|(revision, _pathbuf)| revision)
+        .context("no kube-apiserver-pod-* found")?;
+
+    let latest_kubeconfig_contents_with_trailing_newline =
+        &read_file_to_string(latest_kubeconfig).await.context("reading latest kubeconfig")?;
+
+    let latest_kubeconfig_contents = latest_kubeconfig_contents_with_trailing_newline.trim_end();
+
+    let secret_location = K8sResourceLocation::new(namespace, "Secret", &format!("{}-{}", base_name, latest_revision), "v1");
+
+    let mut webhook_authenticator_secret = get_etcd_json(etcd_client, &secret_location)
+        .await?
+        .context("couldn't find webhook-authenticator")?;
+
+    webhook_authenticator_secret
+        .pointer_mut("/data")
+        .context("no .data")?
+        .as_object_mut()
+        .context("data not an object")?
+        .insert(
+            "kubeConfig".to_string(),
+            serde_json::Value::Array(
+                latest_kubeconfig_contents
+                    .as_bytes()
+                    .iter()
+                    .map(|byte| serde_json::Value::Number(serde_json::Number::from(*byte)))
+                    .collect(),
+            ),
+        );
+
+    put_etcd_yaml(etcd_client, &secret_location, webhook_authenticator_secret).await?;
+
+    for i in 0..*latest_revision {
+        let secret_name = if i == 0 {
+            base_name.to_string()
+        } else {
+            format!("{}-{}", base_name, i)
+        };
+
+        etcd_client
+            .delete(&K8sResourceLocation::new(namespace, "Secret", &secret_name, "v1").as_etcd_key())
+            .await
+            .context(format!("deleting {}", secret_name))?;
+    }
 
     Ok(())
 }
