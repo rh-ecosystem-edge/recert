@@ -258,41 +258,33 @@ pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMe
 
     let latest_kubeconfig_contents = latest_kubeconfig_contents_with_trailing_newline.trim_end();
 
-    let secret_location = K8sResourceLocation::new(namespace, "Secret", &format!("{}-{}", base_name, latest_revision), "v1");
+    // We're modifying two secrets - the latest revision and the secret that doesn't have a
+    // revision suffix, they're both supposed to be the same, otherwise the kube-apiserver will
+    // trigger a rollout.
+    for secret_location_name in [format!("{}-{}", base_name, latest_revision), base_name.to_string()] {
+        let secret_location = K8sResourceLocation::new(namespace, "Secret", &secret_location_name, "v1");
 
-    let mut webhook_authenticator_secret = get_etcd_json(etcd_client, &secret_location)
-        .await?
-        .context("couldn't find webhook-authenticator")?;
+        let mut webhook_authenticator_secret = get_etcd_json(etcd_client, &secret_location)
+            .await?
+            .context("couldn't find webhook-authenticator")?;
 
-    webhook_authenticator_secret
-        .pointer_mut("/data")
-        .context("no .data")?
-        .as_object_mut()
-        .context("data not an object")?
-        .insert(
-            "kubeConfig".to_string(),
-            serde_json::Value::Array(
-                latest_kubeconfig_contents
-                    .as_bytes()
-                    .iter()
-                    .map(|byte| serde_json::Value::Number(serde_json::Number::from(*byte)))
-                    .collect(),
-            ),
-        );
+        webhook_authenticator_secret
+            .pointer_mut("/data")
+            .context("no .data")?
+            .as_object_mut()
+            .context("data not an object")?
+            .insert(
+                "kubeConfig".to_string(),
+                serde_json::Value::Array(
+                    latest_kubeconfig_contents
+                        .as_bytes()
+                        .iter()
+                        .map(|byte| serde_json::Value::Number(serde_json::Number::from(*byte)))
+                        .collect(),
+                ),
+            );
 
-    put_etcd_yaml(etcd_client, &secret_location, webhook_authenticator_secret).await?;
-
-    for i in 0..*latest_revision {
-        let secret_name = if i == 0 {
-            base_name.to_string()
-        } else {
-            format!("{}-{}", base_name, i)
-        };
-
-        etcd_client
-            .delete(&K8sResourceLocation::new(namespace, "Secret", &secret_name, "v1").as_etcd_key())
-            .await
-            .context(format!("deleting {}", secret_name))?;
+        put_etcd_yaml(etcd_client, &secret_location, webhook_authenticator_secret).await?;
     }
 
     Ok(())
