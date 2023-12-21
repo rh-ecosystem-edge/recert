@@ -258,10 +258,17 @@ pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMe
 
     let latest_kubeconfig_contents = latest_kubeconfig_contents_with_trailing_newline.trim_end();
 
-    // We're modifying two secrets - the latest revision and the secret that doesn't have a
-    // revision suffix, they're both supposed to be the same, otherwise the kube-apiserver will
-    // trigger a rollout.
-    for secret_location_name in [format!("{}-{}", base_name, latest_revision), base_name.to_string()] {
+    for (namespace, secret_location_name) in [
+        // We're modifying two secrets - the latest revision and the secret that doesn't have a
+        // revision suffix, they're both supposed to be the same, otherwise the kube-apiserver will
+        // trigger a rollout.
+        (namespace, format!("{}-{}", base_name, latest_revision)),
+        (namespace, base_name.to_string()),
+        // We're also modifying the webhook-authentication-integrated-oauth secret, which is in a
+        // different namespace and also has this kubeConfig field, and also seems to trigger a rollout
+        // if left out of sync.
+        (Some("openshift-config"), "webhook-authentication-integrated-oauth".to_string()),
+    ] {
         let secret_location = K8sResourceLocation::new(namespace, "Secret", &secret_location_name, "v1");
 
         let mut webhook_authenticator_secret = get_etcd_json(etcd_client, &secret_location)
