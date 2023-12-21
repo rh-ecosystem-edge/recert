@@ -3,7 +3,7 @@
 set -e
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
-BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:backup}
+BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
 AUTH_FILE=${AUTH_FILE:-~/omer-ps}
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -59,10 +59,10 @@ cargo run --release -- \
     --static-dir backup/var/lib/kubelet \
     --static-dir backup/etc/machine-config-daemon \
     --static-file backup/etc/mcs-machine-config-content.json  \
-    --cn-san-replace api-int.test-cluster.redhat.com:api-int.new-name.foo.com \
-    --cn-san-replace api.test-cluster.redhat.com:api.new-name.foo.com \
-    --cn-san-replace *.apps.test-cluster.redhat.com:*.apps.new-name.foo.com \
-    --cn-san-replace 192.168.127.10:192.168.127.11 \
+    --cn-san-replace api-int.seed.redhat.com:api-int.new-name.foo.com \
+    --cn-san-replace api.seed.redhat.com:api.new-name.foo.com \
+    --cn-san-replace *.apps.seed.redhat.com:*.apps.new-name.foo.com \
+    --cn-san-replace 192.168.126.10:192.168.127.11 \
     --cluster-rename new-name:foo.com:some-random-infra-id \
     --summary-file summary.yaml \
     --summary-file-clean summary_redacted.yaml \
