@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi9/ubi:latest as builder
+FROM registry.access.redhat.com/ubi9/ubi:latest as builder
 
 RUN INSTALL_PKGS=" \
       gcc-c++ \
