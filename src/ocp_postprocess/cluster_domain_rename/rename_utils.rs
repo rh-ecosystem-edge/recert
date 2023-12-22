@@ -115,7 +115,7 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
     kcm_arguments
         .insert(
             "cluster-name".to_string(),
-            serde_json::Value::String(generated_infra_id.to_string()),
+            Value::Array(vec![Value::String(generated_infra_id.to_string())]),
         )
         .context("missing service-account-jwks-uri")?;
 
