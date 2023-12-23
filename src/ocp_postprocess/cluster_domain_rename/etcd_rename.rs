@@ -1201,11 +1201,12 @@ pub(crate) async fn fix_kcm_pods(etcd_client: &Arc<InMemoryK8sEtcd>, generated_i
 
                 fix_kcm_pod(&mut pod, generated_infra_id).context("fixing kcm pod")?;
 
+                // Note that there's a newline at the end, without it we get a rollout that we wish to avoid
                 data.as_object_mut()
                     .context("data not an object")?
                     .insert(
                         "pod.yaml".to_string(),
-                        serde_json::Value::String(serde_json::to_string(&pod).context("serializing pod.yaml")?),
+                        serde_json::Value::String(format!("{}\n", serde_json::to_string(&pod).context("serializing pod.yaml")?)),
                     )
                     .context("could not find original pod.yaml")?;
 
