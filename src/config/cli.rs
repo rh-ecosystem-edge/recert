@@ -35,6 +35,11 @@ pub(crate) struct Cli {
     #[clap(long, value_parser = ClusterRenameParameters::cli_parse)]
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
 
+    /// If given, the cluster resources that include the hostname will be modified to use this one
+    /// instead.
+    #[clap(long)]
+    pub(crate) hostname: Option<String>,
+
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For
