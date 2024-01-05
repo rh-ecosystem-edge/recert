@@ -1,10 +1,6 @@
-use super::{
-    rename_utils::fix_api_server_arguments,
-    rename_utils::fix_apiserver_url_file,
-    rename_utils::fix_kcm_extended_args,
-    rename_utils::fix_kubeconfig,
-    rename_utils::fix_oauth_metadata,
-    rename_utils::{fix_kcm_pod, fix_machineconfig},
+use super::rename_utils::{
+    fix_api_server_arguments, fix_apiserver_url_file, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig,
+    fix_oauth_metadata,
 };
 use crate::file_utils::{self, commit_file, read_file_to_string};
 use anyhow::{self, Context, Result};
