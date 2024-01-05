@@ -64,6 +64,7 @@ cargo run --release -- \
     --cn-san-replace *.apps.seed.redhat.com:*.apps.new-name.foo.com \
     --cn-san-replace 192.168.126.10:192.168.127.11 \
     --cluster-rename new-name:foo.com:some-random-infra-id \
+    --hostname test.hostname \
     --summary-file summary.yaml \
     --summary-file-clean summary_redacted.yaml \
     --extend-expiration
