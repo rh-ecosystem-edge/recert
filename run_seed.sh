@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
@@ -49,9 +49,9 @@ until etcdctl endpoint health; do
     sleep 1
 done
 
-
-cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd_orig
-
+sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && sudo -u $USER env PATH=$PATH \
+    cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd_orig \
+"
 
 cargo run --release -- \
     --etcd-endpoint localhost:2379 \
@@ -69,7 +69,9 @@ cargo run --release -- \
     --extend-expiration
     # --regenerate-server-ssh-keys backup/etc/ssh/ \
 
-cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd
+sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && sudo -u $USER env PATH=$PATH \
+    cargo run --manifest-path etcddump/Cargo.toml --release -- --etcd-endpoint localhost:2379 --output-dir backup/etcd \
+"
 
 # meld backup/etc_orig backup/etc
 # meld backup/var_orig backup/var
