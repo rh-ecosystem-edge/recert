@@ -18,12 +18,18 @@ impl std::fmt::Display for UseCert {
 }
 
 impl UseCert {
-    pub(crate) fn cli_parse(cert_path: &str) -> Result<Self> {
-        let path = PathBuf::from(cert_path);
-        ensure!(path.exists(), "cert file {} does not exist", cert_path);
-        ensure!(path.is_file(), "cert file {} is not a file", cert_path);
+    pub(crate) fn cli_parse(cert_path_or_pem: &str) -> Result<Self> {
+        let pem = pem::parse_many(if cert_path_or_pem.contains('\n') {
+            cert_path_or_pem.as_bytes().to_vec()
+        } else {
+            let path = PathBuf::from(cert_path_or_pem);
+            ensure!(path.exists(), "cert file {} does not exist", cert_path_or_pem);
+            ensure!(path.is_file(), "cert file {} is not a file", cert_path_or_pem);
 
-        let pem = pem::parse_many(std::fs::read(cert_path).context("reading cert file")?).context("parsing PEM")?;
+            std::fs::read(cert_path_or_pem).context("reading cert file")?
+        })
+        .context("parsing PEM")?;
+
         ensure!(pem.len() == 1, "expected exactly one PEM block, found {}", pem.len());
         let pem = &pem[0];
         ensure!(pem.tag() == "CERTIFICATE", "expected CERTIFICATE PEM block, found {}", pem.tag());

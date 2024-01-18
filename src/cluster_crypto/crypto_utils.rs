@@ -138,19 +138,17 @@ pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
     })
 }
 
-pub(crate) fn key_from_pkcs8_file(path: &Path) -> Result<SigningKey> {
-    let pkcs8_pem_data = std::fs::read_to_string(path).context("reading private key file")?;
-    let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem_data).context("pair from der");
+pub(crate) fn key_from_pkcs8_pem(pem: &str) -> Result<SigningKey> {
+    let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(pem).context("pair from der");
 
     Ok(SigningKey {
         in_memory_signing_key_pair: in_memory_signing_key_pair?,
-        pkcs8_pem: pkcs8_pem_data.into(),
+        pkcs8_pem: pem.into(),
     })
 }
 
-pub(crate) fn rsa_key_from_pkcs1_file(path: &Path) -> Result<SigningKey> {
-    let rsa_private_key = RsaPrivateKey::from_pkcs1_pem(std::fs::read_to_string(path).context("reading private key file")?.as_str())
-        .context("private from pem")?;
+pub(crate) fn rsa_key_from_pkcs1_pem(pem: &str) -> Result<SigningKey> {
+    let rsa_private_key = RsaPrivateKey::from_pkcs1_pem(pem).context("private from pem")?;
     let pkcs8_pem_data: Vec<u8> = rsa_private_key
         .to_pkcs8_pem(pkcs1::LineEnding::LF)
         .context("private to pkcs8 pem")?
@@ -165,13 +163,19 @@ pub(crate) fn rsa_key_from_pkcs1_file(path: &Path) -> Result<SigningKey> {
 }
 
 pub(crate) fn key_from_file(path: &Path) -> Result<SigningKey> {
-    let parsed_pem = pem::parse(std::fs::read(path).context("reading private key file")?).context("parsing private key file")?;
+    let data = std::fs::read(path).context("reading private key file")?;
+
+    key_from_pem(&String::from_utf8(data).context("converting private key file to utf8")?)
+}
+
+pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
+    let parsed_pem = pem::parse(pem.as_bytes()).context("parsing private key file")?;
     let pem_tag = parsed_pem.tag();
 
     match pem_tag {
-        "RSA PRIVATE KEY" => rsa_key_from_pkcs1_file(path),
+        "RSA PRIVATE KEY" => rsa_key_from_pkcs1_pem(pem),
         "EC PRIVATE KEY" => bail!("loading non PKCS#8 EC private keys is not yet supported"),
-        "PRIVATE KEY" => key_from_pkcs8_file(path),
+        "PRIVATE KEY" => key_from_pkcs8_pem(pem),
         _ => bail!("unknown private key format"),
     }
 }

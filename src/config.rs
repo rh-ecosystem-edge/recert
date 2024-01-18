@@ -1,6 +1,7 @@
-use std::{env, ops::Deref, path::Path};
+use std::{env, ops::Deref, path::Path, sync::atomic::Ordering::Relaxed};
 
 use crate::{
+    cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
     ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters,
     use_cert::{UseCert, UseCertRules},
@@ -9,6 +10,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use clio::ClioPath;
+use serde::Serialize;
 use serde_yaml::Value;
 
 use self::cli::Cli;
@@ -32,7 +34,6 @@ impl Deref for ConfigPath {
     }
 }
 
-// Drop in for ClioPath
 impl From<ClioPath> for ConfigPath {
     fn from(clio_path: ClioPath) -> Self {
         Self(clio_path)
@@ -69,8 +70,49 @@ pub(crate) struct RecertConfig {
     pub(crate) summary_file: Option<ConfigPath>,
     pub(crate) summary_file_clean: Option<ConfigPath>,
 
+    #[serde(serialize_with = "config_file_raw_optionally_redacted")]
     pub(crate) config_file_raw: Option<String>,
     pub(crate) cli_raw: Option<String>,
+}
+
+// This is a custom serializer for config_file_raw that redacts the entire field incase any of the
+// use_key_rule values have a newline in them (as a newline indicates that the user provided raw
+// private keys instead of file paths)
+//
+// A bit hacky but couldn't find a better way to do this
+fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    if REDACT_SECRETS.load(Relaxed) {
+        if let Some(config_file_raw) = config_file_raw {
+            let value: Result<Value, serde_yaml::Error> = serde_yaml::from_slice(config_file_raw.as_bytes());
+
+            match value {
+                Ok(value) => {
+                    if let Some(value) = value.get("use_key_rules") {
+                        match value.as_sequence() {
+                            Some(seq) => {
+                                for value in seq {
+                                    match value.as_str() {
+                                        Some(value) => {
+                                            if value.contains('\n') {
+                                                return "<redacted due to inclusion of raw private keys in config>".serialize(serializer);
+                                            }
+                                        }
+                                        None => return "<failed to decode for redaction - non-string use_key rule>".serialize(serializer),
+                                    }
+                                }
+                            }
+                            None => return "<failed to decode for redaction - use_key_rules is not a sequence>".serialize(serializer),
+                        }
+                    }
+                }
+                Err(_) => return "<failed to decode for redaction - not valid YAML>".serialize(serializer),
+            }
+        } else {
+            return serializer.serialize_none();
+        }
+    }
+
+    config_file_raw.serialize(serializer)
 }
 
 impl RecertConfig {
