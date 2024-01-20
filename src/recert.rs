@@ -118,6 +118,7 @@ async fn recertify(
     Ok((rsa_key_pool_and_scanning_run_time, processing_run_time))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,

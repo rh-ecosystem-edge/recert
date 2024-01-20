@@ -6,6 +6,7 @@ use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use serde_json::Value;
 use std::{
+    io::Read,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
@@ -43,6 +44,13 @@ pub(crate) async fn read_file_to_string(file_path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(file_path).await?;
     let mut contents = String::new();
     file.read_to_string(&mut contents).await.context("failed to read file")?;
+    Ok(contents)
+}
+
+pub(crate) fn read_file_to_string_sync(file_path: &Path) -> Result<String> {
+    let mut file = std::fs::File::open(file_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).context("failed to read file")?;
     Ok(contents)
 }
 

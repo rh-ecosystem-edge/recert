@@ -16,8 +16,8 @@ use sha2::Digest;
 use std::{collections::HashSet, sync::Arc};
 
 pub(crate) mod cluster_domain_rename;
-pub(crate) mod hostname_rename;
 mod fnv;
+pub(crate) mod hostname_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
@@ -369,8 +369,8 @@ pub(crate) async fn cluster_rename(
 pub(crate) async fn hostname_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     hostname: &str,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
