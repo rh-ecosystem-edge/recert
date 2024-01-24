@@ -5,7 +5,7 @@ use std::{self, path::PathBuf, sync::atomic::Ordering::Relaxed};
 use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
 
 use crate::cluster_crypto::{
-    crypto_utils::{key_from_file, SigningKey},
+    crypto_utils::{key_from_file, key_from_pem, SigningKey},
     REDACT_SECRETS,
 };
 
@@ -51,12 +51,17 @@ impl UseKey {
         );
 
         let key_cert_cn = parts[0].to_string();
-        let private_key_path = PathBuf::from(parts[1].to_string());
+        let path_or_pem = parts[1].to_string();
 
         Ok(Self {
             key_cert_cn,
-            signing_key: key_from_file(&private_key_path)
-                .context(format!("reading private key from file {}", private_key_path.display()))?,
+            signing_key: if path_or_pem.contains('\n') {
+                let pem_string = path_or_pem;
+                key_from_pem(&pem_string).context("failed to parse PEM string")?
+            } else {
+                let private_key_path = PathBuf::from(path_or_pem.to_string());
+                key_from_file(&private_key_path).context(format!("reading private key from file {}", private_key_path.display()))?
+            },
         })
     }
 }

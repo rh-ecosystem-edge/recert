@@ -42,6 +42,8 @@ pub(crate) struct Cli {
     /// /etc/foo.key for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
     /// If more than one cert has the same CN, an error will occur and no certs will be
     /// regenerated.
+    ///
+    /// When using a RECERT_CONFIG file, raw PEMS can be used instead of paths to key files.
     #[clap(long, value_parser = UseKey::cli_parse)]
     pub(crate) use_key: Vec<UseKey>,
 
@@ -51,6 +53,8 @@ pub(crate) struct Cli {
     /// admin-kubeconfig-signer. Certs replaced in this manner must not have any children, as no
     /// private key is available to re-sign them. Their expiration will not be extended even when
     /// the --extend-expiration flag is used.
+    ///
+    /// When using a RECERT_CONFIG file, raw PEMS can be used instead of paths to cert files.
     #[clap(long, value_parser = UseCert::cli_parse)]
     pub(crate) use_cert: Vec<UseCert>,
 
