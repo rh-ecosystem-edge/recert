@@ -126,7 +126,7 @@ pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: 
     let cluster_backup = cluster_backup_sh.to_string();
     let pattern = format!(r"NODE_{original_hostname}_IP");
     let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
-    Ok(cluster_backup.replace(dbg!(&pattern), &replacement))
+    Ok(cluster_backup.replace(&pattern, &replacement)
 }
 
 pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
@@ -219,7 +219,7 @@ fn fix_kubeconfig_server(cluster: &mut serde_json::Map<String, Value>, cluster_d
         // Could be something like `https://localhost:6443`, ignore
         return Ok(());
     }
-        .context("no previous value")?;
+    .context("no previous value")?;
 
     Ok(())
 }
@@ -288,7 +288,10 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
 
 #[cfg(test)]
 mod test_fix_etcd_static_pod {
-    use crate::{file_utils::read_file_to_string_sync, ocp_postprocess::cluster_domain_rename::rename_utils::{fix_etcd_pod_yaml, fix_etcd_static_pod,fix_cluster_backup_sh}};
+    use crate::{
+        file_utils::read_file_to_string_sync,
+        ocp_postprocess::cluster_domain_rename::rename_utils::{fix_cluster_backup_sh, fix_etcd_pod_yaml, fix_etcd_static_pod},
+    };
     use anyhow::Result;
     use serde_json::Value;
 
@@ -396,7 +399,7 @@ pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostnam
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
         ),
         (
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
         ),
         (
@@ -404,20 +407,22 @@ pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostnam
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
         ),
         (
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
         ),
         ("--target-name={original_hostname}", "--target-name={hostname}"),
     ];
 
     for (pattern, replacement) in patterns {
-        let pattern = pattern.replace("{original_hostname}", original_hostname);
-        let replacement = replacement.replace("{hostname}", &hostname);
+        let pattern = pattern
+            .replace("{original_hostname}", original_hostname)
+            .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
 
-        let pattern = pattern.replace("{original_hostname_safe}", &env_var_safe(original_hostname));
-        let replacement = replacement.replace("{hostname_safe}", &env_var_safe(hostname));
+        let replacement = replacement
+            .replace("{hostname}", &hostname)
+            .replace("{hostname_safe}", &env_var_safe(hostname));
 
-        pod_yaml = pod_yaml.replace(dbg!(&pattern), dbg!(&replacement)).to_string();
+        pod_yaml = pod_yaml.replace(&pattern, &replacement).to_string();
     }
 
     Ok(pod_yaml)

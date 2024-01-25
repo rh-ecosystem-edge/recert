@@ -75,34 +75,37 @@ pub(crate) async fn fix_filesystem_etcd_configmap_pod_yaml(original_hostname: &s
 }
 
 pub(crate) async fn fix_filesystem_etcd_scripts_cluster_backup_sh(original_hostname: &str, hostname: &str, dir: &Path) -> Result<()> {
-    join_all(file_utils::globvec(dir, "**/etcd-scripts/cluster-backup.sh")?.into_iter().map(|file_path| {
-        let cluster_backup_path = file_path.clone();
-        let original_hostname = original_hostname.to_string();
-        let hostname = hostname.to_string();
-        tokio::spawn(async move {
-            async move {
-                let contents = read_file_to_string(&file_path)
-                    .await
-                    .context("reading cluster-backup.sh")?;
+    join_all(
+        file_utils::globvec(dir, "**/etcd-scripts/cluster-backup.sh")?
+            .into_iter()
+            .map(|file_path| {
+                let cluster_backup_path = file_path.clone();
+                let original_hostname = original_hostname.to_string();
+                let hostname = hostname.to_string();
+                tokio::spawn(async move {
+                    async move {
+                        let contents = read_file_to_string(&file_path).await.context("reading cluster-backup.sh")?;
 
-                commit_file(
-                    file_path,
-                    dbg!(rename_utils::fix_cluster_backup_sh(&contents, &original_hostname, &hostname).context("fixing cluster-backup.sh")?),
-                    )
-                    .await
-                    .context("writing cluster-backup.sh to disk")?;
+                        commit_file(
+                            file_path,
+                            rename_utils::fix_cluster_backup_sh(&contents, &original_hostname, &hostname)
+                                .context("fixing cluster-backup.sh")?,
+                        )
+                        .await
+                        .context("writing cluster-backup.sh to disk")?;
 
-                anyhow::Ok(())
-            }
-                .await
-                .context(format!("fixing  cluster-backup.sh {:?}", cluster_backup_path))
-        })
-    }))
-        .await
-        .into_iter()
-        .collect::<core::result::Result<Vec<_>, _>>()?
-        .into_iter()
-        .collect::<Result<Vec<_>>>()?;
+                        anyhow::Ok(())
+                    }
+                    .await
+                    .context(format!("fixing  cluster-backup.sh {:?}", cluster_backup_path))
+                })
+            }),
+    )
+    .await
+    .into_iter()
+    .collect::<core::result::Result<Vec<_>, _>>()?
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }
