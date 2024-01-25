@@ -122,6 +122,13 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
     Ok(())
 }
 
+pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let cluster_backup = cluster_backup_sh.to_string();
+    let pattern = format!(r"NODE_{original_hostname}_IP");
+    let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
+    Ok(cluster_backup.replace(dbg!(&pattern), &replacement))
+}
+
 pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
     let is_kubelet_kubeconfig = kubeconfig
         .pointer_mut("/contexts")
@@ -212,7 +219,7 @@ fn fix_kubeconfig_server(cluster: &mut serde_json::Map<String, Value>, cluster_d
         // Could be something like `https://localhost:6443`, ignore
         return Ok(());
     }
-    .context("no previous value")?;
+        .context("no previous value")?;
 
     Ok(())
 }
@@ -281,9 +288,20 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
 
 #[cfg(test)]
 mod test_fix_etcd_static_pod {
-    use crate::{file_utils::read_file_to_string_sync, ocp_postprocess::cluster_domain_rename::rename_utils::fix_etcd_static_pod};
+    use crate::{file_utils::read_file_to_string_sync, ocp_postprocess::cluster_domain_rename::rename_utils::{fix_etcd_static_pod,fix_cluster_backup_sh}};
     use anyhow::Result;
     use serde_json::Value;
+
+    #[test]
+    fn test_fix_etcd_scripts_cluster_backup() -> Result<()> {
+        let path_str = "backup/etc_orig/kubernetes/static-pod-resources/etcd-certs/configmaps/etcd-scripts/cluster-backup.sh";
+        let path = std::path::Path::new(path_str);
+        let script = read_file_to_string_sync(path)?;
+        let script = fix_cluster_backup_sh(&script, "seed", "test-hostname")?;
+        assert!(!script.contains("seed"), "seed still in pod: {}", script);
+
+        Ok(())
+    }
 
     #[test]
     fn test_fix_etcd_static_pod6() -> Result<()> {

@@ -46,6 +46,10 @@ async fn fix_dir_resources(original_hostname: &str, hostname: &str, dir: &Path) 
         .await
         .context("fixing etcd static pod configmap pod yaml")?;
 
+    filesystem_rename::fix_filesystem_etcd_scripts_cluster_backup_sh(&original_hostname, hostname, dir)
+        .await
+        .context("fixing etcd certs clsuter-backup.sh")?;
+
     Ok(())
 }
 
