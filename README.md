@@ -22,7 +22,8 @@ For more information see the [design doc](docs/design.md)
 
 ### Local Development
 
-You need [rust](https://rustup.rs/), protoc, podman, openssl, etcdctl, meld, and an IBU seed image. Then
+You need [rust](https://rustup.rs/), [protoc](https://google.github.io/proto-lens/installing-protoc.html), podman, openssl, [etcdctl](https://etcd.io/docs/v3.4/install/), meld, and an IBU seed image. Then
+Set the pull secret for the seed image under ~/seed-pull-secret
 run `./run_seed.sh <seed pullspec>`
 
 On Fedora a lot of these can be installed using: `sudo dnf install protobuf-compiler podman openssl etcd meld`

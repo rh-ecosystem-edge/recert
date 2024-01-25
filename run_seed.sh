@@ -4,7 +4,7 @@ set -ex
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
-AUTH_FILE=${AUTH_FILE:-~/omer-ps}
+AUTH_FILE=${AUTH_FILE:-~/seed-pull-secret}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
@@ -12,6 +12,11 @@ cd "$SCRIPT_DIR"
 
 if [[ ! -f ouger/go.mod ]] || [[ ! -f etcddump/Cargo.toml ]]; then
 	echo "ouger or etcddump not found, please run git submodule update --init"
+	exit 1
+fi
+
+if [ ! -s "${AUTH_FILE}" ]; then
+	echo "auth file ${AUTH_FILE} is empty"
 	exit 1
 fi
 
