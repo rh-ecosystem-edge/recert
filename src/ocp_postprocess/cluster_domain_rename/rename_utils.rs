@@ -288,7 +288,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
 
 #[cfg(test)]
 mod test_fix_etcd_static_pod {
-    use crate::{file_utils::read_file_to_string_sync, ocp_postprocess::cluster_domain_rename::rename_utils::{fix_etcd_static_pod,fix_cluster_backup_sh}};
+    use crate::{file_utils::read_file_to_string_sync, ocp_postprocess::cluster_domain_rename::rename_utils::{fix_etcd_pod_yaml, fix_etcd_static_pod,fix_cluster_backup_sh}};
     use anyhow::Result;
     use serde_json::Value;
 
@@ -328,6 +328,17 @@ mod test_fix_etcd_static_pod {
 
         Ok(())
     }
+
+    #[test]
+    fn test_fix_etcd_static_pod_configmap() -> Result<()> {
+        let path_str = "backup/etc_orig/kubernetes/static-pod-resources/etcd-pod-6/configmaps/etcd-pod/pod.yaml";
+        let path = std::path::Path::new(path_str);
+        let pod = read_file_to_string_sync(path)?;
+        let pod = fix_etcd_pod_yaml(&pod, "seed", "test-hostname")?;
+        assert!(!pod.contains("seed"), "seed still in pod: {}", pod);
+
+        Ok(())
+    }
 }
 
 // Mimics https://github.com/openshift/cluster-etcd-operator/blob/5973046e2d216b290740cf64a071a272bbf83aea/pkg/etcdenvvar/etcd_env.go#L244-L246
@@ -351,22 +362,62 @@ pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostnam
 
     let patterns = [
         (
-            format!(r#"- name: "NODE_{original_hostname}_ETCD_NAME"#),
-            r#"- name: "NODE_{}_ETCD_NAME"#,
+            r#"- name: "NODE_{original_hostname_safe}_ETCD_NAME"#,
+            r#"- name: "NODE_{hostname_safe}_ETCD_NAME"#,
         ),
-        (format!(r#"value: "{original_hostname}""#), r#"value: "{}""#),
+        (r#"value: "{original_hostname}""#, r#"value: "{hostname}""#),
         (
-            format!(r#"- name: "NODE_{original_hostname}_ETCD_URL_HOST"#),
-            r#"- name: "NODE_{}_ETCD_URL_HOST"#,
+            r#"- name: "NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"- name: "NODE_{hostname_safe}_ETCD_URL_HOST"#,
         ),
-        (format!(r#"- name: "NODE_{original_hostname}_IP"#), r#"- name: "NODE_{}_IP"#),
+        (
+            r#"- name: "NODE_{original_hostname_safe}_IP"#,
+            r#"- name: "NODE_{hostname_safe}_IP"#,
+        ),
+        (
+            r#"${NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"${NODE_{hostname_safe}_ETCD_URL_HOST"#,
+        ),
+        (
+            r#"${NODE_{original_hostname_safe}_ETCD_NAME"#,
+            r#"${NODE_{hostname_safe}_ETCD_NAME""#,
+        ),
+        ("${NODE_{original_hostname_safe}_IP", "${NODE_{hostname_safe}_IP"),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
+        ),
+        ("--target-name={original_hostname}", "--target-name={hostname}"),
     ];
 
     for (pattern, replacement) in patterns {
-        let re = regex::Regex::new(&pattern).context("compiling regex")?;
-        pod_yaml = re
-            .replace_all(&pod_yaml, replacement.replace("{}", &env_var_safe(hostname)).as_str())
-            .to_string();
+        let pattern = pattern.replace("{original_hostname}", original_hostname);
+        let replacement = replacement.replace("{hostname}", &hostname);
+
+        let pattern = pattern.replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+        let replacement = replacement.replace("{hostname_safe}", &env_var_safe(hostname));
+
+        pod_yaml = pod_yaml.replace(dbg!(&pattern), dbg!(&replacement)).to_string();
     }
 
     Ok(pod_yaml)

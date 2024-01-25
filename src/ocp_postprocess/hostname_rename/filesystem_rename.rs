@@ -34,7 +34,7 @@ pub(crate) async fn fix_filesystem_etcd_static_pods(original_hostname: &str, hos
     }))
     .await
     .into_iter()
-    .collect::<core::result::Result<Vec<_>, _>>()?
+    .collect::<Result<Vec<_>, _>>()?
     .into_iter()
     .collect::<Result<Vec<_>>>()?;
 
@@ -67,7 +67,7 @@ pub(crate) async fn fix_filesystem_etcd_configmap_pod_yaml(original_hostname: &s
     }))
     .await
     .into_iter()
-    .collect::<core::result::Result<Vec<_>, _>>()?
+    .collect::<Result<Vec<_>, _>>()?
     .into_iter()
     .collect::<Result<Vec<_>>>()?;
 
