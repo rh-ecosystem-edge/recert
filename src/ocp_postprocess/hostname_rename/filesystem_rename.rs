@@ -42,7 +42,7 @@ pub(crate) async fn fix_filesystem_etcd_static_pods(original_hostname: &str, hos
 }
 
 pub(crate) async fn fix_filesystem_etcd_configmap_pod_yaml(original_hostname: &str, hostname: &str, dir: &Path) -> Result<()> {
-    join_all(file_utils::globvec(dir, "**/etcd-pod/pod.yaml")?.into_iter().map(|file_path| {
+    join_all(file_utils::globvec(dir, "**/*etcd-pod/pod.yaml")?.into_iter().map(|file_path| {
         let etcd_pod_path = file_path.clone();
         let original_hostname = original_hostname.to_string();
         let hostname = hostname.to_string();

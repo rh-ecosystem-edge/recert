@@ -126,7 +126,7 @@ pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: 
     let cluster_backup = cluster_backup_sh.to_string();
     let pattern = format!(r"NODE_{original_hostname}_IP");
     let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
-    Ok(cluster_backup.replace(&pattern, &replacement)
+    Ok(cluster_backup.replace(&pattern, &replacement))
 }
 
 pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
