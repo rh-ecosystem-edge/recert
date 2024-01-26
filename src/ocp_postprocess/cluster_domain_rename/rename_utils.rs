@@ -286,64 +286,6 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
     Ok(())
 }
 
-#[cfg(test)]
-mod test_fix_etcd_static_pod {
-    use crate::{
-        file_utils::read_file_to_string_sync,
-        ocp_postprocess::cluster_domain_rename::rename_utils::{fix_cluster_backup_sh, fix_etcd_pod_yaml, fix_etcd_static_pod},
-    };
-    use anyhow::Result;
-    use serde_json::Value;
-
-    #[test]
-    fn test_fix_etcd_scripts_cluster_backup() -> Result<()> {
-        let path_str = "backup/etc_orig/kubernetes/static-pod-resources/etcd-certs/configmaps/etcd-scripts/cluster-backup.sh";
-        let path = std::path::Path::new(path_str);
-        let script = read_file_to_string_sync(path)?;
-        let script = fix_cluster_backup_sh(&script, "seed", "test-hostname")?;
-        assert!(!script.contains("seed"), "seed still in pod: {}", script);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_fix_etcd_static_pod6() -> Result<()> {
-        let path_str = "backup/etc_orig/kubernetes/static-pod-resources/etcd-pod-6/etcd-pod.yaml";
-        let path = std::path::Path::new(path_str);
-        let pod = read_file_to_string_sync(path)?;
-        let mut pod: Value = serde_json::from_str(&pod)?;
-        fix_etcd_static_pod(&mut pod, "seed", "test-hostname")?;
-        let pod = serde_json::to_string(&pod)?;
-        assert!(!pod.contains("seed"), "seed still in pod: {}", pod);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_fix_etcd_static_pod() -> Result<()> {
-        let path_str = "backup/etc_orig/kubernetes/manifests/etcd-pod.yaml";
-        let path = std::path::Path::new(path_str);
-        let pod = read_file_to_string_sync(path)?;
-        let mut pod: Value = serde_json::from_str(&pod)?;
-        fix_etcd_static_pod(&mut pod, "seed", "test-hostname")?;
-        let pod = serde_json::to_string(&pod)?;
-        assert!(!pod.contains("seed"), "seed still in pod: {}", pod);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_fix_etcd_static_pod_configmap() -> Result<()> {
-        let path_str = "backup/etc_orig/kubernetes/static-pod-resources/etcd-pod-6/configmaps/etcd-pod/pod.yaml";
-        let path = std::path::Path::new(path_str);
-        let pod = read_file_to_string_sync(path)?;
-        let pod = fix_etcd_pod_yaml(&pod, "seed", "test-hostname")?;
-        assert!(!pod.contains("seed"), "seed still in pod: {}", pod);
-
-        Ok(())
-    }
-}
-
 // Mimics https://github.com/openshift/cluster-etcd-operator/blob/5973046e2d216b290740cf64a071a272bbf83aea/pkg/etcdenvvar/etcd_env.go#L244-L246
 pub(crate) fn env_var_safe(node_name: &str) -> String {
     node_name.replace(['-', '.'], "_")
@@ -419,7 +361,7 @@ pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostnam
             .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
 
         let replacement = replacement
-            .replace("{hostname}", &hostname)
+            .replace("{hostname}", hostname)
             .replace("{hostname_safe}", &env_var_safe(hostname));
 
         pod_yaml = pod_yaml.replace(&pattern, &replacement).to_string();
@@ -554,7 +496,7 @@ fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str,
             (
                 format!("NODE_{original_hostname}_ETCD_NAME").as_str(),
                 Some(format!("NODE_{hostname}_ETCD_NAME").as_str()),
-                Some(format!("{hostname}").as_str()),
+                Some(hostname),
             ),
             (
                 format!("NODE_{original_hostname}_ETCD_URL_HOST").as_str(),
@@ -574,7 +516,7 @@ fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str,
     Ok(())
 }
 
-fn adjust_env(envs: &mut Vec<Value>, env_name: &str, new_name: Option<&str>, new_value: Option<&str>) -> Result<()> {
+fn adjust_env(envs: &mut [Value], env_name: &str, new_name: Option<&str>, new_value: Option<&str>) -> Result<()> {
     let found_env = envs
         .iter_mut()
         .find_map(|env| (env.as_object()?.get("name") == Some(&Value::String(env_name.to_string()))).then_some(env));

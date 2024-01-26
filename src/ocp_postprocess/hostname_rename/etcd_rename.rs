@@ -264,14 +264,14 @@ pub(crate) async fn fix_etcd_pod(etcd_client: &Arc<InMemoryK8sEtcd>, original_ho
                 // TODO: We can't roundtrip arbitrary YAML, ask etcd folks to stop using YAML
                 // That's why we have to do primitive string manipulation here instead of proper
                 // parsing
-                let mut pod_yaml = data
+                let pod_yaml = data
                     .get_mut("pod.yaml")
                     .context("no pod.yaml")?
                     .as_str()
                     .context("pod.yaml not a string")?
                     .to_string();
 
-                let pod_yaml = fix_etcd_pod_yaml(&mut pod_yaml, original_hostname, hostname).context("could not fix pod yaml")?;
+                let pod_yaml = fix_etcd_pod_yaml(&pod_yaml, original_hostname, hostname).context("could not fix pod yaml")?;
 
                 data.insert("pod.yaml".to_string(), serde_json::Value::String(pod_yaml));
 

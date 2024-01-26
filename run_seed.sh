@@ -3,7 +3,7 @@
 set -ex
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
-BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:infoseed}
+BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
 AUTH_FILE=${AUTH_FILE:-~/omer-ps}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"

@@ -13,7 +13,7 @@ pub(crate) async fn rename_all(
 ) -> Result<(), anyhow::Error> {
     let original_hostname = fix_etcd_resources(etcd_client, hostname).await.context("renaming etcd resources")?;
 
-    fix_filesystem_resources(&original_hostname, &hostname, static_dirs, static_files)
+    fix_filesystem_resources(&original_hostname, hostname, static_dirs, static_files)
         .await
         .context("renaming filesystem resources")?;
 
@@ -46,7 +46,7 @@ async fn fix_dir_resources(original_hostname: &str, hostname: &str, dir: &Path) 
         .await
         .context("fixing etcd static pod configmap pod yaml")?;
 
-    filesystem_rename::fix_filesystem_etcd_scripts_cluster_backup_sh(&original_hostname, hostname, dir)
+    filesystem_rename::fix_filesystem_etcd_scripts_cluster_backup_sh(original_hostname, hostname, dir)
         .await
         .context("fixing etcd certs clsuter-backup.sh")?;
 
