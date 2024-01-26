@@ -50,6 +50,14 @@ async fn fix_dir_resources(original_hostname: &str, hostname: &str, dir: &Path) 
         .await
         .context("fixing etcd certs clsuter-backup.sh")?;
 
+    filesystem_rename::fix_filesystem_kapi_startup_monitor_pod(hostname, dir)
+        .await
+        .context("fixing kube-apiserver-startup-monitor-pod")?;
+
+    filesystem_rename::fix_filesystem_kapi_startup_monitor_configmap_pod_yaml(original_hostname, hostname, dir)
+        .await
+        .context("fixing kube-apiserver-startup-monitor-pod configmap pod yaml")?;
+
     Ok(())
 }
 

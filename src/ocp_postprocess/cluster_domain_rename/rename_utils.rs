@@ -730,3 +730,47 @@ pub(crate) fn fix_machineconfig(machineconfig: &mut Value, cluster_domain: &str)
 
     Ok(())
 }
+
+pub(crate) fn fix_kapi_startup_monitor_pod_container_args(pod: &mut Value, hostname: &str) -> Result<()> {
+    let containers = &mut pod
+        .pointer_mut("/spec/containers")
+        .context("containers not found")?
+        .as_array_mut()
+        .context("containers not an object")?;
+
+    if containers.is_empty() {
+        bail!("expected at least one container in pod.yaml");
+    }
+
+    containers
+        .iter_mut()
+        .filter(|container| container["name"] == "startup-monitor")
+        .try_for_each(|container| {
+            let args = container
+                .pointer_mut("/args")
+                .context("args not found")?
+                .as_array_mut()
+                .context("args not an array")?;
+
+            ensure!(!args.is_empty(), "expected at least one arg in container");
+
+            let arg_idx = args
+                .iter_mut()
+                .enumerate()
+                .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
+                .context("--node-name not found")?;
+
+            args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
+
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
+pub(crate) fn fix_kapi_startup_monitor_pod_yaml(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let pod_yaml = pod_yaml.to_string();
+    let pattern = format!(r"--node-name={}", original_hostname);
+    let replacement = format!(r"--node-name={}", hostname);
+    Ok(pod_yaml.replace(&pattern, &replacement))
+}
