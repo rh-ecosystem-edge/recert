@@ -129,6 +129,42 @@ pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: 
     Ok(cluster_backup.replace(&pattern, &replacement))
 }
 
+pub(crate) fn fix_etcd_env(etcd_env: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let mut etcd_env = etcd_env.to_string();
+    let patterns = [
+        (r#"NODE_{original_hostname_safe}_IP"#, r#"NODE_{hostname_safe}_IP"#),
+        (
+            r#"NODE_{original_hostname_safe}_ETCD_NAME="{original_hostname}""#,
+            r#"NODE_{hostname_safe}_ETCD_NAME="{hostname}""#,
+        ),
+        (
+            r#"NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"NODE_{hostname_safe}_ETCD_URL_HOST"#,
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
+        ),
+    ];
+    for (pattern, replacement) in patterns {
+        let pattern = pattern
+            .replace("{original_hostname}", original_hostname)
+            .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+
+        let replacement = replacement
+            .replace("{hostname}", hostname)
+            .replace("{hostname_safe}", &env_var_safe(hostname));
+
+        etcd_env = etcd_env.replace(&pattern, &replacement).to_string();
+    }
+
+    Ok(etcd_env)
+}
+
 pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
     let is_kubelet_kubeconfig = kubeconfig
         .pointer_mut("/contexts")
