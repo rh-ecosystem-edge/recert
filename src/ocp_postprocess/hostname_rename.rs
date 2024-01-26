@@ -48,7 +48,11 @@ async fn fix_dir_resources(original_hostname: &str, hostname: &str, dir: &Path) 
 
     filesystem_rename::fix_filesystem_etcd_scripts_cluster_backup_sh(original_hostname, hostname, dir)
         .await
-        .context("fixing etcd certs clsuter-backup.sh")?;
+        .context("fixing etcd scripts cluster-backup.sh")?;
+
+    filesystem_rename::fix_filesystem_etcd_scripts_etcd_env(original_hostname, hostname, dir)
+        .await
+        .context("fixing etcd scripts etcd.env")?;
 
     filesystem_rename::fix_filesystem_kapi_startup_monitor_pod(hostname, dir)
         .await

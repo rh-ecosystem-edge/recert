@@ -110,6 +110,37 @@ pub(crate) async fn fix_filesystem_etcd_scripts_cluster_backup_sh(original_hostn
     Ok(())
 }
 
+pub(crate) async fn fix_filesystem_etcd_scripts_etcd_env(original_hostname: &str, hostname: &str, dir: &Path) -> Result<()> {
+    join_all(file_utils::globvec(dir, "**/etcd-scripts/etcd.env")?.into_iter().map(|file_path| {
+        let etcd_env_path = file_path.clone();
+        let original_hostname = original_hostname.to_string();
+        let hostname = hostname.to_string();
+        tokio::spawn(async move {
+            async move {
+                let contents = read_file_to_string(&file_path).await.context("reading etcd.env")?;
+
+                commit_file(
+                    file_path,
+                    rename_utils::fix_etcd_env(&contents, &original_hostname, &hostname).context("fixing etcd.env")?,
+                )
+                .await
+                .context("writing etcd.env to disk")?;
+
+                anyhow::Ok(())
+            }
+            .await
+            .context(format!("fixing etcd.env {:?}", etcd_env_path))
+        })
+    }))
+    .await
+    .into_iter()
+    .collect::<core::result::Result<Vec<_>, _>>()?
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
 pub(crate) async fn fix_filesystem_kapi_startup_monitor_pod(hostname: &str, dir: &Path) -> Result<()> {
     join_all(
         file_utils::globvec(dir, "**/kube-apiserver-startup-monitor-pod.yaml")?
