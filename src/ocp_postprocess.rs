@@ -17,11 +17,13 @@ use std::{collections::HashSet, sync::Arc};
 
 pub(crate) mod cluster_domain_rename;
 mod fnv;
+pub(crate) mod hostname_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,
+    hostname: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
@@ -45,6 +47,12 @@ pub(crate) async fn ocp_postprocess(
         cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs, static_files)
             .await
             .context("renaming cluster")?;
+    }
+
+    if let Some(hostname) = hostname {
+        hostname_rename(in_memory_etcd_client, hostname, static_dirs, static_files)
+            .await
+            .context("renaming hostname")?;
     }
 
     fix_deployment_dep_annotations(
@@ -352,6 +360,21 @@ pub(crate) async fn cluster_rename(
     }
 
     cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn hostname_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    hostname: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    hostname_rename::rename_all(etcd_client, hostname, static_dirs, static_files)
         .await
         .context("renaming all")?;
 

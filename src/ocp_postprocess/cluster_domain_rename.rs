@@ -6,7 +6,7 @@ use std::{path::Path, sync::Arc};
 mod etcd_rename;
 mod filesystem_rename;
 pub(crate) mod params;
-mod rename_utils;
+pub(crate) mod rename_utils;
 
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,

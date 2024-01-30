@@ -61,6 +61,7 @@ pub(crate) async fn run(
         Arc::clone(&in_memory_etcd_client),
         cluster_crypto,
         &parsed_cli.cluster_rename,
+        &parsed_cli.hostname,
         &parsed_cli.static_dirs,
         &parsed_cli.static_files,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
@@ -117,10 +118,12 @@ async fn recertify(
     Ok((rsa_key_pool_and_scanning_run_time, processing_run_time))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     cluster_rename: &Option<ClusterRenameParameters>,
+    hostname: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
     regenerate_server_ssh_keys: Option<&Path>,
@@ -136,7 +139,7 @@ async fn finalize(
 
     let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
-        ocp_postprocess(&in_memory_etcd_client, cluster_rename, static_dirs, static_files)
+        ocp_postprocess(&in_memory_etcd_client, cluster_rename, hostname, static_dirs, static_files)
             .await
             .context("performing ocp specific post-processing")?;
     }

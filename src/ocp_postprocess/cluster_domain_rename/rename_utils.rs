@@ -122,6 +122,49 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
     Ok(())
 }
 
+pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let cluster_backup = cluster_backup_sh.to_string();
+    let pattern = format!(r"NODE_{original_hostname}_IP");
+    let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
+    Ok(cluster_backup.replace(&pattern, &replacement))
+}
+
+pub(crate) fn fix_etcd_env(etcd_env: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let mut etcd_env = etcd_env.to_string();
+    let patterns = [
+        (r#"NODE_{original_hostname_safe}_IP"#, r#"NODE_{hostname_safe}_IP"#),
+        (
+            r#"NODE_{original_hostname_safe}_ETCD_NAME="{original_hostname}""#,
+            r#"NODE_{hostname_safe}_ETCD_NAME="{hostname}""#,
+        ),
+        (
+            r#"NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"NODE_{hostname_safe}_ETCD_URL_HOST"#,
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
+        ),
+    ];
+    for (pattern, replacement) in patterns {
+        let pattern = pattern
+            .replace("{original_hostname}", original_hostname)
+            .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+
+        let replacement = replacement
+            .replace("{hostname}", hostname)
+            .replace("{hostname_safe}", &env_var_safe(hostname));
+
+        etcd_env = etcd_env.replace(&pattern, &replacement).to_string();
+    }
+
+    Ok(etcd_env)
+}
+
 pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kubeconfig: &mut Value) -> Result<()> {
     let is_kubelet_kubeconfig = kubeconfig
         .pointer_mut("/contexts")
@@ -279,6 +322,273 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
     Ok(())
 }
 
+// Mimics https://github.com/openshift/cluster-etcd-operator/blob/5973046e2d216b290740cf64a071a272bbf83aea/pkg/etcdenvvar/etcd_env.go#L244-L246
+pub(crate) fn env_var_safe(node_name: &str) -> String {
+    node_name.replace(['-', '.'], "_")
+}
+
+pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let mut pod_yaml = pod_yaml.to_string();
+
+    // TODO: The "value:" replacement below is risky - if the hostname is "existing",
+    // or "REVISION", or "true" this will wreak havoc because these appear in the
+    // pod.yaml as values. Unlikely but crash if we see these values for now.
+    ensure!(
+        ["existing", "REVISION", "true"]
+            .iter()
+            .all(|invalid_hostname| invalid_hostname != &original_hostname),
+        "{} hostname is unsupported at the moment, please use a different seed hostname",
+        original_hostname
+    );
+
+    let patterns = [
+        (
+            r#"- name: "NODE_{original_hostname_safe}_ETCD_NAME"#,
+            r#"- name: "NODE_{hostname_safe}_ETCD_NAME"#,
+        ),
+        (r#"value: "{original_hostname}""#, r#"value: "{hostname}""#),
+        (
+            r#"- name: "NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"- name: "NODE_{hostname_safe}_ETCD_URL_HOST"#,
+        ),
+        (
+            r#"- name: "NODE_{original_hostname_safe}_IP"#,
+            r#"- name: "NODE_{hostname_safe}_IP"#,
+        ),
+        (
+            r#"${NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
+            r#"${NODE_{hostname_safe}_ETCD_URL_HOST"#,
+        ),
+        (
+            r#"${NODE_{original_hostname_safe}_ETCD_NAME"#,
+            r#"${NODE_{hostname_safe}_ETCD_NAME""#,
+        ),
+        ("${NODE_{original_hostname_safe}_IP", "${NODE_{hostname_safe}_IP"),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
+        ),
+        ("--target-name={original_hostname}", "--target-name={hostname}"),
+    ];
+
+    for (pattern, replacement) in patterns {
+        let pattern = pattern
+            .replace("{original_hostname}", original_hostname)
+            .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+
+        let replacement = replacement
+            .replace("{hostname}", hostname)
+            .replace("{hostname_safe}", &env_var_safe(hostname));
+
+        pod_yaml = pod_yaml.replace(&pattern, &replacement).to_string();
+    }
+
+    Ok(pod_yaml)
+}
+
+pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
+    {
+        let init_containers = &mut pod
+            .pointer_mut("/spec/initContainers")
+            .context("initContainers not found")?
+            .as_array_mut()
+            .context("initContainers not an object")?;
+
+        ensure!(!init_containers.is_empty(), "expected at least one init container in pod.yaml");
+
+        init_containers
+            .iter_mut()
+            .try_for_each(|container| fix_etcd_static_pod_container(container, original_hostname, hostname))?;
+    }
+
+    {
+        let containers = &mut pod
+            .pointer_mut("/spec/containers")
+            .context("containers not found")?
+            .as_array_mut()
+            .context("containers not an object")?;
+
+        ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+
+        containers
+            .iter_mut()
+            .try_for_each(|container| {
+                fix_etcd_static_pod_container(container, original_hostname, hostname)
+                    .context(format!("fixing container {}", container.get("name").unwrap_or(&Value::Null)))
+            })
+            .context("fixing etcd static pod container")?;
+    }
+
+    Ok(())
+}
+
+fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
+    'hostname_args_replace: {
+        let args = container
+            .pointer_mut("/command")
+            .context("command not found")?
+            .as_array_mut()
+            .context("command not an array")?;
+
+        ensure!(!args.is_empty(), "expected at least one arg in etcd static pod container");
+
+        let shell_arg = args
+            .iter_mut()
+            .find_map(|arg| arg.as_str()?.starts_with("#!/bin/sh\n").then_some(arg));
+
+        let shell_arg = match shell_arg {
+            None => break 'hostname_args_replace,
+            Some(shell_arg) => shell_arg,
+        };
+
+        for (pattern, replacement) in [
+            ("NODE_{original_hostname_safe}_ETCD_URL_HOST", "NODE_{hostname_safe}_ETCD_URL_HOST"),
+            ("NODE_{original_hostname_safe}_ETCD_NAME", "NODE_{hostname_safe}_ETCD_NAME"),
+            ("NODE_{original_hostname_safe}_IP", "NODE_{hostname_safe}_IP"),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
+            ),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
+            ),
+            ("--target-name={original_hostname}", "--target-name={hostname}"),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
+            ),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
+            ),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
+            ),
+            (
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
+                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
+            ),
+        ] {
+            let pattern = pattern
+                .replace("{original_hostname}", original_hostname)
+                .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+
+            let replacement = replacement
+                .replace("{hostname}", hostname)
+                .replace("{hostname_safe}", &env_var_safe(hostname));
+
+            *shell_arg = serde_json::Value::String(
+                shell_arg
+                    .as_str()
+                    .context("arg not string")?
+                    .replace(&pattern, &replacement)
+                    .to_string(),
+            );
+        }
+    }
+
+    'hostname_env_replace: {
+        let maybe_env = container.pointer_mut("/env");
+
+        let envs = match maybe_env {
+            Some(env) => env.as_array_mut().context("env not an array")?,
+            None => break 'hostname_env_replace,
+        };
+
+        ensure!(!envs.is_empty(), "expected at least one env in etcd static pod container");
+
+        for (key, new_name, new_value) in [
+            (
+                "ETCDCTL_CERT",
+                None,
+                Some(format!("/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt").as_str()),
+            ),
+            (
+                "ETCDCTL_KEY",
+                None,
+                Some(format!("/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key").as_str()),
+            ),
+            (
+                "ETCDCTL_KEY_FILE",
+                None,
+                Some(format!("/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key").as_str()),
+            ),
+            (
+                format!("NODE_{}_ETCD_NAME", &env_var_safe(original_hostname)).as_str(),
+                Some(format!("NODE_{}_ETCD_NAME", &env_var_safe(hostname)).as_str()),
+                Some(hostname),
+            ),
+            (
+                format!("NODE_{}_ETCD_URL_HOST", &env_var_safe(original_hostname)).as_str(),
+                Some(format!("NODE_{}_ETCD_URL_HOST", &env_var_safe(hostname)).as_str()),
+                None,
+            ),
+            (
+                format!("NODE_{}_IP", &env_var_safe(original_hostname)).as_str(),
+                Some(format!("NODE_{}_IP", &env_var_safe(hostname)).as_str()),
+                None,
+            ),
+        ] {
+            adjust_env(envs, key, new_name, new_value).context(format!("adjusting env var {}", key))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn adjust_env(envs: &mut [Value], env_name: &str, new_name: Option<&str>, new_value: Option<&str>) -> Result<()> {
+    let found_env = envs
+        .iter_mut()
+        .find_map(|env| (env.as_object()?.get("name") == Some(&Value::String(env_name.to_string()))).then_some(env));
+
+    match found_env {
+        None => Ok(()),
+        Some(env) => {
+            match new_name {
+                None => {}
+                Some(new_name) => {
+                    env.as_object_mut()
+                        .context("env var not an object")?
+                        .insert("name".to_string(), serde_json::Value::String(new_name.to_string()));
+                }
+            };
+
+            match new_value {
+                None => {}
+                Some(new_value) => {
+                    env.as_object_mut()
+                        .context("env var not an object")?
+                        .insert("value".to_string(), serde_json::Value::String(new_value.to_string()));
+                }
+            };
+
+            Ok(())
+        }
+    }
+}
+
 pub(crate) fn fix_pod_container_env(pod: &mut Value, domain: &str, container_name: &str, env_name: &str, init: bool) -> Result<()> {
     let containers = &mut pod
         .pointer_mut(&format!("/spec/{}", if init { "initContainers" } else { "containers" }))
@@ -403,4 +713,48 @@ pub(crate) fn fix_machineconfig(machineconfig: &mut Value, cluster_domain: &str)
     file_contents.insert("source".to_string(), serde_json::Value::String(file_utils::dataurl_encode(&new)));
 
     Ok(())
+}
+
+pub(crate) fn fix_kapi_startup_monitor_pod_container_args(pod: &mut Value, hostname: &str) -> Result<()> {
+    let containers = &mut pod
+        .pointer_mut("/spec/containers")
+        .context("containers not found")?
+        .as_array_mut()
+        .context("containers not an object")?;
+
+    if containers.is_empty() {
+        bail!("expected at least one container in pod.yaml");
+    }
+
+    containers
+        .iter_mut()
+        .filter(|container| container["name"] == "startup-monitor")
+        .try_for_each(|container| {
+            let args = container
+                .pointer_mut("/args")
+                .context("args not found")?
+                .as_array_mut()
+                .context("args not an array")?;
+
+            ensure!(!args.is_empty(), "expected at least one arg in container");
+
+            let arg_idx = args
+                .iter_mut()
+                .enumerate()
+                .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
+                .context("--node-name not found")?;
+
+            args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
+
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
+pub(crate) fn fix_kapi_startup_monitor_pod_yaml(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let pod_yaml = pod_yaml.to_string();
+    let pattern = format!(r"--node-name={}", original_hostname);
+    let replacement = format!(r"--node-name={}", hostname);
+    Ok(pod_yaml.replace(&pattern, &replacement))
 }
