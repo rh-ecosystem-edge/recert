@@ -40,6 +40,19 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) hostname: Option<String>,
 
+    /// Modify the OCP kubeadmin password secret hash. If given but empty, the kubeadmin password
+    /// secret will be deleted (thus disabling password login). If given and non-empty, the secret
+    /// will be updated with the given password hash, unless no existing kubeadmin secret resource
+    /// is found, in that case it will cause an error, as creating an entire secret is beyond the
+    /// scope of this tool. The hash's validaity will not be checked.
+    ///
+    // NOTE: This functionality is part of recert because it's important to change the seed's
+    // kubeadmin password before the cluster API server is started, otherwise the API server will
+    // start with a possibly compromised seed password, which is undesirable even if for a very
+    // short time. Recert is already modifying secrets in etcd, so might as well do this here too.
+    #[clap(long)]
+    pub(crate) kubeadmin_password_hash: Option<String>,
+
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For

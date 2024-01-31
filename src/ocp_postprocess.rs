@@ -24,6 +24,7 @@ pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,
     hostname: &Option<String>,
+    kubeadmin_password_hash: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
@@ -55,6 +56,13 @@ pub(crate) async fn ocp_postprocess(
             .context("renaming hostname")?;
     }
 
+    if let Some(kubeadmin_password_hash) = kubeadmin_password_hash {
+        log::info!("setting kubeadmin password hash");
+        set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
+            .await
+            .context("setting kubeadmin password hash")?;
+    }
+
     fix_deployment_dep_annotations(
         in_memory_etcd_client,
         K8sResourceLocation::new(Some("openshift-apiserver"), "Deployment", "apiserver", "v1"),
@@ -70,6 +78,49 @@ pub(crate) async fn ocp_postprocess(
     .context("fixing dep annotations for openshift-oauth-apiserver")?;
 
     Ok(())
+}
+
+async fn set_kubeadmin_password_hash(in_memory_etcd_client: &InMemoryK8sEtcd, kubeadmin_password_hash: &str) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    let k8s_resource_location = &K8sResourceLocation::new(Some("kube-system"), "Secret", "kubeadmin", "v1");
+
+    let key = k8s_resource_location.as_etcd_key();
+
+    match kubeadmin_password_hash.is_empty() {
+        true => {
+            log::info!("deleting kubeadmin password secret as requested");
+            etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+            Ok(())
+        }
+        false => {
+            log::info!("setting kubeadmin password hash");
+            let mut secret = get_etcd_json(etcd_client, k8s_resource_location)
+                .await?
+                .context(format!("couldn't find {}", k8s_resource_location))?;
+
+            let data = secret
+                .pointer_mut("/data")
+                .context("no .data")?
+                .as_object_mut()
+                .context("data not an object")?;
+
+            data.insert(
+                "kubeadmin".to_string(),
+                serde_json::Value::Array(
+                    kubeadmin_password_hash
+                        .as_bytes()
+                        .iter()
+                        .map(|byte| serde_json::Value::Number(serde_json::Number::from(*byte)))
+                        .collect(),
+                ),
+            );
+
+            put_etcd_yaml(etcd_client, k8s_resource_location, dbg!(secret)).await?;
+
+            Ok(())
+        }
+    }
 }
 
 /// The OLM packageserver operator requires that its secret's olmcahash sha256 hash annotation be
