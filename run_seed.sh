@@ -40,6 +40,8 @@ tar -C backup/var_orig -xzf backup/var.tgz var --strip-components=1
 podman kill editor >/dev/null || true
 podman rm editor >/dev/null || true
 
+PATH=$PATH:$(go env GOPATH)/bin
+
 pushd ouger && go install cmd/server/ouger_server.go && popd
 pushd ouger && go install cmd/ouger/ouger.go && popd
 
@@ -54,7 +56,7 @@ podman run --network=host --name editor \
 	"${ETCD_IMAGE}" --name editor --data-dir /store
 
 until curl -s localhost:2379/health | jq -e '.health == "true"' >/dev/null; do
-    sleep 1
+	sleep 1
 done
 
 sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && sudo -u $USER env PATH=$PATH \
