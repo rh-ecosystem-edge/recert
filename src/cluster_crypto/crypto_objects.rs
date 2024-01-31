@@ -1,8 +1,10 @@
 use super::{
     certificate::{self, Certificate},
+    json_crawl::Hint,
     jwt,
     keys::{PrivateKey, PublicKey},
     locations::Location,
+    symmetric_key::SymmetricKey,
 };
 use crate::rules;
 use anyhow::{bail, Context, Result};
@@ -21,6 +23,7 @@ pub(crate) enum CryptoObject {
     PublicKey(PublicKey),
     Certificate(Certificate),
     Jwt(jwt::Jwt),
+    SymmetricKey(SymmetricKey),
 }
 
 impl From<(PrivateKey, PublicKey)> for CryptoObject {
@@ -48,6 +51,12 @@ impl From<jwt::Jwt> for CryptoObject {
     }
 }
 
+impl From<SymmetricKey> for CryptoObject {
+    fn from(key: SymmetricKey) -> Self {
+        CryptoObject::SymmetricKey(key)
+    }
+}
+
 pub(crate) struct DiscoveredCryptoObect {
     pub(crate) crypto_object: CryptoObject,
     pub(crate) location: Location,
@@ -59,10 +68,37 @@ impl DiscoveredCryptoObect {
     }
 }
 
-/// Given a value taken from a YAML field or the entire contents of a file, scan it for
-/// cryptographic keys and certificates and record them in the appropriate data structures.
-pub(crate) fn process_unknown_value(value: String, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
-    let pem_bundle_objects = process_pem_bundle(&value, location).context("processing pem bundle");
+pub(crate) fn process_unknown_value(value: Bytes, location: &Location, hint: Hint) -> Result<Vec<DiscoveredCryptoObect>> {
+    let crypto_objects_when_processed_as_string = match String::from_utf8(value.clone().to_vec()) {
+        Ok(string) => process_unknown_string(&string, location).context("processing as string")?,
+        _ => vec![],
+    };
+
+    match crypto_objects_when_processed_as_string.len() {
+        0 => (),
+        _ => return Ok(crypto_objects_when_processed_as_string),
+    };
+
+    let crypto_objects_when_processed_as_binary = process_unknown_binary(value, location, hint)?;
+
+    Ok(crypto_objects_when_processed_as_binary)
+}
+
+fn process_unknown_binary(value: Bytes, location: &Location, hint: Hint) -> Result<Vec<DiscoveredCryptoObect>> {
+    match hint {
+        Hint::SymmetricKey => (),
+        _ => return Ok(vec![]),
+    }
+
+    Ok(if let Some(symmetric_key) = process_symmetric_key(&value, location)? {
+        vec![symmetric_key]
+    } else {
+        vec![]
+    })
+}
+
+fn process_unknown_string(value: &str, location: &Location) -> Result<Vec<DiscoveredCryptoObect>> {
+    let pem_bundle_objects = process_pem_bundle(value, location).context("processing pem bundle");
 
     // We intentionally ignore errors from processing PEM bundles because that function easily
     // trips up from values that kinda look like PEM (e.g. a serialized install config yaml
@@ -78,11 +114,23 @@ pub(crate) fn process_unknown_value(value: String, location: &Location) -> Resul
     };
 
     // If we didn't find any PEM objects, try to process the value as a JWT
-    if let Some(jwt) = process_jwt(&value, location)? {
+    if let Some(jwt) = process_jwt(value, location)? {
         Ok(vec![jwt])
     } else {
         Ok(vec![])
     }
+}
+
+pub(crate) fn process_symmetric_key(value: &Bytes, location: &Location) -> Result<Option<DiscoveredCryptoObect>> {
+    // For now we only consider sequences of 32 bytes to be symmetric keys
+    if value.len() != 32 {
+        return Ok(None);
+    }
+
+    Ok(Some(DiscoveredCryptoObect::new(
+        CryptoObject::from(SymmetricKey::new(value.clone())),
+        location.with_symmetric_key()?,
+    )))
 }
 
 /// Given a value taken from a YAML field, check if it looks like a JWT and record it in the
@@ -109,11 +157,10 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Result<Option<Dis
         return Ok(None);
     }
 
-    let jwt = jwt::Jwt { str: value.to_string() };
-
-    let location = location.with_jwt()?;
-
-    Ok(Some(DiscoveredCryptoObect::new(jwt.into(), location)))
+    Ok(Some(DiscoveredCryptoObect::new(
+        jwt::Jwt::new(value.to_string()).into(),
+        location.with_jwt()?,
+    )))
 }
 
 /// Given a PEM bundle, scan it for cryptographic keys and certificates and record them in the

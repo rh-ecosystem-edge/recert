@@ -3,7 +3,11 @@ use crate::cluster_crypto::{
     pem_utils,
 };
 use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as base64_standard, STANDARD_NO_PAD as base64_standard_no_pad},
+    Engine as _,
+};
+use bytes::Bytes;
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
@@ -41,9 +45,16 @@ pub(crate) fn globvec(location: &Path, globstr: &str) -> Result<Vec<PathBuf>> {
 
 pub(crate) async fn read_file_to_string(file_path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(file_path).await?;
-    let mut contents = String::new();
+    let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
     file.read_to_string(&mut contents).await.context("failed to read file")?;
     Ok(contents)
+}
+
+pub(crate) async fn read_file_raw(file_path: &Path) -> Result<Bytes> {
+    let mut file = tokio::fs::File::open(file_path).await?;
+    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
+    file.read_to_end(&mut contents).await.context("failed to read file")?;
+    Ok(Bytes::from(contents))
 }
 
 pub(crate) async fn get_filesystem_yaml(file_location: &FileLocation) -> Result<Value> {
@@ -70,7 +81,8 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
                 pem_location_info.pem_bundle_index,
                 new_pem,
             )?;
-            let encoded = encode_resource_data_entry(yaml_location, &newbundle);
+            let encoded = encode_resource_data_entry(yaml_location, Bytes::copy_from_slice(newbundle.as_bytes()))
+                .context("encoding resource data entry")?;
 
             if let Value::String(value_at_json_pointer) = value_at_json_pointer {
                 *value_at_json_pointer = encoded.as_str().context("encoded value not string")?.to_string();
@@ -122,19 +134,20 @@ pub(crate) fn dataurl_encode(data: &str) -> String {
     format!("data:,{}", dataurl_escape(data))
 }
 
-pub(crate) fn encode_resource_data_entry(k8slocation: &JsonLocation, value: &String) -> Value {
-    match k8slocation.encoding {
-        crate::cluster_crypto::locations::FieldEncoding::None => Value::String(value.clone()),
-        crate::cluster_crypto::locations::FieldEncoding::Base64 => Value::String(base64_standard.encode(value.as_bytes())),
-        crate::cluster_crypto::locations::FieldEncoding::DataUrl => Value::String(dataurl_encode(value)),
-        crate::cluster_crypto::locations::FieldEncoding::ByteArray => Value::Array(
-            value
-                .as_bytes()
-                .iter()
-                .map(|byte| Value::Number(serde_json::Number::from(*byte)))
-                .collect(),
-        ),
-    }
+pub(crate) fn encode_resource_data_entry(k8slocation: &JsonLocation, value: Bytes) -> Result<Value> {
+    Ok(match k8slocation.encoding {
+        crate::cluster_crypto::locations::FieldEncoding::None => {
+            Value::String(String::from_utf8(value.to_vec()).context("decoding utf-8 for none")?)
+        }
+        crate::cluster_crypto::locations::FieldEncoding::Base64 => Value::String(base64_standard.encode(value)),
+        crate::cluster_crypto::locations::FieldEncoding::DataUrl => Value::String(dataurl_encode(
+            String::from_utf8(value.to_vec()).context("decoding utf-8 for dataurl")?.as_str(),
+        )),
+        crate::cluster_crypto::locations::FieldEncoding::ByteArray => {
+            Value::Array(value.iter().map(|byte| Value::Number(serde_json::Number::from(*byte))).collect())
+        }
+        crate::cluster_crypto::locations::FieldEncoding::Base64NoPadding => Value::String(base64_standard_no_pad.encode(value)),
+    })
 }
 
 pub(crate) fn decode_resource_data_entry(yaml_location: &JsonLocation, value_at_json_pointer: &Value) -> Result<String> {
@@ -163,6 +176,9 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &JsonLocation, value_at_
             .into_iter()
             .map(|byte| byte as char)
             .collect::<String>(),
+        crate::cluster_crypto::locations::FieldEncoding::Base64NoPadding => {
+            String::from_utf8(base64_standard_no_pad.decode(value_at_json_pointer.as_str().context("value no longer string")?.as_bytes())?)?
+        }
     }
     .clone())
 }

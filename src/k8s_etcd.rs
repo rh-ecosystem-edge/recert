@@ -141,16 +141,27 @@ impl InMemoryK8sEtcd {
         self.edited.lock().await.insert(key.to_string(), value);
     }
 
-    pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
+    pub(crate) async fn list_kubernetes_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
+        let prefix = "kubernetes.io";
+        self.list_keys(prefix, resource_kind).await
+    }
+
+    pub(crate) async fn list_openshift_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
+        let prefix = "openshift.io";
+        self.list_keys(prefix, resource_kind).await
+    }
+
+    async fn list_keys(&self, prefix: &str, resource_kind: &str) -> std::result::Result<Vec<String>, anyhow::Error> {
         let etcd_client = match &self.etcd_client {
             Some(etcd_client) => etcd_client,
             None => return Ok(vec![]),
         };
 
         let etcd_get_options = GetOptions::new().with_prefix().with_limit(0).with_keys_only();
+
         let keys = etcd_client
             .kv_client()
-            .get(format!("/kubernetes.io/{}", resource_kind), Some(etcd_get_options.clone()))
+            .get(format!("/{}/{}", prefix, resource_kind), Some(etcd_get_options.clone()))
             .await?;
 
         keys.kvs()

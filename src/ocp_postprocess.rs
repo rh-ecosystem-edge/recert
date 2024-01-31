@@ -308,7 +308,7 @@ pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMe
 pub(crate) async fn delete_all(etcd_client: &Arc<InMemoryK8sEtcd>, resource_etcd_key_prefix: &str) -> Result<()> {
     join_all(
         etcd_client
-            .list_keys(resource_etcd_key_prefix)
+            .list_kubernetes_keys(resource_etcd_key_prefix)
             .await?
             .into_iter()
             .map(|key| async move {

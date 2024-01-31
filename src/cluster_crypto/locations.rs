@@ -265,14 +265,13 @@ impl Location {
             }
             Self::Filesystem(file_location) => match &file_location.content_location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
-                    LocationValueType::Pem(_) => bail!("already has PEM info"),
-                    LocationValueType::Jwt => bail!("already has jwt info"),
                     LocationValueType::YetUnknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location =
                             FileContentLocation::Raw(LocationValueType::Pem(PemLocationInfo::new(pem_bundle_index)));
                         Self::Filesystem(new_file_location)
                     }
+                    _ => bail!("can only add PEM info to unknown value type"),
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let mut new_yaml_location = yaml_location.clone();
@@ -294,17 +293,43 @@ impl Location {
             }
             Self::Filesystem(file_location) => match &file_location.content_location {
                 FileContentLocation::Raw(location_value_type) => match location_value_type {
-                    LocationValueType::Pem(_) => bail!("already has PEM info"),
-                    LocationValueType::Jwt => bail!("already has jwt info"),
                     LocationValueType::YetUnknown => {
                         let mut new_file_location = file_location.clone();
                         new_file_location.content_location = FileContentLocation::Raw(LocationValueType::Jwt);
                         Self::Filesystem(new_file_location)
                     }
+                    _ => bail!("can only add JWT info to unknown value type"),
                 },
                 FileContentLocation::Yaml(yaml_location) => {
                     let mut new_yaml_location = yaml_location.clone();
                     new_yaml_location.value = LocationValueType::Jwt;
+                    let mut new_file_location = file_location.clone();
+                    new_file_location.content_location = FileContentLocation::Yaml(new_yaml_location);
+                    Self::Filesystem(new_file_location)
+                }
+            },
+        })
+    }
+
+    pub(crate) fn with_symmetric_key(&self) -> Result<Self> {
+        Ok(match self {
+            Self::K8s(k8s_location) => {
+                let mut new_k8s_location = k8s_location.clone();
+                new_k8s_location.yaml_location.value = LocationValueType::SymmetricKey;
+                Self::K8s(new_k8s_location)
+            }
+            Self::Filesystem(file_location) => match &file_location.content_location {
+                FileContentLocation::Raw(location_value_type) => match location_value_type {
+                    LocationValueType::YetUnknown => {
+                        let mut new_file_location = file_location.clone();
+                        new_file_location.content_location = FileContentLocation::Raw(LocationValueType::SymmetricKey);
+                        Self::Filesystem(new_file_location)
+                    }
+                    _ => bail!("can only add symmetric key info to unknown value type"),
+                },
+                FileContentLocation::Yaml(yaml_location) => {
+                    let mut new_yaml_location = yaml_location.clone();
+                    new_yaml_location.value = LocationValueType::SymmetricKey;
                     let mut new_file_location = file_location.clone();
                     new_file_location.content_location = FileContentLocation::Yaml(new_yaml_location);
                     Self::Filesystem(new_file_location)
@@ -377,6 +402,7 @@ impl std::fmt::Display for FileContentLocation {
 pub(crate) enum LocationValueType {
     Pem(PemLocationInfo),
     Jwt,
+    SymmetricKey,
     YetUnknown,
 }
 
@@ -385,7 +411,8 @@ impl std::fmt::Display for LocationValueType {
         match self {
             LocationValueType::Pem(pem_location_info) => write!(f, "{}", pem_location_info),
             LocationValueType::Jwt => write!(f, "jwt"),
-            LocationValueType::YetUnknown => write!(f, "unknown"),
+            LocationValueType::YetUnknown => write!(f, "yet unknown"),
+            LocationValueType::SymmetricKey => write!(f, "symmetric key"),
         }
     }
 }
@@ -394,6 +421,7 @@ impl std::fmt::Display for LocationValueType {
 pub(crate) enum FieldEncoding {
     None,
     Base64,
+    Base64NoPadding,
     ByteArray,
     DataUrl,
 }
@@ -405,6 +433,7 @@ impl Display for FieldEncoding {
             FieldEncoding::Base64 => write!(f, "encoded as base64"),
             FieldEncoding::DataUrl => write!(f, "encoded as a dataurl"),
             FieldEncoding::ByteArray => write!(f, "encoded as a byte array"),
+            FieldEncoding::Base64NoPadding => write!(f, "encoded as base64 without padding"),
         }
     }
 }
