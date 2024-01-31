@@ -66,7 +66,8 @@ sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && su
 # Only use config if WITH_CONFIG is set
 if [[ -n "$WITH_CONFIG" ]]; then
 	echo "Using config"
-	RECERT_CONFIG=<(echo "
+	# shellcheck disable=2016
+	RECERT_CONFIG=<(echo '
 dry_run: false
 etcd_endpoint: localhost:2379
 static_dirs:
@@ -78,7 +79,7 @@ static_files:
 cn_san_replace_rules:
 - api-int.seed.redhat.com:api-int.new-name.foo.com
 - api.seed.redhat.com:api.new-name.foo.com
-- '*.apps.seed.redhat.com:*.apps.new-name.foo.com'
+- "*.apps.seed.redhat.com:*.apps.new-name.foo.com"
 - 192.168.126.10:192.168.127.11
 use_cert_rules:
 - |
@@ -101,13 +102,15 @@ use_cert_rules:
     -----END CERTIFICATE-----
 cluster_rename: new-name:foo.com:some-random-infra-id
 hostname: test.hostname
+kubeadmin_password_hash: "$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi"
 summary_file: summary.yaml
 summary_file_clean: summary_redacted.yaml
 extend_expiration: true
 force_expire: false
 threads: 1
-") cargo run --release
+') cargo run --release
 else
+	# shellcheck disable=2016
 	cargo run --release -- \
 		--etcd-endpoint localhost:2379 \
 		--static-dir backup/etc/kubernetes \
@@ -120,6 +123,7 @@ else
 		--cn-san-replace 192.168.126.10:192.168.127.11 \
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
+		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \
 		--extend-expiration
