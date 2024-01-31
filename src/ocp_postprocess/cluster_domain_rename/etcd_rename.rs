@@ -1046,11 +1046,8 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                     .context("compiling regex")?
                     .replace_all(kubeconfig, format!("$prefix.{cluster_domain}:$port").as_str());
 
-                data.insert(
-                    "kubeconfig".to_string(),
-                    serde_json::Value::String(serde_yaml::to_string(&kubeconfig).context("serializing kubeconfig")?),
-                )
-                .context("could not find original kubeconfig")?;
+                data.insert("kubeconfig".to_string(), serde_json::Value::String(kubeconfig.to_string()))
+                    .context("could not find original kubeconfig")?;
 
                 put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
 
