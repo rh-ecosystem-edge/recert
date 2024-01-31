@@ -1,4 +1,5 @@
 use super::certificate;
+use anyhow::ensure;
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcder::{encode::Values, Mode};
@@ -173,9 +174,9 @@ pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
     let pem_tag = parsed_pem.tag();
 
     match pem_tag {
-        "RSA PRIVATE KEY" => rsa_key_from_pkcs1_pem(pem),
+        "RSA PRIVATE KEY" => rsa_key_from_pkcs1_pem(pem).context("RSA key from PKCS#1"),
         "EC PRIVATE KEY" => bail!("loading non PKCS#8 EC private keys is not yet supported"),
-        "PRIVATE KEY" => key_from_pkcs8_pem(pem),
+        "PRIVATE KEY" => key_from_pkcs8_pem(pem).context("key from PKCS#8"),
         _ => bail!("unknown private key format"),
     }
 }
@@ -232,4 +233,42 @@ pub(crate) fn sha256(data: &[u8]) -> Result<Vec<u8>> {
         .context("writing to openssl dgst stdin")?;
 
     Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
+}
+
+pub(crate) fn ensure_openssl_version() -> Result<()> {
+    // run the openssl version command and check that it's at least 3.0.0
+    let openssl_version_output = std::process::Command::new("openssl")
+        .arg("version")
+        .output()
+        .context("running openssl version")?;
+
+    log::info!("using openssl: {}", String::from_utf8_lossy(&openssl_version_output.stdout));
+
+    ensure!(
+        openssl_version_output.status.success(),
+        "openssl version command failed: {}, do you have openssl installed?",
+        String::from_utf8_lossy(&openssl_version_output.stderr)
+    );
+
+    let output = &String::from_utf8(openssl_version_output.stdout).context("utf-8 output")?;
+
+    let openssl_version = output
+        .split_whitespace()
+        .nth(1)
+        .context("getting second word from openssl version output")?
+        .split('-')
+        .next()
+        .context("splitting openssl version output on '-'")?
+        .split('.')
+        .collect::<Vec<_>>();
+
+    ensure!(
+        openssl_version.len() == 3,
+        "parsing openssl version output: expected 3 components, got {}",
+        openssl_version.len()
+    );
+
+    ensure!(openssl_version[0] == "3", "incompatible openssl version, expected major 3");
+
+    Ok(())
 }

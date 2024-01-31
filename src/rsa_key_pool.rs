@@ -1,6 +1,6 @@
 use super::cluster_crypto::crypto_utils::{generate_rsa_key, generate_rsa_key_async};
 use crate::cluster_crypto::crypto_utils::SigningKey;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::future::join_all;
 
 pub struct RsaKeyPool {
@@ -13,7 +13,7 @@ impl RsaKeyPool {
         Ok(Self {
             keys_2048: join_all(
                 (0..num_keys_2048)
-                    .map(|_| tokio::spawn(async move { generate_rsa_key_async(2048).await }))
+                    .map(|_| tokio::spawn(async move { generate_rsa_key_async(2048).await.context("2048 bit RSA keys") }))
                     .collect::<Vec<_>>(),
             )
             .await
@@ -24,7 +24,7 @@ impl RsaKeyPool {
             // Also a few 4096 keys
             keys_4096: join_all(
                 (0..num_keys_4096)
-                    .map(|_| tokio::spawn(async move { generate_rsa_key_async(4096).await }))
+                    .map(|_| tokio::spawn(async move { generate_rsa_key_async(4096).await.context("4096 bit RSA keys") }))
                     .collect::<Vec<_>>(),
             )
             .await
