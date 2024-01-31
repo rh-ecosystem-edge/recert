@@ -1,5 +1,5 @@
 use crate::{
-    cluster_crypto::{scanning, ClusterCryptoObjects},
+    cluster_crypto::{crypto_utils::ensure_openssl_version, scanning, ClusterCryptoObjects},
     config::{ConfigPath, Customizations, RecertConfig},
     k8s_etcd::InMemoryK8sEtcd,
     ocp_postprocess::{cluster_domain_rename::params::ClusterRenameParameters, ocp_postprocess},
@@ -38,6 +38,8 @@ pub(crate) async fn run(
     parsed_cli: &RecertConfig,
     cluster_crypto: &mut ClusterCryptoObjects,
 ) -> std::result::Result<RunTimes, anyhow::Error> {
+    ensure_openssl_version().context("checking openssl version compatibility")?;
+
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &parsed_cli.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)
