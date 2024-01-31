@@ -53,8 +53,8 @@ podman run --network=host --name editor \
 	-v "$PWD/backup/var/lib/etcd:/store:rw,Z" \
 	"${ETCD_IMAGE}" --name editor --data-dir /store
 
-until etcdctl endpoint health; do
-	sleep 1
+until curl -s localhost:2379/health | jq -e '.health == "true"' >/dev/null; do
+    sleep 1
 done
 
 sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && sudo -u $USER env PATH=$PATH \
