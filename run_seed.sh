@@ -4,7 +4,7 @@ set -ex
 
 RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
-AUTH_FILE=${AUTH_FILE:-~/omer-ps}
+AUTH_FILE=${AUTH_FILE:-~/seed-pull-secret}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
@@ -12,6 +12,11 @@ cd "$SCRIPT_DIR"
 
 if [[ ! -f ouger/go.mod ]] || [[ ! -f etcddump/Cargo.toml ]]; then
 	echo "ouger or etcddump not found, please run git submodule update --init"
+	exit 1
+fi
+
+if [ ! -s "${AUTH_FILE}" ]; then
+	echo "auth file ${AUTH_FILE} is empty"
 	exit 1
 fi
 
@@ -35,6 +40,8 @@ tar -C backup/var_orig -xzf backup/var.tgz var --strip-components=1
 podman kill editor >/dev/null || true
 podman rm editor >/dev/null || true
 
+PATH=$PATH:$(go env GOPATH)/bin
+
 pushd ouger && go install cmd/server/ouger_server.go && popd
 pushd ouger && go install cmd/ouger/ouger.go && popd
 
@@ -48,7 +55,7 @@ podman run --network=host --name editor \
 	-v "$PWD/backup/var/lib/etcd:/store:rw,Z" \
 	"${ETCD_IMAGE}" --name editor --data-dir /store
 
-until etcdctl endpoint health; do
+until curl -s localhost:2379/health | jq -e '.health == "true"' >/dev/null; do
 	sleep 1
 done
 
@@ -59,7 +66,8 @@ sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && su
 # Only use config if WITH_CONFIG is set
 if [[ -n "$WITH_CONFIG" ]]; then
 	echo "Using config"
-	RECERT_CONFIG=<(echo "
+	# shellcheck disable=2016
+	RECERT_CONFIG=<(echo '
 dry_run: false
 etcd_endpoint: localhost:2379
 static_dirs:
@@ -71,7 +79,7 @@ static_files:
 cn_san_replace_rules:
 - api-int.seed.redhat.com:api-int.new-name.foo.com
 - api.seed.redhat.com:api.new-name.foo.com
-- '*.apps.seed.redhat.com:*.apps.new-name.foo.com'
+- "*.apps.seed.redhat.com:*.apps.new-name.foo.com"
 - 192.168.126.10:192.168.127.11
 use_cert_rules:
 - |
@@ -93,13 +101,16 @@ use_cert_rules:
     BgIejfD1dYW2Fp02z5sF6Pw6vhobpfDYgsTAKNonh5P6NxMiD14eQxYrNJ6DAF0=
     -----END CERTIFICATE-----
 cluster_rename: new-name:foo.com:some-random-infra-id
+hostname: test.hostname
+kubeadmin_password_hash: "$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi"
 summary_file: summary.yaml
 summary_file_clean: summary_redacted.yaml
 extend_expiration: true
 force_expire: false
 threads: 1
-") cargo run --release
+') cargo run --release
 else
+	# shellcheck disable=2016
 	cargo run --release -- \
 		--etcd-endpoint localhost:2379 \
 		--static-dir backup/etc/kubernetes \
@@ -111,6 +122,8 @@ else
 		--cn-san-replace *.apps.seed.redhat.com:*.apps.new-name.foo.com \
 		--cn-san-replace 192.168.126.10:192.168.127.11 \
 		--cluster-rename new-name:foo.com:some-random-infra-id \
+		--hostname test.hostname \
+		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \
 		--extend-expiration

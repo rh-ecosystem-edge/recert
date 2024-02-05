@@ -1,6 +1,5 @@
 use super::rename_utils::{
-    self, fix_api_server_arguments, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig, fix_oauth_metadata,
-    fix_pod_container_env,
+    self, fix_api_server_arguments, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_oauth_metadata, fix_pod_container_env,
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
@@ -1003,7 +1002,7 @@ pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id:
     Ok(())
 }
 
-pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str, cluster_name: &str) -> Result<()> {
+pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str, _cluster_name: &str) -> Result<()> {
     join_all(
         etcd_client
             .list_keys("configmaps/openshift-kube-controller-manager/controller-manager-kubeconfig")
@@ -1035,18 +1034,20 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                     .as_object_mut()
                     .context("data not an object")?;
 
-                let mut config: Value = serde_yaml::from_slice(data["kubeconfig"].as_str().context("kubeconfig not a string")?.as_bytes())
-                    .context("deserializing kubeconfig")?;
+                let kubeconfig = data["kubeconfig"].as_str().context("kubeconfig not a string")?;
 
-                fix_kubeconfig(cluster_name, cluster_domain, &mut config)
-                    .await
-                    .context(format!("fixing kubeconfig for {:?}", k8s_resource_location))?;
+                // We can't use this until https://github.com/openshift/cluster-kube-scheduler-operator/pull/523 is fixed
+                // fix_kubeconfig(_cluster_name, cluster_domain, &mut config)
+                //     .await
+                //     .context(format!("fixing kubeconfig for {:?}", k8s_resource_location))?;
 
-                data.insert(
-                    "kubeconfig".to_string(),
-                    serde_json::Value::String(serde_yaml::to_string(&config).context("serializing kubeconfig")?),
-                )
-                .context("could not find original kubeconfig")?;
+                // Do it manually for now
+                let kubeconfig = regex::Regex::new(r"(?P<prefix>server: https://api-int)\.(?P<cluster_domain>.+):(?P<port>\d+)")
+                    .context("compiling regex")?
+                    .replace_all(kubeconfig, format!("$prefix.{cluster_domain}:$port").as_str());
+
+                data.insert("kubeconfig".to_string(), serde_json::Value::String(kubeconfig.to_string()))
+                    .context("could not find original kubeconfig")?;
 
                 put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
 

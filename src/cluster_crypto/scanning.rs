@@ -8,6 +8,7 @@ use crate::{
     config::ConfigPath,
     file_utils::{self, read_file_to_string},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
+    recert::RunTime,
     rules,
 };
 use anyhow::{bail, ensure, Context, Result};
@@ -101,7 +102,9 @@ pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     static_dirs: Vec<ConfigPath>,
     static_files: Vec<ConfigPath>,
-) -> Result<Vec<DiscoveredCryptoObect>> {
+) -> Result<(RunTime, Vec<DiscoveredCryptoObect>)> {
+    let start_time = std::time::Instant::now();
+
     // Launch separate paralllel long running background tasks
     let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
     let discovered_filesystem_dir_objects = scan_static_dirs(static_dirs);
@@ -113,11 +116,13 @@ pub(crate) async fn crypto_scan(
     let discovered_filesystem_file_objects = discovered_filesystem_file_objects.await??;
 
     // Return all objects discovered as one large vector
-    Ok(discovered_crypto_objects
+    let all_discovered_objects = discovered_crypto_objects
         .into_iter()
         .chain(discovered_filesystem_dir_objects)
         .chain(discovered_filesystem_file_objects)
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    Ok((RunTime::since_start(start_time), all_discovered_objects))
 }
 
 fn scan_static_dirs(
