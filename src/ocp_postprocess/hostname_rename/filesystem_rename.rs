@@ -50,7 +50,7 @@ pub(crate) async fn fix_filesystem_etcd_configmap_pod_yaml(original_hostname: &s
 
                 commit_file(
                     file_path,
-                    rename_utils::fix_etcd_pod_yaml(&contents, &original_hostname, &hostname).context("fixing etcd-pod.yaml")?,
+                    rename_utils::fix_etcd_pod_yaml_hostname(&contents, &original_hostname, &hostname).context("fixing etcd-pod.yaml")?,
                 )
                 .await
                 .context("writing etcd-pod.yaml to disk")?;

@@ -40,6 +40,11 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) hostname: Option<String>,
 
+    /// If given, the cluster resources that include the IP address will be modified to use this
+    /// one instead.
+    #[clap(long)]
+    pub(crate) ip: Option<String>,
+
     /// Modify the OCP kubeadmin password secret hash. If given but empty, the kubeadmin password
     /// secret will be deleted (thus disabling password login). If given and non-empty, the secret
     /// will be updated with the given password hash, unless no existing kubeadmin secret resource
