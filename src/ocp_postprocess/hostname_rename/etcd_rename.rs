@@ -312,7 +312,7 @@ pub(crate) async fn fix_etcd_scripts(etcd_client: &Arc<InMemoryK8sEtcd>, origina
     let patterns = [
         (
             format!(r#"export NODE_{original_hostname}_ETCD_NAME="{original_hostname}""#),
-            r#"export NODE_{}_="{}""#,
+            r#"export NODE_{}_ETCD_NAME="{}""#,
         ),
         (
             format!(r#"export NODE_({original_hostname})_ETCD_URL_HOST="#),
