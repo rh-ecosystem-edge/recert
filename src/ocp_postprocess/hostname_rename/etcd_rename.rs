@@ -387,6 +387,35 @@ pub(crate) async fn fix_etcds_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, hostna
     Ok(())
 }
 
+pub(crate) async fn fix_node_name(etcd_client: &Arc<InMemoryK8sEtcd>, original_hostname: &str, hostname: &str) -> Result<()> {
+    let mut k8s_resource_location = K8sResourceLocation::new(None, "Node", original_hostname, "v1");
+    let node = get_etcd_json(etcd_client, &k8s_resource_location).await?;
+
+    // TODO: We should remove this conditional after we have ensured that LCA seed creation does not
+    // delete the seed node object, in order to transparently fail when the node object is absent.
+    if let Some(mut node) = node {
+        let metadata = &mut node
+            .pointer_mut("/metadata")
+            .context("no metadata")?
+            .as_object_mut()
+            .context("/metadata not an object")?;
+
+        metadata.insert("name".to_string(), Value::String(hostname.to_string()));
+
+        let previous_key = k8s_resource_location.as_etcd_key();
+
+        k8s_resource_location.name = hostname.to_string();
+        put_etcd_yaml(etcd_client, &k8s_resource_location, node).await?;
+
+        etcd_client
+            .delete(previous_key.as_str())
+            .await
+            .context(format!("deleting {previous_key}"))?;
+    }
+
+    Ok(())
+}
+
 fn replace_node_status_name(cluster: &mut Value, hostname: &str) -> Result<()> {
     let node_statuses = &mut cluster
         .pointer_mut("/status/nodeStatuses")

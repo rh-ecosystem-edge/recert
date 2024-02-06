@@ -4,7 +4,7 @@ use super::protobuf_gen::{
         api::{
             admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
             apps::v1::{DaemonSet, Deployment},
-            core::v1::{ConfigMap, Secret},
+            core::v1::{ConfigMap, Node, Secret},
         },
         apimachinery::pkg::runtime::{TypeMeta, Unknown},
     },
@@ -51,6 +51,7 @@ k8s_type!(RouteWithMeta, Route);
 k8s_type!(DaemonsSetWithMeta, DaemonSet);
 k8s_type!(DeploymentWithMeta, Deployment);
 k8s_type!(ConfigMapWithMeta, ConfigMap);
+k8s_type!(NodeWithMeta, Node);
 k8s_type!(SecretWithMeta, Secret);
 k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration);
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
@@ -69,6 +70,7 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         "Deployment" => serde_json::to_vec(&DeploymentWithMeta::try_from(unknown)?)?,
         "DaemonSet" => serde_json::to_vec(&DaemonsSetWithMeta::try_from(unknown)?)?,
         "ConfigMap" => serde_json::to_vec(&ConfigMapWithMeta::try_from(unknown)?)?,
+        "Node" => serde_json::to_vec(&NodeWithMeta::try_from(unknown)?)?,
         "Secret" => serde_json::to_vec(&SecretWithMeta::try_from(unknown)?)?,
         "ValidatingWebhookConfiguration" => serde_json::to_vec(&ValidatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "MutatingWebhookConfiguration" => serde_json::to_vec(&MutatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
@@ -90,6 +92,7 @@ pub(crate) async fn encode(data: &[u8]) -> Result<Vec<u8>> {
     result.extend(
         match kind {
             "ConfigMap" => Unknown::from(serde_json::from_slice::<ConfigMapWithMeta>(data)?),
+            "Node" => Unknown::from(serde_json::from_slice::<NodeWithMeta>(data)?),
             "Route" => Unknown::from(serde_json::from_slice::<RouteWithMeta>(data)?),
             "Secret" => Unknown::from(serde_json::from_slice::<SecretWithMeta>(data)?),
             "Deployment" => Unknown::from(serde_json::from_slice::<DeploymentWithMeta>(data)?),

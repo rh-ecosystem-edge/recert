@@ -98,6 +98,9 @@ async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, hostname: &str) 
     etcd_rename::fix_etcds_cluster(etcd_client, hostname)
         .await
         .context("fixing etcds/cluster")?;
+    etcd_rename::fix_node_name(etcd_client, &original_hostname, hostname)
+        .await
+        .context("fixing node name")?;
 
     Ok(original_hostname)
 }

@@ -51,7 +51,7 @@ lazy_static! {
             ("kubescheduler", "kubeschedulers"),
             ("bmceventsubscription", "bmceventsubscriptions"),
             ("imagedigestmirrorset", "imagedigestmirrorsets"),
-            ("node", "nodes"),
+            ("node", "minions"),
             ("openshiftapiserver", "openshiftapiservers"),
             ("ingresscontroller", "ingresscontrollers"),
             ("machineconfigpool", "machineconfigpools"),

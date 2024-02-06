@@ -396,7 +396,6 @@ pub(crate) async fn cluster_rename(
         "tuned.openshift.io/profiles",
         "csinodes/",
         "ptp.openshift.io/nodeptpdevices/",
-        "minions/",
         "sriovnetwork.openshift.io/sriovnetworknodestates/",
         // Delete all events as they contain the name
         "events/",
@@ -410,6 +409,8 @@ pub(crate) async fn cluster_rename(
         "replicasets/",
         // Delete ovnkube-node daemonset as it has cluster name in bash script
         "daemonsets/openshift-ovn-kubernetes/ovnkube-node",
+        // Delete network-node-identity daemonset as it has cluster domain in its webhook container
+        "daemonsets/openshift-network-node-identity/network-node-identity",
     ]
     .iter()
     {
