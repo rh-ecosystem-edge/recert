@@ -392,7 +392,7 @@ pub(crate) async fn fix_kube_apiserver_kubeapiserver(etcd_client: &Arc<InMemoryK
     Ok(())
 }
 
-pub(crate) async fn fix_kubecontrollermanager(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+pub(crate) async fn fix_kubecontrollermanager(etcd_client: &Arc<InMemoryK8sEtcd>, generated_infra_id: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "KubeControllerManager", "cluster", "operator.openshift.io/v1");
 
     let mut kubecontrollermanager = get_etcd_json(etcd_client, &k8s_resource_location)
@@ -404,7 +404,7 @@ pub(crate) async fn fix_kubecontrollermanager(etcd_client: &Arc<InMemoryK8sEtcd>
         .pointer_mut("/spec/observedConfig")
         .context("no /spec/observedConfig")?;
 
-    fix_kcm_extended_args(config, cluster_domain).context("fixing config")?;
+    fix_kcm_extended_args(config, generated_infra_id).context("fixing config")?;
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, kubecontrollermanager).await?;
 
