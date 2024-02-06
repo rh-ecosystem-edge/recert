@@ -102,6 +102,7 @@ use_cert_rules:
     -----END CERTIFICATE-----
 cluster_rename: new-name:foo.com:some-random-infra-id
 hostname: test.hostname
+ip: 192.168.126.99
 kubeadmin_password_hash: "$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi"
 summary_file: summary.yaml
 summary_file_clean: summary_redacted.yaml
@@ -123,6 +124,7 @@ else
 		--cn-san-replace 192.168.126.10:192.168.127.11 \
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
+		--ip 192.168.126.99 \
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \

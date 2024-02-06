@@ -66,6 +66,7 @@ pub(crate) struct RecertConfig {
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
@@ -238,6 +239,11 @@ impl RecertConfig {
             None => None,
         };
 
+        let ip = match value.get("ip") {
+            Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
+            None => None,
+        };
+
         let set_kubeadmin_password_hash = match value.get("kubeadmin_password_hash") {
             Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
             None => None,
@@ -298,6 +304,7 @@ impl RecertConfig {
             },
             cluster_rename,
             hostname,
+            ip,
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             threads,
             regenerate_server_ssh_keys,
@@ -341,6 +348,7 @@ impl RecertConfig {
             },
             cluster_rename: cli.cluster_rename,
             hostname: cli.hostname,
+            ip: cli.ip,
             kubeadmin_password_hash: cli.kubeadmin_password_hash,
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),

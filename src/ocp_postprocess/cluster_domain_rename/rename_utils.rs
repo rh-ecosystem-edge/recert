@@ -60,7 +60,7 @@ pub(crate) fn fix_oauth_metadata(oauth_metadata: &mut Value, cluster_domain: &st
     Ok(())
 }
 
-pub(crate) fn fix_api_server_arguments(config: &mut Value, cluster_domain: &str) -> Result<()> {
+pub(crate) fn fix_api_server_arguments_domain(config: &mut Value, cluster_domain: &str) -> Result<()> {
     let apiserver_arguments = &mut config
         .pointer_mut("/apiServerArguments")
         .context("apiServerArguments not found")?
@@ -73,6 +73,36 @@ pub(crate) fn fix_api_server_arguments(config: &mut Value, cluster_domain: &str)
             Value::Array(vec![Value::String(format!("https://api-int.{cluster_domain}:6443/openid/v1/jwks"))]),
         )
         .context("missing service-account-jwks-uri")?;
+    Ok(())
+}
+
+pub(crate) fn fix_api_server_arguments_ip(config: &mut Value, original_ip: &str, ip: &str) -> Result<()> {
+    let apiserver_arguments = &mut config
+        .pointer_mut("/apiServerArguments")
+        .context("apiServerArguments not found")?
+        .as_object_mut()
+        .context("apiServerArguments not an object")?;
+
+    let original_etcd_servers = apiserver_arguments
+        .get("etcd-servers")
+        .context("etcd-servers not found")?
+        .as_array()
+        .context("etcd-servers not an array")?
+        .clone();
+
+    let new_etcd_servers = original_etcd_servers
+        .iter()
+        .map(|etcd_server| {
+            Ok(Value::String(etcd_server.as_str().context("etcd server not a string")?.replace(
+                format!("https://{original_ip}").as_str(),
+                format!("https://{ip}").as_str(),
+            )))
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("replacing etcd servers")?;
+
+    apiserver_arguments.insert("etcd-servers".to_string(), Value::Array(new_etcd_servers));
+
     Ok(())
 }
 
@@ -327,7 +357,7 @@ pub(crate) fn env_var_safe(node_name: &str) -> String {
     node_name.replace(['-', '.'], "_")
 }
 
-pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
     let mut pod_yaml = pod_yaml.to_string();
 
     // TODO: The "value:" replacement below is risky - if the hostname is "existing",
@@ -401,6 +431,23 @@ pub(crate) fn fix_etcd_pod_yaml(pod_yaml: &str, original_hostname: &str, hostnam
             .replace("{hostname_safe}", &env_var_safe(hostname));
 
         pod_yaml = pod_yaml.replace(&pattern, &replacement).to_string();
+    }
+
+    Ok(pod_yaml)
+}
+
+pub(crate) fn fix_etcd_pod_yaml_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
+    let mut pod_yaml = pod_yaml.to_string();
+
+    let patterns = [
+        (r#"value: "https://{original_ip}:2379""#, r#"value: "https://{ip}:2379""#),
+        (r#"value: "{original_ip}""#, r#"value: "{ip}""#),
+    ];
+
+    for (pattern, replacement) in patterns {
+        pod_yaml = pod_yaml
+            .replace(&pattern.replace("{original_ip}", original_ip), &replacement.replace("{ip}", ip))
+            .to_string();
     }
 
     Ok(pod_yaml)

@@ -1,5 +1,5 @@
 use super::rename_utils::{
-    self, fix_api_server_arguments, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_oauth_metadata, fix_pod_container_env,
+    self, fix_api_server_arguments_domain, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_oauth_metadata, fix_pod_container_env,
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
@@ -385,7 +385,7 @@ pub(crate) async fn fix_kube_apiserver_kubeapiserver(etcd_client: &Arc<InMemoryK
         .pointer_mut("/spec/observedConfig")
         .context("no /spec/observedConfig")?;
 
-    fix_api_server_arguments(config, cluster_domain).context("fixing config")?;
+    fix_api_server_arguments_domain(config, cluster_domain).context("fixing config")?;
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, kubeapiserver).await?;
 
@@ -441,8 +441,6 @@ pub(crate) fn fix_openshift_apiserver_config(config: &mut Value, cluster_domain:
             serde_json::Value::String(format!("apps.{}", cluster_domain)),
         )
         .context("missing subdomain")?;
-
-    // TODO: If we ever stop using a fake internal IP, we need to change .storageConfig.urls[0] to be the new IP here
 
     Ok(())
 }
@@ -904,7 +902,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
                     serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
                         .context("deserializing config.yaml")?;
 
-                fix_api_server_arguments(&mut config, cluster_domain)?;
+                fix_api_server_arguments_domain(&mut config, cluster_domain)?;
 
                 data.insert(
                     "config.yaml".to_string(),
