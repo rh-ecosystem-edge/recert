@@ -2,7 +2,7 @@ use self::{cli::Cli, path::ConfigPath};
 use crate::{
     cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
-    ocp_postprocess::cluster_domain_rename::params::ClusterNamesRename,
+    ocp_postprocess::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy},
     use_cert::{UseCert, UseCertRules},
     use_key::{UseKey, UseKeyRules},
 };
@@ -38,6 +38,8 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) cluster_rename: Option<ClusterNamesRename>,
     pub(crate) hostname: Option<String>,
     pub(crate) ip: Option<String>,
+    pub(crate) proxy: Option<Proxy>,
+    pub(crate) install_config: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
     #[serde(serialize_with = "redact")]
     pub(crate) pull_secret: Option<String>,
@@ -138,6 +140,8 @@ impl RecertConfig {
                 kubeadmin_password_hash: None,
                 pull_secret: None,
                 additional_trust_bundle: None,
+                proxy: None,
+                install_config: None,
             },
             threads: None,
             regenerate_server_ssh_keys: None,
@@ -194,6 +198,16 @@ impl RecertConfig {
         };
         let pull_secret = match value.remove("pull_secret") {
             Some(value) => Some(value.as_str().context("pull_secret must be a string")?.to_string()),
+            None => None,
+        };
+        let proxy = match value.remove("proxy") {
+            Some(value) => Some(
+                Proxy::parse(value.as_str().context("proxy must be a string")?).context(format!("proxy {}", value.as_str().unwrap()))?,
+            ),
+            None => None,
+        };
+        let install_config = match value.remove("install_config") {
+            Some(value) => Some(value.as_str().context("install_config must be a string")?.to_string()),
             None => None,
         };
         let set_kubeadmin_password_hash = match value.remove("kubeadmin_password_hash") {
@@ -257,6 +271,8 @@ impl RecertConfig {
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             pull_secret,
             additional_trust_bundle,
+            proxy,
+            install_config,
         };
 
         let recert_config = Self {
@@ -326,6 +342,8 @@ impl RecertConfig {
                 cluster_rename: cli.cluster_rename,
                 hostname: cli.hostname,
                 ip: cli.ip,
+                proxy: cli.proxy,
+                install_config: cli.install_config,
                 kubeadmin_password_hash: cli.kubeadmin_password_hash,
                 pull_secret: cli.pull_secret,
                 additional_trust_bundle: cli.additional_trust_bundle,

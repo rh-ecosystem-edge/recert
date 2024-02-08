@@ -1,5 +1,8 @@
 use crate::{
-    cnsanreplace::CnSanReplace, ocp_postprocess::cluster_domain_rename::params::ClusterNamesRename, use_cert::UseCert, use_key::UseKey,
+    cnsanreplace::CnSanReplace,
+    ocp_postprocess::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy},
+    use_cert::UseCert,
+    use_key::UseKey,
 };
 use clap::Parser;
 use clio::ClioPath;
@@ -66,6 +69,14 @@ pub(crate) struct Cli {
     /// one instead.
     #[clap(long)]
     pub(crate) ip: Option<String>,
+
+    /// If given, the cluster's HTTP proxy configuration will be modified to use this one instead.
+    #[clap(long, value_parser = Proxy::parse)]
+    pub(crate) proxy: Option<Proxy>,
+
+    /// If given, the cluster's install-config configmaps be modified to have this value.
+    #[clap(long)]
+    pub(crate) install_config: Option<String>,
 
     /// Modify the OCP kubeadmin password secret hash. If given but empty, the kubeadmin password
     /// secret will be deleted (thus disabling password login). If given and non-empty, the secret

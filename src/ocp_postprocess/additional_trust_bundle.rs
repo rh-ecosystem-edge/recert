@@ -16,6 +16,11 @@ pub(crate) async fn rename_all(
         .await
         .context("renaming etcd resources")?;
 
+    let new_merged_bundle = match new_merged_bundle {
+        Some(bundle) => bundle,
+        None => return Ok(()),
+    };
+
     fix_filesystem_resources(&new_merged_bundle, additional_trust_bundle, static_dirs, static_files)
         .await
         .context("renaming filesystem resources")?;
@@ -61,11 +66,16 @@ async fn fix_file_resources(_additional_trust_bundle: &str, _new_merged_bundle: 
     Ok(())
 }
 
-async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, additional_trust_bundle: &str) -> Result<String> {
+async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, additional_trust_bundle: &str) -> Result<Option<String>> {
     // kubernetes.io/configmaps/openshift-config/custom-ca
     let original_additional_trust_bundle = etcd_rename::fix_original_additional_trust_bundle(etcd_client, additional_trust_bundle)
         .await
         .context("fixing labeled configmaps")?;
+
+    let original_additional_trust_bundle = match original_additional_trust_bundle {
+        Some(bundle) => bundle,
+        None => return Ok(None),
+    };
 
     let system_certs = utils::derive_system_certs_from_merged_bundle(
         original_additional_trust_bundle,
@@ -91,5 +101,5 @@ async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, additional_trust
         .await
         .context("fixing kcm openshift user ca")?;
 
-    Ok(new_merged_bundle)
+    Ok(Some(new_merged_bundle))
 }
