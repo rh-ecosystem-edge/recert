@@ -1,5 +1,5 @@
 use super::rename_utils::{
-    fix_api_server_arguments, fix_apiserver_url_file, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig,
+    fix_api_server_arguments_domain, fix_apiserver_url_file, fix_kcm_extended_args, fix_kcm_pod, fix_kubeconfig, fix_machineconfig,
     fix_oauth_metadata,
 };
 use crate::file_utils::{self, commit_file, read_file_to_string};
@@ -101,7 +101,7 @@ pub(crate) async fn fix_filesystem_kube_apiserver_configs(cluster_domain: &str, 
                             .context("reading kube-apiserver config.yaml")?;
                         let mut config: Value = serde_yaml::from_str(&contents).context("parsing kube-apiserver config.yaml")?;
 
-                        fix_api_server_arguments(&mut config, &cluster_domain)?;
+                        fix_api_server_arguments_domain(&mut config, &cluster_domain)?;
 
                         commit_file(
                             file_path,

@@ -11,7 +11,7 @@ use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use clio::ClioPath;
 use serde::Serialize;
-use serde_yaml::Value;
+use serde_json::Value;
 
 use self::cli::Cli;
 
@@ -66,6 +66,7 @@ pub(crate) struct RecertConfig {
     pub(crate) customizations: Customizations,
     pub(crate) cluster_rename: Option<ClusterRenameParameters>,
     pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
@@ -90,7 +91,7 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
             match value {
                 Ok(value) => {
                     if let Some(value) = value.get("use_key_rules") {
-                        match value.as_sequence() {
+                        match value.as_array() {
                             Some(seq) => {
                                 for value in seq {
                                     match value.as_str() {
@@ -103,7 +104,7 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
                                     }
                                 }
                             }
-                            None => return "<failed to decode for redaction - use_key_rules is not a sequence>".serialize(serializer),
+                            None => return "<failed to decode for redaction - use_key_rules is not an array>".serialize(serializer),
                         }
                     }
                 }
@@ -121,24 +122,26 @@ impl RecertConfig {
     pub(crate) fn parse_from_config_file(config_bytes: &[u8]) -> Result<Self> {
         let value: Value = serde_yaml::from_slice(config_bytes)?;
 
+        let mut value = value.as_object().context("config file must be a YAML object")?.clone();
+
         let dry_run = value
-            .get("dry_run")
-            .unwrap_or(&Value::Bool(false))
+            .remove("dry_run")
+            .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("dry_run must be a boolean")?;
 
-        let etcd_endpoint = match value.get("etcd_endpoint") {
+        let etcd_endpoint = match value.remove("etcd_endpoint") {
             Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
             None => None,
         };
 
-        let static_dirs = match value.get("static_dirs") {
+        let static_dirs = match value.remove("static_dirs") {
             Some(value) => value
-                .as_sequence()
-                .context("static_dirs must be a sequence")?
+                .as_array()
+                .context("static_dirs must be an array")?
                 .iter()
                 .map(|value| {
-                    let clio_path = ClioPath::new(value.as_str().context("static_dirs must be a sequence of strings")?)
+                    let clio_path = ClioPath::new(value.as_str().context("static_dirs must be an array of strings")?)
                         .context(format!("config dir {}", value.as_str().unwrap()))?;
 
                     ensure!(clio_path.try_exists()?, format!("static_dir must exist: {}", clio_path));
@@ -150,13 +153,13 @@ impl RecertConfig {
             None => vec![],
         };
 
-        let static_files = match value.get("static_files") {
+        let static_files = match value.remove("static_files") {
             Some(value) => value
-                .as_sequence()
-                .context("static_files must be a sequence")?
+                .as_array()
+                .context("static_files must be an array")?
                 .iter()
                 .map(|value| {
-                    let clio_path = ClioPath::new(value.as_str().context("static_files must be a sequence of strings")?)
+                    let clio_path = ClioPath::new(value.as_str().context("static_files must be an array of strings")?)
                         .context(format!("config file {}", value.as_str().unwrap()))?;
 
                     ensure!(clio_path.try_exists()?, format!("static_file must exist: {}", clio_path));
@@ -168,14 +171,14 @@ impl RecertConfig {
             None => vec![],
         };
 
-        let cn_san_replace_rules = match value.get("cn_san_replace_rules") {
+        let cn_san_replace_rules = match value.remove("cn_san_replace_rules") {
             Some(value) => CnSanReplaceRules(
                 value
-                    .as_sequence()
-                    .context("cn_san_replace_rules must be a sequence")?
+                    .as_array()
+                    .context("cn_san_replace_rules must be an array")?
                     .iter()
                     .map(|value| {
-                        CnSanReplace::cli_parse(value.as_str().context("cn_san_replace_rules must be a sequence of strings")?)
+                        CnSanReplace::cli_parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?)
                             .context(format!("cn_san_replace_rule {}", value.as_str().unwrap()))
                     })
                     .collect::<Result<Vec<CnSanReplace>>>()?,
@@ -183,14 +186,14 @@ impl RecertConfig {
             None => CnSanReplaceRules(vec![]),
         };
 
-        let use_key_rules = match value.get("use_key_rules") {
+        let use_key_rules = match value.remove("use_key_rules") {
             Some(value) => UseKeyRules(
                 value
-                    .as_sequence()
-                    .context("use_key_rules must be a sequence")?
+                    .as_array()
+                    .context("use_key_rules must be an array")?
                     .iter()
                     .map(|value| {
-                        UseKey::cli_parse(value.as_str().context("use_key_rules must be a sequence of strings")?)
+                        UseKey::cli_parse(value.as_str().context("use_key_rules must be an array of strings")?)
                             .context(format!("use_key_rule {}", value.as_str().unwrap()))
                     })
                     .collect::<Result<Vec<UseKey>>>()?,
@@ -198,14 +201,14 @@ impl RecertConfig {
             None => UseKeyRules(vec![]),
         };
 
-        let use_cert_rules = match value.get("use_cert_rules") {
+        let use_cert_rules = match value.remove("use_cert_rules") {
             Some(value) => UseCertRules(
                 value
-                    .as_sequence()
-                    .context("use_cert_rules must be a sequence")?
+                    .as_array()
+                    .context("use_cert_rules must be an array")?
                     .iter()
                     .map(|value| {
-                        UseCert::cli_parse(value.as_str().context("use_cert_rules must be a sequence of strings")?)
+                        UseCert::cli_parse(value.as_str().context("use_cert_rules must be an array of strings")?)
                             .context(format!("use_cert_rule {}", value.as_str().unwrap()))
                     })
                     .collect::<Result<Vec<UseCert>>>()?,
@@ -214,18 +217,18 @@ impl RecertConfig {
         };
 
         let extend_expiration = value
-            .get("extend_expiration")
-            .unwrap_or(&Value::Bool(false))
+            .remove("extend_expiration")
+            .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("extend_expiration must be a boolean")?;
 
         let force_expire = value
-            .get("force_expire")
-            .unwrap_or(&Value::Bool(false))
+            .remove("force_expire")
+            .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("force_expire must be a boolean")?;
 
-        let cluster_rename = match value.get("cluster_rename") {
+        let cluster_rename = match value.remove("cluster_rename") {
             Some(value) => Some(
                 ClusterRenameParameters::cli_parse(value.as_str().context("cluster_rename must be a string")?)
                     .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
@@ -233,17 +236,22 @@ impl RecertConfig {
             None => None,
         };
 
-        let hostname = match value.get("hostname") {
+        let hostname = match value.remove("hostname") {
             Some(value) => Some(value.as_str().context("hostname must be a string")?.to_string()),
             None => None,
         };
 
-        let set_kubeadmin_password_hash = match value.get("kubeadmin_password_hash") {
+        let ip = match value.remove("ip") {
+            Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
+            None => None,
+        };
+
+        let set_kubeadmin_password_hash = match value.remove("kubeadmin_password_hash") {
             Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
             None => None,
         };
 
-        let threads = match value.get("threads") {
+        let threads = match value.remove("threads") {
             Some(value) => Some(
                 value
                     .as_u64()
@@ -254,7 +262,7 @@ impl RecertConfig {
             None => None,
         };
 
-        let regenerate_server_ssh_keys = match value.get("regenerate_server_ssh_keys") {
+        let regenerate_server_ssh_keys = match value.remove("regenerate_server_ssh_keys") {
             Some(value) => {
                 let clio_path = ConfigPath::from(
                     ClioPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?)
@@ -268,7 +276,7 @@ impl RecertConfig {
             None => None,
         };
 
-        let summary_file = match value.get("summary_file") {
+        let summary_file = match value.remove("summary_file") {
             Some(value) => Some(ConfigPath::from(
                 ClioPath::new(value.as_str().context("summary_file must be a string")?)
                     .context(format!("summary_file {}", value.as_str().unwrap()))?,
@@ -276,13 +284,19 @@ impl RecertConfig {
             None => None,
         };
 
-        let summary_file_clean = match value.get("summary_file_clean") {
+        let summary_file_clean = match value.remove("summary_file_clean") {
             Some(value) => Some(ConfigPath::from(
                 ClioPath::new(value.as_str().context("summary_file_clean must be a string")?)
                     .context(format!("summary_file_clean {}", value.as_str().unwrap()))?,
             )),
             None => None,
         };
+
+        ensure!(
+            value.is_empty(),
+            "unknown keys {:?} in config file",
+            value.keys().map(|key| key.to_string()).collect::<Vec<String>>().join(", ")
+        );
 
         let recert_config = Self {
             dry_run,
@@ -298,6 +312,7 @@ impl RecertConfig {
             },
             cluster_rename,
             hostname,
+            ip,
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             threads,
             regenerate_server_ssh_keys,
@@ -341,6 +356,7 @@ impl RecertConfig {
             },
             cluster_rename: cli.cluster_rename,
             hostname: cli.hostname,
+            ip: cli.ip,
             kubeadmin_password_hash: cli.kubeadmin_password_hash,
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),

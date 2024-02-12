@@ -18,12 +18,14 @@ use std::{collections::HashSet, sync::Arc};
 pub(crate) mod cluster_domain_rename;
 mod fnv;
 pub(crate) mod hostname_rename;
+pub(crate) mod ip_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,
     hostname: &Option<String>,
+    ip: &Option<String>,
     kubeadmin_password_hash: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
@@ -54,6 +56,12 @@ pub(crate) async fn ocp_postprocess(
         hostname_rename(in_memory_etcd_client, hostname, static_dirs, static_files)
             .await
             .context("renaming hostname")?;
+    }
+
+    if let Some(ip) = ip {
+        ip_rename(in_memory_etcd_client, ip, static_dirs, static_files)
+            .await
+            .context("renaming IP")?;
     }
 
     if let Some(kubeadmin_password_hash) = kubeadmin_password_hash {
@@ -116,7 +124,7 @@ async fn set_kubeadmin_password_hash(in_memory_etcd_client: &InMemoryK8sEtcd, ku
                 ),
             );
 
-            put_etcd_yaml(etcd_client, k8s_resource_location, dbg!(secret)).await?;
+            put_etcd_yaml(etcd_client, k8s_resource_location, secret).await?;
 
             Ok(())
         }
@@ -426,6 +434,21 @@ pub(crate) async fn hostname_rename(
     let etcd_client = in_memory_etcd_client;
 
     hostname_rename::rename_all(etcd_client, hostname, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn ip_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    ip: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    ip_rename::rename_all(etcd_client, ip, static_dirs, static_files)
         .await
         .context("renaming all")?;
 

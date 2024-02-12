@@ -127,7 +127,7 @@ async fn fix_etcd_resources(
     etcd_rename::fix_kube_apiserver_kubeapiserver(etcd_client, cluster_domain)
         .await
         .context("fixing kubeapiserver")?;
-    etcd_rename::fix_kubecontrollermanager(etcd_client, cluster_domain)
+    etcd_rename::fix_kubecontrollermanager(etcd_client, &generated_infra_id)
         .await
         .context("fixing kubecontrollermanager")?;
     etcd_rename::fix_authentication(etcd_client, cluster_domain)

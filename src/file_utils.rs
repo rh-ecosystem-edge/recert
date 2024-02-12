@@ -184,9 +184,14 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &JsonLocation, value_at_
 /// This annotation is purely informational and is not used programmatically by recert itself. It's
 /// used to help troubleshooters notice this is not a "natural" cryptographic object, but instead
 /// one that was manipulated by recert.
-pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: &JsonLocation) -> Result<()> {
-    if resource.pointer_mut("/metadata/annotations").is_none() {
-        resource
+#[allow(unreachable_code)]
+pub(crate) fn add_recert_edited_annotation(_resource: &mut Value, _yaml_location: &JsonLocation) -> Result<()> {
+    // TODO: These annotations could be a cause for rollouts, so for now avoid them as avoiding
+    // rollout is more important than having those annotations
+    return Ok(());
+
+    if _resource.pointer_mut("/metadata/annotations").is_none() {
+        _resource
             .pointer_mut("/metadata")
             .context("metadata must exist")?
             .as_object_mut()
@@ -194,19 +199,19 @@ pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: 
             .insert(String::from("annotations"), Value::Object(serde_json::Map::new()));
     }
 
-    let current_value_string = match resource.pointer_mut("/metadata/annotations/recert-edited") {
+    let current_value_string = match _resource.pointer_mut("/metadata/annotations/recert-edited") {
         Some(annotation_data) => annotation_data.as_str().context("recert annotation data must be a string")?,
         None => "{}",
     };
 
     let mut annotation_value: Value = serde_json::from_str(current_value_string).context("parsing recert annotation json")?;
 
-    let edited_index = Value::String(match &yaml_location.value {
+    let edited_index = Value::String(match &_yaml_location.value {
         LocationValueType::Pem(pem_info) => pem_info.pem_bundle_index.to_string(),
         _ => "N/A".to_string(),
     });
 
-    match annotation_value.get_mut(&yaml_location.json_pointer) {
+    match annotation_value.get_mut(&_yaml_location.json_pointer) {
         Some(locations) => {
             locations.as_array_mut().context("locations must be an array")?.push(edited_index);
         }
@@ -214,11 +219,11 @@ pub(crate) fn add_recert_edited_annotation(resource: &mut Value, yaml_location: 
             annotation_value
                 .as_object_mut()
                 .context("annotation value must be an object")?
-                .insert(yaml_location.json_pointer.clone(), Value::Array(vec![edited_index]));
+                .insert(_yaml_location.json_pointer.clone(), Value::Array(vec![edited_index]));
         }
     }
 
-    resource
+    _resource
         .pointer_mut("/metadata/annotations")
         .context("annotations must exist")?
         .as_object_mut()

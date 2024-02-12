@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
-    ocp_postprocess::cluster_domain_rename::rename_utils::{env_var_safe, fix_etcd_pod_yaml},
+    ocp_postprocess::cluster_domain_rename::rename_utils::{env_var_safe, fix_etcd_pod_yaml_hostname},
 };
 use anyhow::{ensure, Context, Result};
 use futures_util::future::join_all;
@@ -271,7 +271,7 @@ pub(crate) async fn fix_etcd_pod(etcd_client: &Arc<InMemoryK8sEtcd>, original_ho
                     .context("pod.yaml not a string")?
                     .to_string();
 
-                let pod_yaml = fix_etcd_pod_yaml(&pod_yaml, original_hostname, hostname).context("could not fix pod yaml")?;
+                let pod_yaml = fix_etcd_pod_yaml_hostname(&pod_yaml, original_hostname, hostname).context("could not fix pod yaml")?;
 
                 data.insert("pod.yaml".to_string(), serde_json::Value::String(pod_yaml));
 
@@ -312,7 +312,7 @@ pub(crate) async fn fix_etcd_scripts(etcd_client: &Arc<InMemoryK8sEtcd>, origina
     let patterns = [
         (
             format!(r#"export NODE_{original_hostname}_ETCD_NAME="{original_hostname}""#),
-            r#"export NODE_{}_="{}""#,
+            r#"export NODE_{}_ETCD_NAME="{}""#,
         ),
         (
             format!(r#"export NODE_({original_hostname})_ETCD_URL_HOST="#),
