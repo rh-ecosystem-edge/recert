@@ -402,6 +402,28 @@ pub(crate) async fn fix_node_name(etcd_client: &Arc<InMemoryK8sEtcd>, original_h
 
         metadata.insert("name".to_string(), Value::String(hostname.to_string()));
 
+        let annotations = &mut node
+            .pointer_mut("/metadata/annotations")
+            .context("no annotations")?
+            .as_object_mut()
+            .context("/metadata/annotations not a object")?;
+
+        let annotations_to_delete = [
+            "k8s.ovn.org/zone-name",
+            "k8s.ovn.org/remote-zone-migrated",
+            "k8s.ovn.org/host-cidrs",
+            "k8s.ovn.org/l3-gateway-config",
+            "k8s.ovn.org/node-chassis-id",
+            "k8s.ovn.org/node-mgmt-port-mac-address",
+            "k8s.ovn.org/node-primary-ifaddr",
+        ];
+
+        annotations_to_delete.iter().try_for_each(|annotation| {
+            annotations.remove(annotation.to_owned());
+
+            anyhow::Ok(())
+        })?;
+
         let previous_key = k8s_resource_location.as_etcd_key();
 
         k8s_resource_location.name = hostname.to_string();
