@@ -358,18 +358,18 @@ pub(crate) async fn fix_networks_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, ip:
         .await?
         .context("getting networks/cluster")?;
 
-    let annotations = cluster
-        .pointer_mut("/metadata/annotations")
-        .context("no /metadata/annotations")?
-        .as_object_mut()
-        .context("/metadata/annotations not an object")?;
+    // TODO: We observed that in OCP 4.15 there is no such annotation. Nevertheless, we should
+    // verify whether this should be a soft replacement or not.
+    if let Some(annotations) = cluster.pointer_mut("/metadata/annotations") {
+        let annotations = annotations.as_object_mut().context("/metadata/annotations not an object")?;
+        let key = "networkoperator.openshift.io/ovn-cluster-initiator";
 
-    annotations.insert(
-        "networkoperator.openshift.io/ovn-cluster-initiator".to_string(),
-        serde_json::Value::String(ip.to_string()),
-    );
+        if annotations.contains_key(key) {
+            annotations.insert(key.to_string(), Value::String(ip.to_string()));
 
-    put_etcd_yaml(etcd_client, &k8s_resource_location, cluster).await?;
+            put_etcd_yaml(etcd_client, &k8s_resource_location, cluster).await?;
+        }
+    }
 
     Ok(())
 }
