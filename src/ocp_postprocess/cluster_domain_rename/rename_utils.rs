@@ -67,12 +67,32 @@ pub(crate) fn fix_api_server_arguments_domain(config: &mut Value, cluster_domain
         .as_object_mut()
         .context("apiServerArguments not an object")?;
 
+    let original_service_account_jwks_uris = apiserver_arguments
+        .get("service-account-jwks-uri")
+        .context("service-account-jwks-uri not found")?
+        .as_array()
+        .context("service-account-jwks-uri not an array")?
+        .clone();
+
+    let new_service_account_jwks_uris = original_service_account_jwks_uris
+        .iter()
+        .map(|uri| {
+            let uri = uri.as_str().context("uri not a string")?;
+
+            Ok(Value::String(
+                regex::Regex::new(r"https://(?P<api_label>api-int|api)\.(?P<cluster_domain>.+):6443/openid/v1/jwks")
+                    .context("compiling regex")?
+                    .replace_all(uri, format!("https://$api_label.{cluster_domain}:6443/openid/v1/jwks").as_str())
+                    .to_string(),
+            ))
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("replacing service-account-jwks-uri")?;
+
     apiserver_arguments
-        .insert(
-            "service-account-jwks-uri".to_string(),
-            Value::Array(vec![Value::String(format!("https://api-int.{cluster_domain}:6443/openid/v1/jwks"))]),
-        )
+        .insert("service-account-jwks-uri".to_string(), Value::Array(new_service_account_jwks_uris))
         .context("missing service-account-jwks-uri")?;
+
     Ok(())
 }
 
