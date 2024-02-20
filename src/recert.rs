@@ -76,6 +76,7 @@ pub(crate) async fn run(
         &parsed_cli.hostname,
         &parsed_cli.ip,
         &parsed_cli.kubeadmin_password_hash,
+        &parsed_cli.pull_secret,
         &parsed_cli.static_dirs,
         &parsed_cli.static_files,
         parsed_cli.regenerate_server_ssh_keys.as_deref(),
@@ -140,6 +141,7 @@ async fn finalize(
     hostname: &Option<String>,
     ip: &Option<String>,
     kubeadmin_password_hash: &Option<String>,
+    pull_secret: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
     regenerate_server_ssh_keys: Option<&Path>,
@@ -160,6 +162,7 @@ async fn finalize(
             hostname,
             ip,
             kubeadmin_password_hash,
+            pull_secret,
             static_dirs,
             static_files,
         )
