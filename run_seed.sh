@@ -108,6 +108,7 @@ summary_file: summary.yaml
 summary_file_clean: summary_redacted.yaml
 extend_expiration: true
 force_expire: false
+pull_secret: "{\"auths\":{\"empty_registry\":{\"username\":\"empty\",\"password\":\"empty\",\"auth\":\"ZW1wdHk6ZW1wdHk=\",\"email\":\"\"}}}"
 threads: 1
 ') cargo run --release
 else
@@ -128,6 +129,7 @@ else
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \
+		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \
 		--extend-expiration
 	# --regenerate-server-ssh-keys backup/etc/ssh/ \
 fi
