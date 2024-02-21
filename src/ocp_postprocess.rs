@@ -19,6 +19,7 @@ pub(crate) mod cluster_domain_rename;
 mod fnv;
 pub(crate) mod hostname_rename;
 pub(crate) mod ip_rename;
+pub(crate) mod pull_secret_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 pub(crate) async fn ocp_postprocess(
@@ -27,6 +28,7 @@ pub(crate) async fn ocp_postprocess(
     hostname: &Option<String>,
     ip: &Option<String>,
     kubeadmin_password_hash: &Option<String>,
+    pull_secret: &Option<String>,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
@@ -69,6 +71,13 @@ pub(crate) async fn ocp_postprocess(
         set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
             .await
             .context("setting kubeadmin password hash")?;
+    }
+
+    if let Some(pull_secret) = pull_secret {
+        log::info!("setting new pull_secret");
+        pull_secret_rename(in_memory_etcd_client, pull_secret, static_dirs, static_files)
+            .await
+            .context("renaming pull_secret")?;
     }
 
     fix_deployment_dep_annotations(
@@ -449,6 +458,21 @@ pub(crate) async fn ip_rename(
     let etcd_client = in_memory_etcd_client;
 
     ip_rename::rename_all(etcd_client, ip, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn pull_secret_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    pull_secret: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    pull_secret_rename::rename_all(etcd_client, pull_secret, static_dirs, static_files)
         .await
         .context("renaming all")?;
 
