@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::{crypto_objects::process_unknown_value, json_crawl},
-    config::ConfigPath,
+    config::path::ConfigPath,
     file_utils::{self, read_file_to_string},
     k8s_etcd::InMemoryK8sEtcd,
     recert::timing::RunTime,

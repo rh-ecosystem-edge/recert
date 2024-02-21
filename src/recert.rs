@@ -1,6 +1,6 @@
 use crate::{
     cluster_crypto::{crypto_utils::ensure_openssl_version, scanning, ClusterCryptoObjects},
-    config::{ClusterCustomizations, ConfigPath, CryptoCustomizations, RecertConfig},
+    config::{ClusterCustomizations, CryptoCustomizations, RecertConfig},
     k8s_etcd::InMemoryK8sEtcd,
     ocp_postprocess::ocp_postprocess,
     rsa_key_pool, server_ssh_keys,
@@ -21,8 +21,6 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
     let recertify_timing = recertify(
         cluster_crypto,
         Arc::clone(&in_memory_etcd_client),
-        recert_config.static_dirs.clone(),
-        recert_config.static_files.clone(),
         &recert_config.crypto_customizations,
     )
     .await
@@ -32,8 +30,6 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
         Arc::clone(&in_memory_etcd_client),
         cluster_crypto,
         &recert_config.cluster_customizations,
-        &recert_config.static_dirs,
-        &recert_config.static_files,
         recert_config.regenerate_server_ssh_keys.as_deref(),
         recert_config.dry_run,
     )
@@ -58,8 +54,6 @@ async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK
 async fn recertify(
     cluster_crypto: &mut ClusterCryptoObjects,
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<ConfigPath>,
-    static_files: Vec<ConfigPath>,
     crypto_customizations: &CryptoCustomizations,
 ) -> Result<RecertifyTiming> {
     let external_certs = if in_memory_etcd_client.etcd_client.is_some() {
@@ -74,8 +68,8 @@ async fn recertify(
     // a long time and are independent
     let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(
         in_memory_etcd_client,
-        static_dirs,
-        static_files,
+        crypto_customizations.dirs.clone(),
+        crypto_customizations.files.clone(),
         external_certs.clone(),
     ));
     let rsa_keys = tokio::spawn(fill_keys());
@@ -108,8 +102,6 @@ async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     cluster_customizations: &ClusterCustomizations,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
 ) -> Result<FinalizeTiming> {
@@ -122,7 +114,7 @@ async fn finalize(
 
     let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
-        ocp_postprocess(&in_memory_etcd_client, cluster_customizations, static_dirs, static_files)
+        ocp_postprocess(&in_memory_etcd_client, cluster_customizations)
             .await
             .context("performing ocp specific post-processing")?;
     }

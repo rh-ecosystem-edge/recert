@@ -12,27 +12,49 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) etcd_endpoint: Option<String>,
 
+    // DEPRECATED: Use --crypto-dir and --cluster-customization-dir instead. This option will be
+    // removed in a future release. Cannot be used with --crypto-dir or --cluster-customization-dir
+    // or --additional-trust-bundle
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir(), groups = &["crypto_dir_paths", "cluster_customization_dir_paths", "adt_dirs"])]
+    pub(crate) static_dir: Vec<ClioPath>,
+
+    /// DEPRECATED: Use --crypto-file and --cluster-customization-file instead. This option will be
+    /// removed in a future release. Cannot be used with --crypto-file or
+    /// --cluster-customization-file or --additional-trust-bundle
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_file(), groups = &["crypto_file_paths", "cluster_customization_file_paths", "adt_files"])]
+    pub(crate) static_file: Vec<ClioPath>,
+
     /// Directory to recertify, such as /var/lib/kubelet, /etc/kubernetes and
     /// /etc/machine-config-daemon. Can specify multiple times
-    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir())]
-    pub(crate) static_dir: Vec<ClioPath>,
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir(), group = "crypto_dir_paths")]
+    pub(crate) crypto_dir: Vec<ClioPath>,
 
     /// A file to recertify, such as /etc/mcs-machine-config-content.json. Can specify multiple
     /// times
-    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_file())]
-    pub(crate) static_file: Vec<ClioPath>,
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_file(), group = "crypto_file_paths")]
+    pub(crate) crypto_file: Vec<ClioPath>,
+
+    /// Directory containing files involved in cluster customization, such as /var/lib/kubelet,
+    /// /etc/kubernetes, /etc/pki/ca-trust, etc. Can specify multiple.
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_dir(), group = "cluster_customization_dir_paths")]
+    pub(crate) cluster_customization_dir: Vec<ClioPath>,
+
+    /// File involved in cluster customization, such as /etc/mcs-machine-config-content.json. Can
+    /// specify multiple.
+    #[clap(long, value_parser = clap::value_parser!(ClioPath).exists().is_file(), group = "cluster_customization_file_paths")]
+    pub(crate) cluster_customization_file: Vec<ClioPath>,
 
     /// A list of strings to replace in the subject name of all certificates. Can specify multiple.
     /// --cn-san-replace foo:bar --cn-san-replace baz:qux will replace all instances of "foo" with
     /// "bar" and all instances of "baz" with "qux" in the CN/SAN of all certificates.
-    #[clap(long, value_parser = CnSanReplace::cli_parse)]
+    #[clap(long, value_parser = CnSanReplace::parse)]
     pub(crate) cn_san_replace: Vec<CnSanReplace>,
 
     /// Experimental feature. Colon separated cluster name and cluster base domain. If given, many
     /// cluster resources which refer to a cluster name / cluster base domain (typically through
     /// URLs which they happen to contian) will be modified to use this cluster name and base
     /// domain instead.
-    #[clap(long, value_parser = ClusterNamesRename::cli_parse)]
+    #[clap(long, value_parser = ClusterNamesRename::parse)]
     pub(crate) cluster_rename: Option<ClusterNamesRename>,
 
     /// If given, the cluster resources that include the hostname will be modified to use this one
@@ -63,6 +85,16 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) pull_secret: Option<String>,
 
+    /// Change a cluster's trust bundle. Changes all locations where the trust bundle is stored in
+    /// the cluster. If an existing trust bundle is not found, this will cause an error, as
+    /// creating the relevant resources is beyond the scope of this tool. The trust bundle's
+    /// validity will not be checked. When using a RECERT_CONFIG file, raw PEMS can be used instead
+    /// of paths to trust bundle files. When using this option it is recommended to also run
+    /// update-ca-trust after running recert to ensure that the trust bundle is properly updated in
+    /// all locations.
+    #[clap(long, value_parser = super::parse_additional_trust_bundle, groups = &["adt_dirs", "adt_files"])]
+    pub(crate) additional_trust_bundle: Option<String>,
+
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For
@@ -72,7 +104,7 @@ pub(crate) struct Cli {
     /// regenerated.
     ///
     /// When using a RECERT_CONFIG file, raw PEMS can be used instead of paths to key files.
-    #[clap(long, value_parser = UseKey::cli_parse)]
+    #[clap(long, value_parser = UseKey::parse)]
     pub(crate) use_key: Vec<UseKey>,
 
     /// Same as --use-key, but for when a cert needs to be replaced in its entirety, rather than
@@ -83,7 +115,7 @@ pub(crate) struct Cli {
     /// the --extend-expiration flag is used.
     ///
     /// When using a RECERT_CONFIG file, raw PEMS can be used instead of paths to cert files.
-    #[clap(long, value_parser = UseCert::cli_parse)]
+    #[clap(long, value_parser = UseCert::parse)]
     pub(crate) use_cert: Vec<UseCert>,
 
     /// Extend expiration of all certificates to (original_expiration + (now - issue date)), and

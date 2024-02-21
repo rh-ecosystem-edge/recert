@@ -8,7 +8,7 @@ pub(crate) struct ClusterNamesRename {
 }
 
 impl ClusterNamesRename {
-    pub(crate) fn cli_parse(value: &str) -> Result<Self> {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
         let parts = value.split(':').collect::<Vec<_>>();
 
         ensure!(
