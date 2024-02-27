@@ -22,6 +22,7 @@ pub(crate) mod ip_rename;
 pub(crate) mod pull_secret_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename_params: &Option<ClusterRenameParameters>,

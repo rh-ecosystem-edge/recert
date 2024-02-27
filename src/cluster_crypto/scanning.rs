@@ -9,67 +9,69 @@ use crate::{
     file_utils::{self, read_file_to_string},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     recert::RunTime,
-    rules,
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Error, Result};
 use futures_util::future::join_all;
+use itertools::Itertools;
 use serde_json::Value;
 use std::{
+    collections::HashSet,
     os::unix::prelude::OsStrExt,
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::task::JoinHandle;
 use x509_certificate::X509Certificate;
 
-pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<()> {
+pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<HashSet<String>> {
+    let trusted_certs = vec![get_openshift_trusted_certs(&in_memory_etcd_client).await?];
+    let image_trusted_certs = get_openshift_image_trusted_certs(&in_memory_etcd_client).await?;
+
+    let all_certs_bundled = trusted_certs.into_iter().chain(image_trusted_certs).join("\n");
+
+    pem::parse_many(all_certs_bundled)
+        .context("parsing")?
+        .into_iter()
+        .map(|pem| match pem.tag() {
+            "CERTIFICATE" => Ok({
+                let crt = X509Certificate::from_der(pem.contents()).context("from der")?;
+                let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+
+                log::trace!("Found external certificate: {}", cn);
+
+                cn.to_string()
+            }),
+            _ => bail!("unexpected tag"),
+        })
+        .collect::<Result<HashSet<_>>>()
+}
+
+async fn get_openshift_image_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
     let mut pem_strings = vec![];
 
-    for location in [
-        K8sResourceLocation {
-            namespace: Some("openshift-apiserver-operator".into()),
-            kind: "ConfigMap".into(),
-            apiversion: "v1".into(),
-            name: "trusted-ca-bundle".into(),
-        },
-        K8sResourceLocation {
-            namespace: Some("openshift-config".into()),
-            kind: "ConfigMap".into(),
-            apiversion: "v1".into(),
-            name: "user-ca-bundle".into(),
-        },
-    ] {
-        let json = get_etcd_json(&in_memory_etcd_client, &location)
-            .await
-            .context("getting trusted-ca-bundle")?;
-
-        if let Some(json) = json {
-            pem_strings.push(
-                json.pointer("/data/ca-bundle.crt")
-                    .context("parsing ca-bundle.crt")?
-                    .as_str()
-                    .context("must be string")?
-                    .to_string(),
-            );
-        } else {
-            log::info!("{:?} not found, will not be considered in external certs", location);
-        }
-    }
-
-    let yaml = get_etcd_json(
-        &in_memory_etcd_client,
-        &(K8sResourceLocation {
-            namespace: Some("openshift-config".into()),
-            kind: "ConfigMap".into(),
-            apiversion: "v1".into(),
-            name: "registry-cas".into(),
-        }),
+    let image_config = get_etcd_json(
+        in_memory_etcd_client,
+        &(K8sResourceLocation::new(None, "Image", "cluster", "config.openshift.io")),
     )
     .await
-    .context("getting registry-cas")?;
+    .context("getting image config")?
+    .context("image config not found")?;
 
-    // registry-cas doesn't always exist
-    if let Some(yaml) = yaml {
-        for (_k, v) in yaml
+    if let Some(additional_trusted_ca) = image_config.pointer("/spec/additionalTrustedCA") {
+        let user_image_ca_configmap = get_etcd_json(
+            in_memory_etcd_client,
+            &(K8sResourceLocation {
+                namespace: Some("openshift-config".into()),
+                kind: "ConfigMap".into(),
+                apiversion: "v1".into(),
+                name: additional_trusted_ca.as_str().context("must be string")?.into(),
+            }),
+        )
+        .await
+        .context("getting user image ca configmap")?
+        .context("user image ca configmap not found")?;
+
+        for (_k, v) in user_image_ca_configmap
             .pointer("/data")
             .context("parsing registry-cas")?
             .as_object()
@@ -79,44 +81,56 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         }
     }
 
-    for pem_string in pem_strings {
-        let pem_bundle = pem::parse_many(pem_string).context("parsing ca-bundle.crt")?;
+    Ok(pem_strings)
+}
 
-        for pem in pem_bundle {
-            if pem.tag() != "CERTIFICATE" {
-                continue;
-            }
+async fn get_openshift_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<String> {
+    let trusted_ca_bundle_configmap = get_etcd_json(
+        in_memory_etcd_client,
+        &(K8sResourceLocation {
+            namespace: Some("openshift-config-managed".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "trusted-ca-bundle".into(),
+        }),
+    )
+    .await
+    .context("getting trusted-ca-bundle")?
+    .context("trusted-ca-bundle not found")?;
 
-            let crt = X509Certificate::from_der(pem.contents()).context("parsing certificate from ca-bundle.crt")?;
-            let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
-
-            // TODO: Don't use a global for this
-            rules::EXTERNAL_CERTS.write().unwrap().insert(cn.to_string());
-        }
-    }
-
-    Ok(())
+    Ok(trusted_ca_bundle_configmap
+        .pointer("/data/ca-bundle.crt")
+        .context("parsing ca-bundle.crt")?
+        .as_str()
+        .context("must be string")?
+        .to_string())
 }
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     static_dirs: Vec<ConfigPath>,
     static_files: Vec<ConfigPath>,
+    external_certs: HashSet<String>,
 ) -> Result<(RunTime, Vec<DiscoveredCryptoObect>)> {
     let start_time = std::time::Instant::now();
 
-    // Launch separate paralllel long running background tasks
-    let discovered_etcd_objects = tokio::spawn(async move { scan_etcd_resources(in_memory_etcd_client).await.context("etcd resources") });
-    let discovered_filesystem_dir_objects = scan_static_dirs(static_dirs);
-    let discovered_filesystem_file_objects = scan_static_files(static_files);
+    // Launch separate paralllel long running background task
+    let discovered_filesystem_dir_objects = scan_static_dirs(static_dirs, &external_certs);
+    let discovered_filesystem_file_objects = scan_static_files(static_files, &external_certs);
+    let external_certs = external_certs.clone();
+    let discovered_etcd_objects = tokio::spawn(async move {
+        scan_etcd_resources(in_memory_etcd_client, &external_certs)
+            .await
+            .context("etcd resources")
+    });
 
     // ... and join them
-    let discovered_crypto_objects = discovered_etcd_objects.await??;
+    let discovered_etcd_objects = discovered_etcd_objects.await??;
     let discovered_filesystem_dir_objects = discovered_filesystem_dir_objects.await??;
     let discovered_filesystem_file_objects = discovered_filesystem_file_objects.await??;
 
     // Return all objects discovered as one large vector
-    let all_discovered_objects = discovered_crypto_objects
+    let all_discovered_objects = discovered_etcd_objects
         .into_iter()
         .chain(discovered_filesystem_dir_objects)
         .chain(discovered_filesystem_file_objects)
@@ -127,15 +141,18 @@ pub(crate) async fn crypto_scan(
 
 fn scan_static_dirs(
     static_dirs: Vec<ConfigPath>,
-) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+    external_certs: &HashSet<String>,
+) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
+    let external_certs = external_certs.clone();
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(
                 static_dirs
                     .into_iter()
                     .map(|static_dir| {
+                        let external_certs = external_certs.clone();
                         tokio::spawn(async move {
-                            scan_filesystem_directory(&static_dir)
+                            scan_filesystem_directory(&static_dir, external_certs)
                                 .await
                                 .with_context(|| format!("static dir {:?}", static_dir))
                         })
@@ -156,15 +173,18 @@ fn scan_static_dirs(
 
 fn scan_static_files(
     static_files: Vec<ConfigPath>,
-) -> tokio::task::JoinHandle<std::result::Result<Vec<DiscoveredCryptoObect>, anyhow::Error>> {
+    external_certs: &HashSet<String>,
+) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
+    let external_certs = external_certs.clone();
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(
                 static_files
                     .into_iter()
                     .map(|static_file| {
+                        let external_certs = external_certs.clone();
                         tokio::spawn(async move {
-                            scan_filesystem_file(static_file.to_path_buf())
+                            scan_filesystem_file(static_file.to_path_buf(), external_certs)
                                 .await
                                 .with_context(|| format!("static file {:?}", static_file))
                         })
@@ -185,7 +205,10 @@ fn scan_static_files(
 
 /// Read all relevant resources from etcd, scan them for cryptographic objects and record them
 /// in the appropriate data structures.
-pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) async fn scan_etcd_resources(
+    etcd_client: Arc<InMemoryK8sEtcd>,
+    external_certs: &HashSet<String>,
+) -> Result<Vec<DiscoveredCryptoObect>> {
     let key_lists = {
         let etcd_client = &etcd_client;
         [
@@ -226,6 +249,7 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
             .map(|key| {
                 let key = key.clone();
                 let etcd_client = Arc::clone(&etcd_client);
+                let external_certs = external_certs.clone();
                 tokio::spawn(async move {
                     let etcd_result = etcd_client
                         .get(key.clone())
@@ -258,8 +282,12 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
                             .into_iter()
                             .flatten()
                             .map(|(yaml_location, yaml_value)| {
-                                process_unknown_value(yaml_value, &Location::k8s_yaml(&k8s_resource_location, &yaml_location))
-                                    .with_context(|| format!("processing yaml value of key {:?} at location {:?}", key, yaml_location))
+                                process_unknown_value(
+                                    yaml_value,
+                                    &Location::k8s_yaml(&k8s_resource_location, &yaml_location),
+                                    &external_certs,
+                                )
+                                .with_context(|| format!("processing yaml value of key {:?} at location {:?}", key, yaml_location))
                             })
                             .collect::<Result<Vec<_>>>()?
                             .into_iter()
@@ -282,7 +310,8 @@ pub(crate) async fn scan_etcd_resources(etcd_client: Arc<InMemoryK8sEtcd>) -> Re
 
 /// Recursively scans a directoy for files which exclusively contain a PEM bundle (as opposed
 /// to being embedded in a YAML file) and records them in the appropriate data structures.
-pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
+    let external_certs = external_certs.clone();
     Ok(join_all(
         file_utils::globvec(dir, "**/*.pem")?
             .into_iter()
@@ -305,7 +334,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
             .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
             // JWT tokens can be found in files named "token"
             .chain(file_utils::globvec(dir, "**/token")?.into_iter())
-            .map(|file_path| tokio::spawn(scan_filesystem_file(file_path.clone())))
+            .map(|file_path| tokio::spawn(scan_filesystem_file(file_path.clone(), external_certs.clone())))
             .collect::<Vec<_>>(),
     )
     .await
@@ -318,7 +347,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path) -> Result<Vec<Discover
     .collect::<Vec<_>>())
 }
 
-async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCryptoObect>> {
+async fn scan_filesystem_file(file_path: PathBuf, external_certs: HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
     let contents = read_file_to_string(&file_path).await?;
 
     anyhow::Ok(
@@ -328,7 +357,7 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "currentconfig"
             || String::from_utf8(file_path.file_name().context("non-file")?.as_bytes().to_vec())? == "mcs-machine-config-content.json"
         {
-            process_static_resource_yaml(contents, &file_path)
+            process_static_resource_yaml(contents, &file_path, &external_certs)
                 .with_context(|| format!("processing static resource yaml of file {:?}", file_path))?
         } else {
             crypto_objects::process_unknown_value(
@@ -337,13 +366,18 @@ async fn scan_filesystem_file(file_path: PathBuf) -> Result<Vec<DiscoveredCrypto
                     path: file_path.to_string_lossy().to_string(),
                     content_location: FileContentLocation::Raw(LocationValueType::YetUnknown),
                 }),
+                &external_certs,
             )
             .with_context(|| format!("processing pem bundle of file {:?}", file_path))?
         },
     )
 }
 
-pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) fn process_static_resource_yaml(
+    contents: String,
+    yaml_path: &Path,
+    external_certs: &HashSet<String>,
+) -> Result<Vec<DiscoveredCryptoObect>> {
     Ok(json_crawl::crawl_json((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
         .iter()
         .map(json_crawl::decode_json_value)
@@ -356,6 +390,7 @@ pub(crate) fn process_static_resource_yaml(contents: String, yaml_path: &Path) -
             process_unknown_value(
                 decoded_yaml_value,
                 &Location::file_yaml(&yaml_path.to_string_lossy(), &yaml_location),
+                external_certs,
             )
         })
         .collect::<Result<Vec<_>>>()?
