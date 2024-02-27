@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use etcd_client::Client as EtcdClient;
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
 #[derive(Clone)]
 pub(crate) struct RunTime {
@@ -25,7 +25,7 @@ impl RunTime {
 }
 
 impl serde::Serialize for RunTime {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -44,10 +44,7 @@ pub(crate) struct RunTimes {
     commit_to_actual_etcd_run_time: RunTime,
 }
 
-pub(crate) async fn run(
-    parsed_cli: &RecertConfig,
-    cluster_crypto: &mut ClusterCryptoObjects,
-) -> std::result::Result<RunTimes, anyhow::Error> {
+pub(crate) async fn run(parsed_cli: &RecertConfig, cluster_crypto: &mut ClusterCryptoObjects) -> Result<RunTimes> {
     ensure_openssl_version().context("checking openssl version compatibility")?;
 
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &parsed_cli.etcd_endpoint {
@@ -102,15 +99,22 @@ async fn recertify(
     static_files: Vec<ConfigPath>,
     customizations: &Customizations,
 ) -> Result<(RunTime, RunTime, RunTime)> {
-    if in_memory_etcd_client.etcd_client.is_some() {
+    let external_certs = if in_memory_etcd_client.etcd_client.is_some() {
         scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
             .await
-            .context("discovering external certs to ignore")?;
-    }
+            .context("discovering external certs to ignore")?
+    } else {
+        HashSet::new()
+    };
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
-    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, static_files));
+    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(
+        in_memory_etcd_client,
+        static_dirs,
+        static_files,
+        external_certs.clone(),
+    ));
     let rsa_keys = tokio::spawn(fill_keys());
 
     // Wait for the parallelizable tasks to finish and get their results
