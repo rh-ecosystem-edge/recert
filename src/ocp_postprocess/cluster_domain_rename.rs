@@ -1,4 +1,4 @@
-use self::params::ClusterRenameParameters;
+use self::params::ClusterNamesRename;
 use crate::{cluster_crypto::locations::K8sResourceLocation, config::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
@@ -10,7 +10,7 @@ pub(crate) mod rename_utils;
 
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_rename: &ClusterRenameParameters,
+    cluster_rename: &ClusterNamesRename,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<(), anyhow::Error> {
@@ -93,7 +93,7 @@ async fn fix_etcd_resources(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_domain: &str,
     generated_infra_id: String,
-    cluster_rename: &ClusterRenameParameters,
+    cluster_rename: &ClusterNamesRename,
 ) -> Result<(), anyhow::Error> {
     etcd_rename::fix_router_certs(
         etcd_client,
