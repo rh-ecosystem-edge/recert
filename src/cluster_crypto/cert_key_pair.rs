@@ -13,7 +13,10 @@ use super::{
 use crate::{
     cluster_crypto::locations::LocationValueType,
     config::CryptoCustomizations,
-    file_utils::{add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem},
+    file_utils::{
+        add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem,
+        update_auth_certificate_annotations,
+    },
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
 };
@@ -332,6 +335,15 @@ impl CertKeyPair {
                 .cert
                 .encode_pem(),
         )?;
+
+        let certificate = self
+            .distributed_cert
+            .borrow()
+            .certificate_regenerated
+            .clone()
+            .context("certificate was not regenerated")?;
+
+        update_auth_certificate_annotations(&mut resource, &certificate)?;
 
         etcd_client
             .put(
