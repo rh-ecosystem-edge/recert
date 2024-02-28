@@ -3,7 +3,7 @@ use std::{env, ops::Deref, path::Path, sync::atomic::Ordering::Relaxed};
 use crate::{
     cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
-    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters,
+    ocp_postprocess::cluster_domain_rename::params::ClusterNamesRename,
     use_cert::{UseCert, UseCertRules},
     use_key::{UseKey, UseKeyRules},
 };
@@ -49,12 +49,21 @@ impl serde::Serialize for ConfigPath {
 
 /// All the user requested customizations, coalesced into a single struct for convenience
 #[derive(serde::Serialize)]
-pub(crate) struct Customizations {
+pub(crate) struct CryptoCustomizations {
     pub(crate) cn_san_replace_rules: CnSanReplaceRules,
     pub(crate) use_key_rules: UseKeyRules,
     pub(crate) use_cert_rules: UseCertRules,
     pub(crate) extend_expiration: bool,
     pub(crate) force_expire: bool,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ClusterCustomizations {
+    pub(crate) cluster_rename: Option<ClusterNamesRename>,
+    pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
+    pub(crate) kubeadmin_password_hash: Option<String>,
+    pub(crate) pull_secret: Option<String>,
 }
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
@@ -64,12 +73,8 @@ pub(crate) struct RecertConfig {
     pub(crate) etcd_endpoint: Option<String>,
     pub(crate) static_dirs: Vec<ConfigPath>,
     pub(crate) static_files: Vec<ConfigPath>,
-    pub(crate) customizations: Customizations,
-    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
-    pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
-    pub(crate) kubeadmin_password_hash: Option<String>,
-    pub(crate) pull_secret: Option<String>,
+    pub(crate) crypto_customizations: CryptoCustomizations,
+    pub(crate) cluster_customizations: ClusterCustomizations,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
     pub(crate) summary_file: Option<ConfigPath>,
@@ -232,7 +237,7 @@ impl RecertConfig {
 
         let cluster_rename = match value.remove("cluster_rename") {
             Some(value) => Some(
-                ClusterRenameParameters::cli_parse(value.as_str().context("cluster_rename must be a string")?)
+                ClusterNamesRename::cli_parse(value.as_str().context("cluster_rename must be a string")?)
                     .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
             ),
             None => None,
@@ -310,18 +315,20 @@ impl RecertConfig {
             etcd_endpoint,
             static_dirs,
             static_files,
-            customizations: Customizations {
+            crypto_customizations: CryptoCustomizations {
                 cn_san_replace_rules,
                 use_key_rules,
                 use_cert_rules,
                 extend_expiration,
                 force_expire,
             },
-            cluster_rename,
-            hostname,
-            ip,
-            kubeadmin_password_hash: set_kubeadmin_password_hash,
-            pull_secret,
+            cluster_customizations: ClusterCustomizations {
+                cluster_rename,
+                hostname,
+                ip,
+                kubeadmin_password_hash: set_kubeadmin_password_hash,
+                pull_secret,
+            },
             threads,
             regenerate_server_ssh_keys,
             summary_file,
@@ -332,17 +339,17 @@ impl RecertConfig {
         };
 
         ensure!(
-            !(recert_config.customizations.extend_expiration && recert_config.customizations.force_expire),
+            !(recert_config.crypto_customizations.extend_expiration && recert_config.crypto_customizations.force_expire),
             "extend_expiration and force_expire are mutually exclusive"
         );
 
         ensure!(
-            !(recert_config.dry_run && recert_config.customizations.force_expire),
+            !(recert_config.dry_run && recert_config.crypto_customizations.force_expire),
             "dry_run and force_expire are mutually exclusive"
         );
 
         ensure!(
-            !(recert_config.dry_run && recert_config.customizations.extend_expiration),
+            !(recert_config.dry_run && recert_config.crypto_customizations.extend_expiration),
             "dry_run and extend_expiration are mutually exclusive"
         );
 
@@ -355,18 +362,20 @@ impl RecertConfig {
             etcd_endpoint: cli.etcd_endpoint,
             static_dirs: cli.static_dir.into_iter().map(ConfigPath::from).collect(),
             static_files: cli.static_file.into_iter().map(ConfigPath::from).collect(),
-            customizations: Customizations {
+            crypto_customizations: CryptoCustomizations {
                 cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
                 use_key_rules: UseKeyRules(cli.use_key),
                 use_cert_rules: UseCertRules(cli.use_cert),
                 extend_expiration: cli.extend_expiration,
                 force_expire: cli.force_expire,
             },
-            cluster_rename: cli.cluster_rename,
-            hostname: cli.hostname,
-            ip: cli.ip,
-            kubeadmin_password_hash: cli.kubeadmin_password_hash,
-            pull_secret: cli.pull_secret,
+            cluster_customizations: ClusterCustomizations {
+                cluster_rename: cli.cluster_rename,
+                hostname: cli.hostname,
+                ip: cli.ip,
+                kubeadmin_password_hash: cli.kubeadmin_password_hash,
+                pull_secret: cli.pull_secret,
+            },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),
             summary_file: cli.summary_file.map(ConfigPath::from),

@@ -1,7 +1,7 @@
-use self::cluster_domain_rename::params::ClusterRenameParameters;
+use self::cluster_domain_rename::params::ClusterNamesRename;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
-    config::ConfigPath,
+    config::{ClusterCustomizations, ConfigPath},
     file_utils::{self, read_file_to_string},
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
@@ -22,14 +22,9 @@ pub(crate) mod ip_rename;
 pub(crate) mod pull_secret_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_rename_params: &Option<ClusterRenameParameters>,
-    hostname: &Option<String>,
-    ip: &Option<String>,
-    kubeadmin_password_hash: &Option<String>,
-    pull_secret: &Option<String>,
+    cluster_customizations: &ClusterCustomizations,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
@@ -49,37 +44,7 @@ pub(crate) async fn ocp_postprocess(
         .await
         .context("syncing webhook authenticators")?;
 
-    if let Some(cluster_rename_params) = cluster_rename_params {
-        cluster_rename(in_memory_etcd_client, cluster_rename_params, static_dirs, static_files)
-            .await
-            .context("renaming cluster")?;
-    }
-
-    if let Some(hostname) = hostname {
-        hostname_rename(in_memory_etcd_client, hostname, static_dirs, static_files)
-            .await
-            .context("renaming hostname")?;
-    }
-
-    if let Some(ip) = ip {
-        ip_rename(in_memory_etcd_client, ip, static_dirs, static_files)
-            .await
-            .context("renaming IP")?;
-    }
-
-    if let Some(kubeadmin_password_hash) = kubeadmin_password_hash {
-        log::info!("setting kubeadmin password hash");
-        set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
-            .await
-            .context("setting kubeadmin password hash")?;
-    }
-
-    if let Some(pull_secret) = pull_secret {
-        log::info!("setting new pull_secret");
-        pull_secret_rename(in_memory_etcd_client, pull_secret, static_dirs, static_files)
-            .await
-            .context("renaming pull_secret")?;
-    }
+    run_cluster_customizations(cluster_customizations, in_memory_etcd_client, static_dirs, static_files).await?;
 
     fix_deployment_dep_annotations(
         in_memory_etcd_client,
@@ -94,6 +59,47 @@ pub(crate) async fn ocp_postprocess(
     )
     .await
     .context("fixing dep annotations for openshift-oauth-apiserver")?;
+
+    Ok(())
+}
+
+async fn run_cluster_customizations(
+    cluster_customizations: &ClusterCustomizations,
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    static_dirs: &Vec<ConfigPath>,
+    static_files: &Vec<ConfigPath>,
+) -> Result<(), anyhow::Error> {
+    if let Some(cluster_names_rename) = &cluster_customizations.cluster_rename {
+        cluster_rename(in_memory_etcd_client, cluster_names_rename, static_dirs, static_files)
+            .await
+            .context("renaming cluster")?;
+    }
+
+    if let Some(hostname) = &cluster_customizations.hostname {
+        hostname_rename(in_memory_etcd_client, hostname, static_dirs, static_files)
+            .await
+            .context("renaming hostname")?;
+    }
+
+    if let Some(ip) = &cluster_customizations.ip {
+        ip_rename(in_memory_etcd_client, ip, static_dirs, static_files)
+            .await
+            .context("renaming IP")?;
+    }
+
+    if let Some(kubeadmin_password_hash) = &cluster_customizations.kubeadmin_password_hash {
+        log::info!("setting kubeadmin password hash");
+        set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
+            .await
+            .context("setting kubeadmin password hash")?;
+    }
+
+    if let Some(pull_secret) = &cluster_customizations.pull_secret {
+        log::info!("setting new pull_secret");
+        pull_secret_rename(in_memory_etcd_client, pull_secret, static_dirs, static_files)
+            .await
+            .context("renaming pull_secret")?;
+    };
 
     Ok(())
 }
@@ -393,7 +399,7 @@ pub(crate) async fn delete_all(etcd_client: &Arc<InMemoryK8sEtcd>, resource_etcd
 
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    cluster_rename: &ClusterRenameParameters,
+    cluster_rename: &ClusterNamesRename,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
 ) -> Result<()> {

@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::{ClusterCryptoObjects, REDACT_SECRETS},
     config::RecertConfig,
-    recert::RunTimes,
+    recert::timing::RunTimes,
 };
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;

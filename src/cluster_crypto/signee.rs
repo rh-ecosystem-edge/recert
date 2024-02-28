@@ -1,4 +1,4 @@
-use crate::{config::Customizations, rsa_key_pool::RsaKeyPool};
+use crate::{config::CryptoCustomizations, rsa_key_pool::RsaKeyPool};
 
 use super::{
     cert_key_pair::{CertKeyPair, SerialNumberEdits, SkidEdits},
@@ -32,7 +32,7 @@ impl Signee {
         &mut self,
         new_signing_key: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
-        customizations: &Customizations,
+        crypto_customizations: &CryptoCustomizations,
         skid_edits: Option<&mut SkidEdits>,
         serial_number_edits: Option<&mut SerialNumberEdits>,
     ) -> Result<()> {
@@ -41,7 +41,7 @@ impl Signee {
                 (**cert_key_pair).borrow_mut().regenerate(
                     new_signing_key,
                     rsa_key_pool,
-                    customizations,
+                    crypto_customizations,
                     skid_edits.context("cert regeneration requires skid edits")?,
                     serial_number_edits.context("cert regeneration requires serial number edits")?,
                 )?;

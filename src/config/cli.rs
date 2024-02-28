@@ -1,5 +1,5 @@
 use crate::{
-    cnsanreplace::CnSanReplace, ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters, use_cert::UseCert, use_key::UseKey,
+    cnsanreplace::CnSanReplace, ocp_postprocess::cluster_domain_rename::params::ClusterNamesRename, use_cert::UseCert, use_key::UseKey,
 };
 use clap::Parser;
 use clio::ClioPath;
@@ -32,8 +32,8 @@ pub(crate) struct Cli {
     /// cluster resources which refer to a cluster name / cluster base domain (typically through
     /// URLs which they happen to contian) will be modified to use this cluster name and base
     /// domain instead.
-    #[clap(long, value_parser = ClusterRenameParameters::cli_parse)]
-    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
+    #[clap(long, value_parser = ClusterNamesRename::cli_parse)]
+    pub(crate) cluster_rename: Option<ClusterNamesRename>,
 
     /// If given, the cluster resources that include the hostname will be modified to use this one
     /// instead.

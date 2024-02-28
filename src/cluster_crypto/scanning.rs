@@ -8,7 +8,7 @@ use crate::{
     config::ConfigPath,
     file_utils::{self, read_file_to_string},
     k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
-    recert::RunTime,
+    recert::timing::RunTime,
 };
 use anyhow::{bail, ensure, Context, Error, Result};
 use futures_util::future::join_all;
