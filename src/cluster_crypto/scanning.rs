@@ -24,8 +24,12 @@ use tokio::task::JoinHandle;
 use x509_certificate::X509Certificate;
 
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<HashSet<String>> {
-    let trusted_certs = vec![get_openshift_trusted_certs(&in_memory_etcd_client).await?];
-    let image_trusted_certs = get_openshift_image_trusted_certs(&in_memory_etcd_client).await?;
+    let trusted_certs = vec![get_openshift_trusted_certs(&in_memory_etcd_client)
+        .await
+        .context("openshift trusted certs")?];
+    let image_trusted_certs = get_openshift_image_trusted_certs(&in_memory_etcd_client)
+        .await
+        .context("image trusted certs")?;
 
     let all_certs_bundled = trusted_certs.into_iter().chain(image_trusted_certs).join("\n");
 
@@ -57,7 +61,7 @@ async fn get_openshift_image_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK
     .context("getting image config")?
     .context("image config not found")?;
 
-    if let Some(additional_trusted_ca) = image_config.pointer("/spec/additionalTrustedCA") {
+    if let Some(additional_trusted_ca) = image_config.pointer("/spec/additionalTrustedCA/name") {
         let user_image_ca_configmap = get_etcd_json(
             in_memory_etcd_client,
             &(K8sResourceLocation {
@@ -71,13 +75,13 @@ async fn get_openshift_image_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK
         .context("getting user image ca configmap")?
         .context("user image ca configmap not found")?;
 
-        for (_k, v) in user_image_ca_configmap
+        for (k, v) in user_image_ca_configmap
             .pointer("/data")
             .context("parsing registry-cas")?
             .as_object()
             .context("must be object")?
         {
-            pem_strings.push(v.as_str().context("must be string")?.to_string());
+            pem_strings.push(v.as_str().context(format!("must be string ({k})"))?.to_string());
         }
     }
 
