@@ -1,4 +1,5 @@
 use anyhow::{bail, ensure, Context, Result};
+use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -26,7 +27,6 @@ pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &st
                 line.to_string()
             }
         })
-        .collect::<Vec<_>>()
         .join("\n");
 
     if !found {

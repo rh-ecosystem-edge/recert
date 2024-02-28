@@ -10,6 +10,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use clio::ClioPath;
+use itertools::Itertools;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -301,7 +302,7 @@ impl RecertConfig {
         ensure!(
             value.is_empty(),
             "unknown keys {:?} in config file",
-            value.keys().map(|key| key.to_string()).collect::<Vec<String>>().join(", ")
+            value.keys().map(|key| key.to_string()).join(", ")
         );
 
         let recert_config = Self {
