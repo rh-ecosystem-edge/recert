@@ -63,7 +63,7 @@ async fn recertify(
     crypto_customizations: &CryptoCustomizations,
 ) -> Result<RecertifyTiming> {
     let external_certs = if in_memory_etcd_client.etcd_client.is_some() {
-        scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
+        scanning::external_certs::discover_external_certs(Arc::clone(&in_memory_etcd_client))
             .await
             .context("discovering external certs to ignore")?
     } else {
