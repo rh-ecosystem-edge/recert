@@ -1,9 +1,11 @@
 use crate::cluster_crypto::{
+    certificate::Certificate,
     locations::{FileLocation, JsonLocation, LocationValueType},
     pem_utils,
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
@@ -232,6 +234,36 @@ pub(crate) fn add_recert_edited_annotation(_resource: &mut Value, _yaml_location
             String::from("recert-edited"),
             Value::String(serde_json::to_string(&annotation_value).context("serializing recert annotation")?),
         );
+
+    Ok(())
+}
+
+fn time_rfc3339(asn1time: &x509_certificate::asn1time::Time) -> String {
+    match asn1time {
+        x509_certificate::asn1time::Time::UtcTime(time) => time.to_rfc3339_opts(SecondsFormat::Secs, true),
+        x509_certificate::asn1time::Time::GeneralTime(time) => {
+            DateTime::<Utc>::from((*time).clone()).to_rfc3339_opts(SecondsFormat::Secs, true)
+        }
+    }
+}
+
+/// Updates the auth.openshift.io/certificate-not-{after,before} annotations to match the
+/// validity period of the regenerated certificate. When such annotations are missing, it skips
+/// them. Those annotations are used by cluster operators based on library-go to rotate those crypto
+/// objects via the certrotation component.
+///
+/// Reference:
+/// - https://github.com/openshift/library-go/blob/master/pkg/operator/certrotation/signer.go#L85
+pub(crate) fn update_auth_certificate_annotations(resource: &mut Value, certificate: &Certificate) -> Result<()> {
+    let cert: &x509_certificate::X509Certificate = &certificate.cert;
+    let certificate: &x509_certificate::rfc5280::Certificate = cert.as_ref();
+
+    if let Some(not_before) = resource.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-not-before") {
+        *not_before = Value::String(time_rfc3339(&certificate.tbs_certificate.validity.not_before));
+    }
+    if let Some(not_after) = resource.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-not-after") {
+        *not_after = Value::String(time_rfc3339(&certificate.tbs_certificate.validity.not_after));
+    }
 
     Ok(())
 }
