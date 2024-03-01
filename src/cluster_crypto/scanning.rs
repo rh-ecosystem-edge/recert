@@ -7,12 +7,11 @@ use crate::{
     cluster_crypto::{crypto_objects::process_unknown_value, json_crawl},
     config::ConfigPath,
     file_utils::{self, read_file_to_string},
-    k8s_etcd::{get_etcd_json, InMemoryK8sEtcd},
+    k8s_etcd::InMemoryK8sEtcd,
     recert::timing::RunTime,
 };
 use anyhow::{bail, ensure, Context, Error, Result};
 use futures_util::future::join_all;
-use itertools::Itertools;
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -21,94 +20,8 @@ use std::{
     sync::Arc,
 };
 use tokio::task::JoinHandle;
-use x509_certificate::X509Certificate;
 
-pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<HashSet<String>> {
-    let trusted_certs = vec![get_openshift_trusted_certs(&in_memory_etcd_client)
-        .await
-        .context("openshift trusted certs")?];
-    let image_trusted_certs = get_openshift_image_trusted_certs(&in_memory_etcd_client)
-        .await
-        .context("image trusted certs")?;
-
-    let all_certs_bundled = trusted_certs.into_iter().chain(image_trusted_certs).join("\n");
-
-    pem::parse_many(all_certs_bundled)
-        .context("parsing")?
-        .into_iter()
-        .map(|pem| match pem.tag() {
-            "CERTIFICATE" => Ok({
-                let crt = X509Certificate::from_der(pem.contents()).context("from der")?;
-                let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
-
-                log::trace!("Found external certificate: {}", cn);
-
-                cn.to_string()
-            }),
-            _ => bail!("unexpected tag"),
-        })
-        .collect::<Result<HashSet<_>>>()
-}
-
-async fn get_openshift_image_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
-    let mut pem_strings = vec![];
-
-    let image_config = get_etcd_json(
-        in_memory_etcd_client,
-        &(K8sResourceLocation::new(None, "Image", "cluster", "config.openshift.io")),
-    )
-    .await
-    .context("getting image config")?
-    .context("image config not found")?;
-
-    if let Some(additional_trusted_ca) = image_config.pointer("/spec/additionalTrustedCA/name") {
-        let user_image_ca_configmap = get_etcd_json(
-            in_memory_etcd_client,
-            &(K8sResourceLocation {
-                namespace: Some("openshift-config".into()),
-                kind: "ConfigMap".into(),
-                apiversion: "v1".into(),
-                name: additional_trusted_ca.as_str().context("must be string")?.into(),
-            }),
-        )
-        .await
-        .context("getting user image ca configmap")?
-        .context("user image ca configmap not found")?;
-
-        for (k, v) in user_image_ca_configmap
-            .pointer("/data")
-            .context("parsing registry-cas")?
-            .as_object()
-            .context("must be object")?
-        {
-            pem_strings.push(v.as_str().context(format!("must be string ({k})"))?.to_string());
-        }
-    }
-
-    Ok(pem_strings)
-}
-
-async fn get_openshift_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<String> {
-    let trusted_ca_bundle_configmap = get_etcd_json(
-        in_memory_etcd_client,
-        &(K8sResourceLocation {
-            namespace: Some("openshift-config-managed".into()),
-            kind: "ConfigMap".into(),
-            apiversion: "v1".into(),
-            name: "trusted-ca-bundle".into(),
-        }),
-    )
-    .await
-    .context("getting trusted-ca-bundle")?
-    .context("trusted-ca-bundle not found")?;
-
-    Ok(trusted_ca_bundle_configmap
-        .pointer("/data/ca-bundle.crt")
-        .context("parsing ca-bundle.crt")?
-        .as_str()
-        .context("must be string")?
-        .to_string())
-}
+pub(crate) mod external_certs;
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
