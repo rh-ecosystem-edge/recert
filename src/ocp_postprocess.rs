@@ -1,7 +1,7 @@
 use self::cluster_domain_rename::params::ClusterNamesRename;
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
-    config::{ClusterCustomizations, ConfigPath},
+    config::{path::ConfigPath, ClusterCustomizations},
     file_utils::{self, read_file_to_string},
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
@@ -15,8 +15,10 @@ use k8s_etcd::InMemoryK8sEtcd;
 use sha2::Digest;
 use std::{collections::HashSet, sync::Arc};
 
+pub(crate) mod additional_trust_bundle;
 pub(crate) mod cluster_domain_rename;
 mod fnv;
+mod go_base32;
 pub(crate) mod hostname_rename;
 pub(crate) mod ip_rename;
 pub(crate) mod pull_secret_rename;
@@ -25,8 +27,6 @@ pub(crate) mod pull_secret_rename;
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_customizations: &ClusterCustomizations,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -40,11 +40,11 @@ pub(crate) async fn ocp_postprocess(
         .await
         .context("deleting node-kubeconfigs")?;
 
-    sync_webhook_authenticators(in_memory_etcd_client, static_dirs)
+    sync_webhook_authenticators(in_memory_etcd_client, &cluster_customizations.dirs)
         .await
         .context("syncing webhook authenticators")?;
 
-    run_cluster_customizations(cluster_customizations, in_memory_etcd_client, static_dirs, static_files).await?;
+    run_cluster_customizations(cluster_customizations, in_memory_etcd_client).await?;
 
     fix_deployment_dep_annotations(
         in_memory_etcd_client,
@@ -66,25 +66,24 @@ pub(crate) async fn ocp_postprocess(
 async fn run_cluster_customizations(
     cluster_customizations: &ClusterCustomizations,
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
 ) -> Result<(), anyhow::Error> {
+    let dirs = &cluster_customizations.dirs;
+    let files = &cluster_customizations.files;
+
     if let Some(cluster_names_rename) = &cluster_customizations.cluster_rename {
-        cluster_rename(in_memory_etcd_client, cluster_names_rename, static_dirs, static_files)
+        cluster_rename(in_memory_etcd_client, cluster_names_rename, dirs, files)
             .await
             .context("renaming cluster")?;
     }
 
     if let Some(hostname) = &cluster_customizations.hostname {
-        hostname_rename(in_memory_etcd_client, hostname, static_dirs, static_files)
+        hostname_rename(in_memory_etcd_client, hostname, dirs, files)
             .await
             .context("renaming hostname")?;
     }
 
     if let Some(ip) = &cluster_customizations.ip {
-        ip_rename(in_memory_etcd_client, ip, static_dirs, static_files)
-            .await
-            .context("renaming IP")?;
+        ip_rename(in_memory_etcd_client, ip, dirs, files).await.context("renaming IP")?;
     }
 
     if let Some(kubeadmin_password_hash) = &cluster_customizations.kubeadmin_password_hash {
@@ -96,10 +95,16 @@ async fn run_cluster_customizations(
 
     if let Some(pull_secret) = &cluster_customizations.pull_secret {
         log::info!("setting new pull_secret");
-        pull_secret_rename(in_memory_etcd_client, pull_secret, static_dirs, static_files)
+        pull_secret_rename(in_memory_etcd_client, pull_secret, dirs, files)
             .await
             .context("renaming pull_secret")?;
     };
+
+    if let Some(additional_trust_bundle) = &cluster_customizations.additional_trust_bundle {
+        additional_trust_bundle_rename(in_memory_etcd_client, additional_trust_bundle, dirs, files)
+            .await
+            .context("renaming additional_trust_bundle")?;
+    }
 
     Ok(())
 }
@@ -480,6 +485,21 @@ pub(crate) async fn pull_secret_rename(
     let etcd_client = in_memory_etcd_client;
 
     pull_secret_rename::rename_all(etcd_client, pull_secret, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn additional_trust_bundle_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    additional_trust_bundle: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    additional_trust_bundle::rename_all(etcd_client, additional_trust_bundle, static_dirs, static_files)
         .await
         .context("renaming all")?;
 

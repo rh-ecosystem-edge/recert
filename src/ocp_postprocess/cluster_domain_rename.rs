@@ -1,5 +1,5 @@
 use self::params::ClusterNamesRename;
-use crate::{cluster_crypto::locations::K8sResourceLocation, config::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
+use crate::{cluster_crypto::locations::K8sResourceLocation, config::path::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
 
