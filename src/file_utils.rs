@@ -68,7 +68,7 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
     match &yaml_location.value {
         LocationValueType::Pem(pem_location_info) => {
             let newbundle = pem_utils::pem_bundle_replace_pem_at_index(
-                decode_resource_data_entry(yaml_location, value_at_json_pointer)?,
+                &decode_resource_data_entry(yaml_location, value_at_json_pointer)?,
                 pem_location_info.pem_bundle_index,
                 new_pem,
             )?;

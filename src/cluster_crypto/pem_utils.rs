@@ -53,11 +53,11 @@ pub fn pem_bundle_line_ending(pem_bundle: &str) -> Result<pem::LineEnding> {
     }
 }
 
-pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_index: u64, newpem: &pem::Pem) -> Result<String> {
-    let original_line_endings = pem_bundle_line_ending(original_pem_bundle.as_str())?;
+pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_index: u64, newpem: &pem::Pem) -> Result<String> {
+    let original_line_endings = pem_bundle_line_ending(original_pem_bundle)?;
 
     let original_pem = {
-        let pems = pem::parse_many(original_pem_bundle.clone())?;
+        let pems = pem::parse_many(original_pem_bundle)?;
         ensure!(
             usize::try_from(pem_index)? < pems.len(),
             format!("pem_index {} out of range {}", pem_index, pems.len())
@@ -68,7 +68,7 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
         )
     };
 
-    let found_indices = original_pem_bundle.as_str().match_indices(&original_pem).collect::<Vec<_>>();
+    let found_indices = original_pem_bundle.match_indices(&original_pem).collect::<Vec<_>>();
 
     ensure!(
         !found_indices.is_empty(),
