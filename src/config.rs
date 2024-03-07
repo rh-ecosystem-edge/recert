@@ -13,6 +13,9 @@ use serde::Serialize;
 use serde_json::Value;
 use std::{env, path::PathBuf, sync::atomic::Ordering::Relaxed};
 
+#[cfg(test)]
+use serde_json::json;
+
 mod cli;
 pub(crate) mod path;
 
@@ -36,6 +39,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) hostname: Option<String>,
     pub(crate) ip: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
+    #[serde(serialize_with = "redact")]
     pub(crate) pull_secret: Option<String>,
     pub(crate) additional_trust_bundle: Option<String>,
 }
@@ -62,6 +66,8 @@ pub(crate) struct RecertConfig {
 // private keys instead of file paths)
 //
 // A bit hacky but couldn't find a better way to do this
+//
+// Also redacts the entire field if the config contains a pull secret
 fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
     if REDACT_SECRETS.load(Relaxed) {
         if let Some(config_file_raw) = config_file_raw {
@@ -69,6 +75,9 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
 
             match value {
                 Ok(value) => {
+                    if value.get("pull_secret").is_some() {
+                        return "<redacted due to inclusion of pull secret in config>".serialize(serializer);
+                    }
                     if let Some(value) = value.get("use_key_rules") {
                         match value.as_array() {
                             Some(seq) => {
@@ -97,7 +106,48 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
     config_file_raw.serialize(serializer)
 }
 
+fn redact<S: serde::Serializer>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    if REDACT_SECRETS.load(Relaxed) {
+        "<redacted>".serialize(serializer)
+    } else {
+        value.serialize(serializer)
+    }
+}
+
 impl RecertConfig {
+    #[cfg(test)]
+    fn empty() -> Result<RecertConfig> {
+        Ok(RecertConfig {
+            dry_run: true,
+            etcd_endpoint: None,
+            crypto_customizations: CryptoCustomizations {
+                dirs: vec![],
+                files: vec![],
+                cn_san_replace_rules: parse_cs_san_rules(json!([]))?,
+                use_key_rules: parse_use_key_rules(json!([]))?,
+                use_cert_rules: parse_cert_rules(json!([]))?,
+                extend_expiration: false,
+                force_expire: false,
+            },
+            cluster_customizations: ClusterCustomizations {
+                dirs: vec![],
+                files: vec![],
+                cluster_rename: None,
+                hostname: None,
+                ip: None,
+                kubeadmin_password_hash: None,
+                pull_secret: None,
+                additional_trust_bundle: None,
+            },
+            threads: None,
+            regenerate_server_ssh_keys: None,
+            summary_file: None,
+            summary_file_clean: None,
+            config_file_raw: None,
+            cli_raw: None,
+        })
+    }
+
     pub(crate) fn parse_from_config_file(config_bytes: &[u8]) -> Result<Self> {
         let value: Value = serde_yaml::from_slice(config_bytes)?;
 
@@ -105,14 +155,82 @@ impl RecertConfig {
 
         let (crypto_dirs, crypto_files, cluster_customization_dirs, cluster_customization_files) = parse_dir_file_config(&mut value)?;
 
-        let (cn_san_replace_rules, use_key_rules, use_cert_rules, extend_expiration, force_expire) =
-            parse_crypto_customization_config(&mut value)?;
-
-        let (cluster_rename, hostname, ip, pull_secret, set_kubeadmin_password_hash, additional_trust_bundle) =
-            parse_cluster_customization_config(&mut value)?;
-
-        let (dry_run, etcd_endpoint, threads, regenerate_server_ssh_keys, summary_file, summary_file_clean) =
-            parse_misc_config(&mut value)?;
+        let cn_san_replace_rules = match value.remove("cn_san_replace_rules") {
+            Some(value) => parse_cs_san_rules(value)?,
+            None => CnSanReplaceRules(vec![]),
+        };
+        let use_key_rules = match value.remove("use_key_rules") {
+            Some(value) => parse_use_key_rules(value)?,
+            None => UseKeyRules(vec![]),
+        };
+        let use_cert_rules = match value.remove("use_cert_rules") {
+            Some(value) => parse_cert_rules(value)?,
+            None => UseCertRules(vec![]),
+        };
+        let extend_expiration = value
+            .remove("extend_expiration")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("extend_expiration must be a boolean")?;
+        let force_expire = value
+            .remove("force_expire")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("force_expire must be a boolean")?;
+        let cluster_rename = match value.remove("cluster_rename") {
+            Some(value) => Some(
+                ClusterNamesRename::parse(value.as_str().context("cluster_rename must be a string")?)
+                    .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
+            ),
+            None => None,
+        };
+        let hostname = match value.remove("hostname") {
+            Some(value) => Some(value.as_str().context("hostname must be a string")?.to_string()),
+            None => None,
+        };
+        let ip = match value.remove("ip") {
+            Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
+            None => None,
+        };
+        let pull_secret = match value.remove("pull_secret") {
+            Some(value) => Some(value.as_str().context("pull_secret must be a string")?.to_string()),
+            None => None,
+        };
+        let set_kubeadmin_password_hash = match value.remove("kubeadmin_password_hash") {
+            Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
+            None => None,
+        };
+        let additional_trust_bundle = match value.remove("additional_trust_bundle") {
+            Some(value) => Some(parse_additional_trust_bundle(
+                value.as_str().context("additional_trust_bundle must be a string")?,
+            )?),
+            None => None,
+        };
+        let dry_run = value
+            .remove("dry_run")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("dry_run must be a boolean")?;
+        let etcd_endpoint = match value.remove("etcd_endpoint") {
+            Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
+            None => None,
+        };
+        let threads = match value.remove("threads") {
+            Some(value) => parse_threads(value)?,
+            None => None,
+        };
+        let regenerate_server_ssh_keys = match value.remove("regenerate_server_ssh_keys") {
+            Some(value) => parse_server_ssh_keys(value)?,
+            None => None,
+        };
+        let summary_file = match value.remove("summary_file") {
+            Some(value) => parse_summary_file(value)?,
+            None => None,
+        };
+        let summary_file_clean = match value.remove("summary_file_clean") {
+            Some(value) => parse_summary_file_clean(value)?,
+            None => None,
+        };
 
         ensure!(
             value.is_empty(),
@@ -240,177 +358,78 @@ impl RecertConfig {
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_misc_config(
-    value: &mut serde_json::Map<String, Value>,
-) -> Result<(
-    bool,
-    Option<String>,
-    Option<usize>,
-    Option<ConfigPath>,
-    Option<ConfigPath>,
-    Option<ConfigPath>,
-)> {
-    let dry_run = value
-        .remove("dry_run")
-        .unwrap_or(Value::Bool(false))
-        .as_bool()
-        .context("dry_run must be a boolean")?;
-    let etcd_endpoint = match value.remove("etcd_endpoint") {
-        Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
-        None => None,
-    };
-    let threads = match value.remove("threads") {
-        Some(value) => Some(
-            value
-                .as_u64()
-                .context("threads must be an integer")?
-                .try_into()
-                .context("threads must be an integer")?,
-        ),
-        None => None,
-    };
-    let regenerate_server_ssh_keys = match value.remove("regenerate_server_ssh_keys") {
-        Some(value) => {
-            let config_path = ConfigPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?)
-                .context(format!("regenerate_server_ssh_keys {}", value.as_str().unwrap()))?;
-
-            ensure!(config_path.try_exists()?, "regenerate_server_ssh_keys must exist");
-            ensure!(config_path.is_dir(), "regenerate_server_ssh_keys must be a directory");
-            Some(config_path)
-        }
-        None => None,
-    };
-    let summary_file = match value.remove("summary_file") {
-        Some(value) => Some(
-            ConfigPath::new(value.as_str().context("summary_file must be a string")?)
-                .context(format!("summary_file {}", value.as_str().unwrap()))?,
-        ),
-        None => None,
-    };
-    let summary_file_clean = match value.remove("summary_file_clean") {
-        Some(value) => Some(
-            ConfigPath::new(value.as_str().context("summary_file_clean must be a string")?)
-                .context(format!("summary_file_clean {}", value.as_str().unwrap()))?,
-        ),
-        None => None,
-    };
-    Ok((
-        dry_run,
-        etcd_endpoint,
-        threads,
-        regenerate_server_ssh_keys,
-        summary_file,
-        summary_file_clean,
+fn parse_summary_file_clean(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
+    Ok(Some(
+        ConfigPath::new(value.as_str().context("summary_file_clean must be a string")?)
+            .context(format!("summary_file_clean {}", value.as_str().unwrap()))?,
     ))
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_cluster_customization_config(
-    value: &mut serde_json::Map<String, Value>,
-) -> Result<(
-    Option<ClusterNamesRename>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-)> {
-    let cluster_rename = match value.remove("cluster_rename") {
-        Some(value) => Some(
-            ClusterNamesRename::parse(value.as_str().context("cluster_rename must be a string")?)
-                .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
-        ),
-        None => None,
-    };
-    let hostname = match value.remove("hostname") {
-        Some(value) => Some(value.as_str().context("hostname must be a string")?.to_string()),
-        None => None,
-    };
-    let ip = match value.remove("ip") {
-        Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
-        None => None,
-    };
-    let pull_secret = match value.remove("pull_secret") {
-        Some(value) => Some(value.as_str().context("pull_secret must be a string")?.to_string()),
-        None => None,
-    };
-    let set_kubeadmin_password_hash = match value.remove("kubeadmin_password_hash") {
-        Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
-        None => None,
-    };
-    let additional_trust_bundle = match value.remove("additional_trust_bundle") {
-        Some(value) => Some(parse_additional_trust_bundle(
-            value.as_str().context("additional_trust_bundle must be a string")?,
-        )?),
-        None => None,
-    };
-    Ok((
-        cluster_rename,
-        hostname,
-        ip,
-        pull_secret,
-        set_kubeadmin_password_hash,
-        additional_trust_bundle,
+fn parse_summary_file(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
+    Ok(Some(
+        ConfigPath::new(value.as_str().context("summary_file must be a string")?)
+            .context(format!("summary_file {}", value.as_str().unwrap()))?,
     ))
 }
 
-fn parse_crypto_customization_config(
-    value: &mut serde_json::Map<String, Value>,
-) -> Result<(CnSanReplaceRules, UseKeyRules, UseCertRules, bool, bool)> {
-    let cn_san_replace_rules = match value.remove("cn_san_replace_rules") {
-        Some(value) => CnSanReplaceRules(
-            value
-                .as_array()
-                .context("cn_san_replace_rules must be an array")?
-                .iter()
-                .map(|value| {
-                    CnSanReplace::parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?)
-                        .context(format!("cn_san_replace_rule {}", value.as_str().unwrap()))
-                })
-                .collect::<Result<Vec<CnSanReplace>>>()?,
-        ),
-        None => CnSanReplaceRules(vec![]),
-    };
-    let use_key_rules = match value.remove("use_key_rules") {
-        Some(value) => UseKeyRules(
-            value
-                .as_array()
-                .context("use_key_rules must be an array")?
-                .iter()
-                .map(|value| {
-                    UseKey::parse(value.as_str().context("use_key_rules must be an array of strings")?)
-                        .context(format!("use_key_rule {}", value.as_str().unwrap()))
-                })
-                .collect::<Result<Vec<UseKey>>>()?,
-        ),
-        None => UseKeyRules(vec![]),
-    };
-    let use_cert_rules = match value.remove("use_cert_rules") {
-        Some(value) => UseCertRules(
-            value
-                .as_array()
-                .context("use_cert_rules must be an array")?
-                .iter()
-                .map(|value| {
-                    UseCert::parse(value.as_str().context("use_cert_rules must be an array of strings")?)
-                        .context(format!("use_cert_rule {}", value.as_str().unwrap()))
-                })
-                .collect::<Result<Vec<UseCert>>>()?,
-        ),
-        None => UseCertRules(vec![]),
-    };
-    let extend_expiration = value
-        .remove("extend_expiration")
-        .unwrap_or(Value::Bool(false))
-        .as_bool()
-        .context("extend_expiration must be a boolean")?;
-    let force_expire = value
-        .remove("force_expire")
-        .unwrap_or(Value::Bool(false))
-        .as_bool()
-        .context("force_expire must be a boolean")?;
-    Ok((cn_san_replace_rules, use_key_rules, use_cert_rules, extend_expiration, force_expire))
+fn parse_server_ssh_keys(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
+    let config_path = ConfigPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?)
+        .context(format!("regenerate_server_ssh_keys {}", value.as_str().unwrap()))?;
+    ensure!(config_path.try_exists()?, "regenerate_server_ssh_keys must exist");
+    ensure!(config_path.is_dir(), "regenerate_server_ssh_keys must be a directory");
+    Ok(Some(config_path))
+}
+
+fn parse_threads(value: Value) -> Result<Option<usize>, anyhow::Error> {
+    Ok(Some(
+        value
+            .as_u64()
+            .context("threads must be an integer")?
+            .try_into()
+            .context("threads must be an integer")?,
+    ))
+}
+
+fn parse_cert_rules(value: Value) -> Result<UseCertRules> {
+    Ok(UseCertRules(
+        value
+            .as_array()
+            .context("use_cert_rules must be an array")?
+            .iter()
+            .map(|value| {
+                UseCert::parse(value.as_str().context("use_cert_rules must be an array of strings")?)
+                    .context(format!("use_cert_rule {}", value.as_str().unwrap()))
+            })
+            .collect::<Result<Vec<UseCert>>>()?,
+    ))
+}
+
+fn parse_use_key_rules(value: Value) -> Result<UseKeyRules> {
+    Ok(UseKeyRules(
+        value
+            .as_array()
+            .context("use_key_rules must be an array")?
+            .iter()
+            .map(|value| {
+                UseKey::parse(value.as_str().context("use_key_rules must be an array of strings")?)
+                    .context(format!("use_key_rule {}", value.as_str().unwrap()))
+            })
+            .collect::<Result<Vec<UseKey>>>()?,
+    ))
+}
+
+fn parse_cs_san_rules(value: Value) -> Result<CnSanReplaceRules> {
+    Ok(CnSanReplaceRules(
+        value
+            .as_array()
+            .context("cn_san_replace_rules must be an array")?
+            .iter()
+            .map(|value| {
+                CnSanReplace::parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?)
+                    .context(format!("cn_san_replace_rule {}", value.as_str().unwrap()))
+            })
+            .collect::<Result<Vec<CnSanReplace>>>()?,
+    ))
 }
 
 #[allow(clippy::type_complexity)]
@@ -607,4 +626,75 @@ pub(crate) fn parse_additional_trust_bundle(value: &str) -> Result<String> {
     // After parsing, we still return the raw bundle, as OpenShift also preserves the original
     // comments and whitespace in the user's additional trust bundle
     Ok(bundle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redact_config_file_raw_private_keys() {
+        let raw_config = r#"
+use_key_rules:
+- /path/to/key
+- |
+  -----BEGIN RSA PRIVATE KEY-----
+  MIIEpAIBAAKCAQEA
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("MIIEpAIBAAKCAQEA"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("MIIEpAIBAAKCAQEA"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    fn test_redact_config_file_raw_pull_secret() {
+        let raw_config = r#"
+pull_secret: |
+    {"auths": {"cloud.openshift.com": {"auth": "secretsecret", "email": "foo@bar.com"}}}
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("secretsecret"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("secretsecret"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    fn test_dont_redact_config_file_raw() {
+        let raw_config = r#"
+use_key_rules:
+- /path/to/key
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("/path/to/key"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(serde_json::to_string(&config).unwrap().contains("/path/to/key"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    fn test_pull_secret_not_serialized() {
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.cluster_customizations.pull_secret = Some("woiefjowiefjwioefj".to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("woiefjowiefjwioefj"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("woiefjowiefjwioefj"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
 }
