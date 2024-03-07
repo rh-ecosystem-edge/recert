@@ -53,7 +53,7 @@ pub fn pem_bundle_line_ending(pem_bundle: &str) -> Result<pem::LineEnding> {
     }
 }
 
-pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_index: u64, newpem: &pem::Pem) -> Result<String> {
+pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_index: u64, new_pem: &pem::Pem) -> Result<String> {
     let original_line_endings = pem_bundle_line_ending(original_pem_bundle)?;
 
     let original_pem = {
@@ -67,6 +67,8 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_ind
             pem::EncodeConfig::new().set_line_ending(original_line_endings),
         )
     };
+
+    let original_pem = original_pem.trim_end();
 
     let found_indices = original_pem_bundle.match_indices(&original_pem).collect::<Vec<_>>();
 
@@ -83,10 +85,10 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_ind
         )
     );
 
-    let new_bundle = original_pem_bundle.replace(
-        &original_pem,
-        &pem::encode_config(newpem, pem::EncodeConfig::new().set_line_ending(original_line_endings)).to_string(),
-    );
+    let new_pem = &pem::encode_config(new_pem, pem::EncodeConfig::new().set_line_ending(original_line_endings)).to_string();
+    let new_pem = new_pem.trim_end();
+
+    let new_bundle = original_pem_bundle.replace(original_pem, new_pem);
 
     ensure!(new_bundle != original_pem_bundle, format!("replacement did not change pem bundle"));
 
