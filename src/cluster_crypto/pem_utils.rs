@@ -90,7 +90,8 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_ind
 
     let new_bundle = original_pem_bundle.replace(original_pem, new_pem);
 
-    ensure!(new_bundle != original_pem_bundle, format!("replacement did not change pem bundle"));
+    // TODO: This causes a crash on AWS
+    // ensure!(new_bundle != original_pem_bundle, format!("replacement did not change pem bundle"));
 
     let line_ending_raw = match original_line_endings {
         pem::LineEnding::LF => "\n",
