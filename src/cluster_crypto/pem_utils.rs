@@ -87,6 +87,8 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
         &pem::encode_config(newpem, pem::EncodeConfig::new().set_line_ending(original_line_endings)).to_string(),
     );
 
+    ensure!(new_bundle != original_pem_bundle, format!("replacement did not change pem bundle"));
+
     let new_line_endings = pem_bundle_line_ending(new_bundle.as_str())?;
 
     let line_endings_match = matches!(
