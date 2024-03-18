@@ -1,0 +1,16 @@
+filters:
+  ".*":
+    reviewers:
+    - omertuc
+    - mresvanis
+    approvers:
+    - omertuc
+    - mresvanis
+  ^api/seedreconfig/seedreconfig.go:
+    labels:
+      - cluster-config-api-changed
+  ^Dockerfile:
+    reviewers:
+    - rauhersu
+    labels:
+      - downstream-change-needed
