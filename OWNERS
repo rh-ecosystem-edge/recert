@@ -6,9 +6,6 @@ filters:
     approvers:
     - omertuc
     - mresvanis
-  ^api/seedreconfig/seedreconfig.go:
-    labels:
-      - cluster-config-api-changed
   ^Dockerfile:
     reviewers:
     - rauhersu
