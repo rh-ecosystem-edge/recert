@@ -11,7 +11,6 @@ pub(crate) async fn fix_filesystem_ca_trust_anchors(additional_trust_bundle: &st
         file_utils::globvec(dir, "**/anchors/openshift-config-user-ca-bundle.crt")?
             .into_iter()
             .map(|file_path| {
-                let crt_file_path = file_path.clone();
                 let additional_trust_bundle = additional_trust_bundle.to_string();
                 tokio::spawn(async move {
                     async move {
