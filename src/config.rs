@@ -631,8 +631,10 @@ pub(crate) fn parse_additional_trust_bundle(value: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_redact_config_file_raw_private_keys() {
         let raw_config = r#"
 use_key_rules:
@@ -653,6 +655,7 @@ use_key_rules:
     }
 
     #[test]
+    #[serial]
     fn test_redact_config_file_raw_pull_secret() {
         let raw_config = r#"
 pull_secret: |
@@ -670,6 +673,7 @@ pull_secret: |
     }
 
     #[test]
+    #[serial]
     fn test_dont_redact_config_file_raw() {
         let raw_config = r#"
 use_key_rules:
@@ -687,6 +691,7 @@ use_key_rules:
     }
 
     #[test]
+    #[serial]
     fn test_pull_secret_not_serialized() {
         let mut config = RecertConfig::empty().unwrap();
 
