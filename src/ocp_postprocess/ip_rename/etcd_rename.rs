@@ -35,6 +35,17 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
         .context("storageConfig/urls/0 not an etcd URL")?
         .to_string();
 
+    let original_ip = if original_ip.contains(':') {
+        original_ip
+            .strip_prefix('[')
+            .context("IP containing ':' does not contain prefix '['")?
+            .strip_suffix(']')
+            .context("IP containing ':' does not contain suffix ']'")?
+            .to_string()
+    } else {
+        original_ip
+    };
+
     fix_storage_config(&mut config, ip)?;
 
     data.insert(
@@ -49,6 +60,9 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
 
 fn fix_storage_config(config: &mut Value, ip: &str) -> Result<(), anyhow::Error> {
     let storage_config = config.pointer_mut("/storageConfig").context("storageConfig not found")?;
+
+    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+
     storage_config.as_object_mut().context("storageConfig not an object")?.insert(
         "urls".to_string(),
         serde_json::Value::Array(vec![serde_json::Value::String(format!("https://{ip}:2379"))]),
@@ -231,6 +245,14 @@ pub(crate) async fn fix_etcd_scripts(etcd_client: &Arc<InMemoryK8sEtcd>, origina
         .context("etcd.env not a string")?
         .to_string();
 
+    let original_ip = if original_ip.contains(':') {
+        format!("[{original_ip}]")
+    } else {
+        original_ip.to_string()
+    };
+
+    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+
     let patterns = [
         (
             format!(r#"export ALL_ETCD_ENDPOINTS="https://{original_ip}:2379""#),
@@ -304,7 +326,7 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "v1");
     let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
-        .context("getting openshiftapiservers/cluster")?;
+        .context("getting openshift-oauth-apiserver deployment/apiserver")?;
 
     let containers = &mut deployment
         .pointer_mut("/spec/template/spec/containers")
@@ -328,7 +350,11 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
 
             ensure!(!args.is_empty(), "expected at least one arg in container");
 
-            let find = format!("--etcd-servers=https://{}:2379", original_ip);
+            let find = if original_ip.contains(':') {
+                format!("--etcd-servers='https://[{original_ip}]:2379'")
+            } else {
+                format!("--etcd-servers=https://{original_ip}:2379")
+            };
 
             let arg_idx = args
                 .iter_mut()
@@ -336,12 +362,13 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
                 .find_map(|(i, arg)| arg.as_str()?.contains(&find).then_some(i))
                 .context("name not found")?;
 
-            args[arg_idx] = serde_json::Value::String(
-                args[arg_idx]
-                    .as_str()
-                    .context("arg not a string")?
-                    .replace(&find, &format!("--etcd-servers=https://{ip}:2379")),
-            );
+            let replace = if ip.contains(':') {
+                format!("--etcd-servers='https://[{ip}]:2379'")
+            } else {
+                format!("--etcd-servers=https://{ip}:2379")
+            };
+
+            args[arg_idx] = serde_json::Value::String(args[arg_idx].as_str().context("arg not a string")?.replace(&find, &replace));
 
             Ok(())
         })?;

@@ -1,4 +1,5 @@
 use anyhow::{bail, ensure, Context, Result};
+use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -26,7 +27,6 @@ pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &st
                 line.to_string()
             }
         })
-        .collect::<Vec<_>>()
         .join("\n");
 
     if !found {
@@ -109,6 +109,14 @@ pub(crate) fn fix_api_server_arguments_ip(config: &mut Value, original_ip: &str,
         .as_array()
         .context("etcd-servers not an array")?
         .clone();
+
+    let original_ip = if original_ip.contains(':') {
+        format!("[{original_ip}]")
+    } else {
+        original_ip.to_string()
+    };
+
+    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
 
     let new_etcd_servers = original_etcd_servers
         .iter()
@@ -459,6 +467,14 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
 pub(crate) fn fix_etcd_pod_yaml_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
     let mut pod_yaml = pod_yaml.to_string();
 
+    let original_ip = if original_ip.contains(':') {
+        format!("[{original_ip}]")
+    } else {
+        original_ip.to_string()
+    };
+
+    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+
     let patterns = [
         (r#"value: "https://{original_ip}:2379""#, r#"value: "https://{ip}:2379""#),
         (r#"value: "{original_ip}""#, r#"value: "{ip}""#),
@@ -466,7 +482,10 @@ pub(crate) fn fix_etcd_pod_yaml_ip(pod_yaml: &str, original_ip: &str, ip: &str) 
 
     for (pattern, replacement) in patterns {
         pod_yaml = pod_yaml
-            .replace(&pattern.replace("{original_ip}", original_ip), &replacement.replace("{ip}", ip))
+            .replace(
+                &pattern.replace("{original_ip}", original_ip.as_str()),
+                &replacement.replace("{ip}", ip.as_str()),
+            )
             .to_string();
     }
 

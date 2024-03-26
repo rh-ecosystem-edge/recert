@@ -10,7 +10,7 @@ use self::{
 };
 use crate::{
     cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
-    config::Customizations,
+    config::CryptoCustomizations,
     k8s_etcd::{self, InMemoryK8sEtcd},
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
@@ -149,7 +149,7 @@ impl ClusterCryptoObjects {
     /// cert-key pairs and standalone private keys, which will in turn regenerate all the objects
     /// that depend on them (signees). Requires that first the crypto objects have been paired and
     /// associated through the other methods.
-    fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, customizations: &Customizations) -> Result<()> {
+    fn regenerate_crypto(&mut self, mut rsa_key_pool: RsaKeyPool, crypto_customizations: &CryptoCustomizations) -> Result<()> {
         let mut skid_edits = SkidEdits::new();
         let mut serial_number_edits = SerialNumberEdits::new();
 
@@ -158,13 +158,17 @@ impl ClusterCryptoObjects {
                 continue;
             }
 
-            (**cert_key_pair)
-                .borrow_mut()
-                .regenerate(None, &mut rsa_key_pool, customizations, &mut skid_edits, &mut serial_number_edits)?
+            (**cert_key_pair).borrow_mut().regenerate(
+                None,
+                &mut rsa_key_pool,
+                crypto_customizations,
+                &mut skid_edits,
+                &mut serial_number_edits,
+            )?
         }
 
         for private_key in self.distributed_private_keys.values() {
-            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, customizations)?
+            (**private_key).borrow_mut().regenerate(&mut rsa_key_pool, crypto_customizations)?
         }
 
         for public_key in self.distributed_public_keys.values() {
@@ -463,12 +467,13 @@ impl ClusterCryptoObjects {
     pub(crate) fn process_objects(
         &mut self,
         discovered_crypto_objects: Vec<DiscoveredCryptoObect>,
-        customizations: &Customizations,
+        crypto_customizations: &CryptoCustomizations,
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);
         self.establish_relationships().context("establishing relationships")?;
-        self.regenerate_crypto(rsa_pool, customizations).context("regenerating crypto")?;
+        self.regenerate_crypto(rsa_pool, crypto_customizations)
+            .context("regenerating crypto")?;
 
         Ok(())
     }

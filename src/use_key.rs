@@ -40,7 +40,7 @@ impl std::fmt::Display for UseKey {
 }
 
 impl UseKey {
-    pub(crate) fn cli_parse(value: &str) -> Result<Self> {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
         // TODO: ' ' is legacy, remove eventually
         let parts = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
 

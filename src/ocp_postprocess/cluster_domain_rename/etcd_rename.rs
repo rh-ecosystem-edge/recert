@@ -8,6 +8,7 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use fn_error_context::context;
 use futures_util::future::join_all;
+use itertools::Itertools;
 use serde_json::Value;
 use std::{io::BufRead, sync::Arc};
 
@@ -1091,7 +1092,6 @@ pub(crate) async fn fix_ovnkube_config(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                 line.to_string()
             }
         })
-        .collect::<Vec<_>>()
         .join("\n");
 
     if !found {
