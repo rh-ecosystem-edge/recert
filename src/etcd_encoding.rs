@@ -3,7 +3,8 @@ use super::protobuf_gen::{
     k8s::io::{
         api::{
             admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
-            apps::v1::{DaemonSet, Deployment},
+            apps::v1::{ControllerRevision, DaemonSet, Deployment, StatefulSet},
+            batch::v1::{CronJob, Job},
             core::v1::{ConfigMap, Secret},
         },
         apimachinery::pkg::runtime::{TypeMeta, Unknown},
@@ -50,6 +51,10 @@ macro_rules! k8s_type {
 k8s_type!(RouteWithMeta, Route);
 k8s_type!(DaemonsSetWithMeta, DaemonSet);
 k8s_type!(DeploymentWithMeta, Deployment);
+k8s_type!(ControllerRevisionWithMeta, ControllerRevision);
+k8s_type!(JobWithMeta, Job);
+k8s_type!(CronJobWithMeta, CronJob);
+k8s_type!(StatefulSetWithMeta, StatefulSet);
 k8s_type!(ConfigMapWithMeta, ConfigMap);
 k8s_type!(SecretWithMeta, Secret);
 k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration);
@@ -67,6 +72,10 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
     Ok(match kind {
         "Route" => serde_json::to_vec(&RouteWithMeta::try_from(unknown)?)?,
         "Deployment" => serde_json::to_vec(&DeploymentWithMeta::try_from(unknown)?)?,
+        "ControllerRevision" => serde_json::to_vec(&ControllerRevisionWithMeta::try_from(unknown)?)?,
+        "Job" => serde_json::to_vec(&JobWithMeta::try_from(unknown)?)?,
+        "CronJob" => serde_json::to_vec(&CronJobWithMeta::try_from(unknown)?)?,
+        "StatefulSet" => serde_json::to_vec(&StatefulSetWithMeta::try_from(unknown)?)?,
         "DaemonSet" => serde_json::to_vec(&DaemonsSetWithMeta::try_from(unknown)?)?,
         "ConfigMap" => serde_json::to_vec(&ConfigMapWithMeta::try_from(unknown)?)?,
         "Secret" => serde_json::to_vec(&SecretWithMeta::try_from(unknown)?)?,
@@ -93,6 +102,10 @@ pub(crate) async fn encode(data: &[u8]) -> Result<Vec<u8>> {
             "Route" => Unknown::from(serde_json::from_slice::<RouteWithMeta>(data)?),
             "Secret" => Unknown::from(serde_json::from_slice::<SecretWithMeta>(data)?),
             "Deployment" => Unknown::from(serde_json::from_slice::<DeploymentWithMeta>(data)?),
+            "ControllerRevision" => Unknown::from(serde_json::from_slice::<ControllerRevisionWithMeta>(data)?),
+            "Job" => Unknown::from(serde_json::from_slice::<JobWithMeta>(data)?),
+            "CronJob" => Unknown::from(serde_json::from_slice::<CronJobWithMeta>(data)?),
+            "StatefulSet" => Unknown::from(serde_json::from_slice::<StatefulSetWithMeta>(data)?),
             "DaemonSet" => Unknown::from(serde_json::from_slice::<DaemonsSetWithMeta>(data)?),
             "ValidatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<ValidatingWebhookConfigurationWithMeta>(data)?),
             "MutatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<MutatingWebhookConfigurationWithMeta>(data)?),

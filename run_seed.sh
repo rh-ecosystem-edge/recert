@@ -67,106 +67,7 @@ sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && su
 if [[ -n "$WITH_CONFIG" ]]; then
 	echo "Using config"
 	# shellcheck disable=2016
-	RECERT_CONFIG=<(echo '
-dry_run: false
-etcd_endpoint: localhost:2379
-crypto_dirs:
-- backup/etc/kubernetes
-- backup/var/lib/kubelet
-- backup/etc/machine-config-daemon
-crypto_files:
-- backup/etc/mcs-machine-config-content.json
-cluster_customization_dirs:
-- backup/etc/kubernetes
-- backup/var/lib/kubelet
-- backup/etc/machine-config-daemon
-- backup/etc/pki/ca-trust
-cluster_customization_files:
-- backup/etc/mcs-machine-config-content.json
-cn_san_replace_rules:
-- api-int.seed.redhat.com:api-int.new-name.foo.com
-- api.seed.redhat.com:api.new-name.foo.com
-- "*.apps.seed.redhat.com:*.apps.new-name.foo.com"
-- 192.168.126.10:192.168.127.11
-use_cert_rules:
-- |
-    -----BEGIN CERTIFICATE-----
-    MIICyzCCAbMCFAoie5EUqnUAHimqxbJBHV0MGVbwMA0GCSqGSIb3DQEBCwUAMCIx
-    IDAeBgNVBAMMF2FkbWluLWt1YmVjb25maWctc2lnbmVyMB4XDTI0MDEwOTEzMTky
-    NVoXDTI0MDIwODEzMTkyNVowIjEgMB4GA1UEAwwXYWRtaW4ta3ViZWNvbmZpZy1z
-    aWduZXIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC2fz96uc8fDoNV
-    RaBB9iQ+i5Y76IZf0XOdGID8WVaqPlqH+NgLUaFa39T+78FhZW3794Lbeyu/PnYT
-    ufMyKnJEulVO7W7gPHaqWyuN08/m6SH5ycTEgUAXK1q1yVR/vM6HnV/UPUCfbDaW
-    RFOrUgGNwNywhEjqyzyUxJFixxS6Rk7JmouROD2ciNhBn6wNFByVHN9j4nQUOhXC
-    A0JjuiPH7ybvcHjmg3mKDJusyVq4pl0faahOxn0doILfXaHHwRxyEnP3V3arpPer
-    FvwlHh2Cfat+ijFPSD9pN3KmoeAviOHZVLQ/jKzkQvzlvva3mhEpLE5Zje1lMpvq
-    fjDheW9bAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAC7oi/Ht0lidcx6XvOBz6W1m
-    LU02e2yHuDzw6E3WuNoqAdPpleFRV4mLDnv8mEavH5sje0L5veHtOq3Ny4pc06B+
-    ETB2aCW4GQ4mPvN9Jyi6sxLQQaVLpFrtPPB08NawNbbcYWUrAihO1uIXLhaCYZWw
-    H3aWlqRvGECazYZIPcFoV20jygrcwMhixSZjYyHhJN0LYO5sjiKcMnI8EkHuqE17
-    7CPogicZte+m49Mo+f7b8asmKBSafdTUSVAt9Q3Fc3PTJSMW5lxfx1vIR/og33WJ
-    BgIejfD1dYW2Fp02z5sF6Pw6vhobpfDYgsTAKNonh5P6NxMiD14eQxYrNJ6DAF0=
-    -----END CERTIFICATE-----
-cluster_rename: new-name:foo.com:some-random-infra-id
-hostname: test.hostname
-ip: 192.168.126.99
-kubeadmin_password_hash: "$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi"
-additional_trust_bundle: |
-    # Foo
-    -----BEGIN CERTIFICATE-----
-    MIIDZTCCAk2gAwIBAgIUP+AxIkXJXTEhNGLH2qjmE6Gp0fowDQYJKoZIhvcNAQEL
-    BQAwQjELMAkGA1UEBhMCWFgxFTATBgNVBAcMDERlZmF1bHQgQ2l0eTEcMBoGA1UE
-    CgwTRGVmYXVsdCBDb21wYW55IEx0ZDAeFw0yNDAzMDExMDIyNTlaFw0yNTAzMDEx
-    MDIyNTlaMEIxCzAJBgNVBAYTAlhYMRUwEwYDVQQHDAxEZWZhdWx0IENpdHkxHDAa
-    BgNVBAoME0RlZmF1bHQgQ29tcGFueSBMdGQwggEiMA0GCSqGSIb3DQEBAQUAA4IB
-    DwAwggEKAoIBAQC0wzg+7X2Amb5g60g0TstLgC0XnJRZq/YZUUsJMmm3qMb/+GYJ
-    AJzHxiycUfbRJtYvjx0SBmAX/kDRVCEQKcN5d/y3zeq709YO40kvouScfstsxM8l
-    PFLOmM8/Dqey1WblSJERBLbLherDnMwR7EMXkyZ/AfHUXmhVoIZE9ywsZpNcVW6Z
-    7x/+Izbj1s305vrxEkZDw6b3oMG5uooQgP5NZFXSamzJgviP0L/usvbRMtAWphoj
-    WhMeNuOdymLwRzm2l+2Qp/JDWktgHccmrbbi1c6pwhsIJBj4KOyb9zROTnYXyS/j
-    0b7GzVcffveV6E58rGa2ILyIsCv6gt8LgFnxAgMBAAGjUzBRMB0GA1UdDgQWBBQ5
-    nh0SeZxZ969ps+9ywPEoOVasxTAfBgNVHSMEGDAWgBQ5nh0SeZxZ969ps+9ywPEo
-    OVasxTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAWxsqfdm8h
-    AeNY8vPcRdtB9KYU5sZLs4NtlBFSdn+pHmeXZwwkjQDNhVcEMKdpZI4BpS11Ggwh
-    1d3BCCC/5M6yVqm+EMKJvA9VCeM8d1WJ1yVyXcgGuegf8kr3v+lr7Ll59qZGP5Ir
-    WwE8WRns7uFOCqYJCxo1VFXitZZuIugr3NUSimBPoJf1hDYdye3K3Q+grF2GyNII
-    5Yo+/VSR4ejIvJYAFp91Ycep7S0/+qhFpsjEG0Qw3Ly6WqQoCqdmIsyqFgWHsIlY
-    oJxV5wTX/c9DDZLR0VUD19aDV3B9kb7Cf+h7S4RsORWCyi7+58FKkkD6Ryc0I1K6
-    xw3RWhfd9o1d
-    -----END CERTIFICATE-----
-
-
-
-    # All
-    # the Bars
-    -----BEGIN CERTIFICATE-----
-    MIIDZTCCAk2gAwIBAgIULnisjJLte3Vvt4o1f+5vSQg542cwDQYJKoZIhvcNAQEL
-    BQAwQjELMAkGA1UEBhMCWFgxFTATBgNVBAcMDERlZmF1bHQgQ2l0eTEcMBoGA1UE
-    CgwTRGVmYXVsdCBDb21wYW55IEx0ZDAeFw0yNDAzMDExMDI1MDFaFw0yNTAzMDEx
-    MDI1MDFaMEIxCzAJBgNVBAYTAlhYMRUwEwYDVQQHDAxEZWZhdWx0IENpdHkxHDAa
-    BgNVBAoME0RlZmF1bHQgQ29tcGFueSBMdGQwggEiMA0GCSqGSIb3DQEBAQUAA4IB
-    DwAwggEKAoIBAQC2dhK7xTnoTB3wN1l3NsLTp5YR0KFfBTjMcDgSzUy/GN79c2cF
-    JzSuiYUi7SCmFjn3soNqpXHFzCox6KIs9R6PL4epaQM76EVG/Xy6mdDvFnZvqypi
-    wmK6J0AGajOxItYUGb2a3Zmt/2nliW6t8sW/vhovHRu7YROo4uJygIp2UUFct2Lk
-    8C7XkJX5RXW+sKTiNddIjhmDFD0vHfvNvQ6AIayJTmXy272+aqYNJWB2wS/2uD3Z
-    +WOpiINetCtkASoiE7nzBQw+WsTfeFJH2TnI5pnSaHdLRUQtzoLO0/FgQ5WBfJg5
-    aH03DLfQ9GEdzlsOkPOEgHXqDFMjTQCwcue3AgMBAAGjUzBRMB0GA1UdDgQWBBRd
-    0Zs+cm0gPHGKoQrerC18Pa3B3zAfBgNVHSMEGDAWgBRd0Zs+cm0gPHGKoQrerC18
-    Pa3B3zAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAepPrWqB9h
-    JkqtgJrP8SkQVulTVKYj66J5JxM5vZR96Z4UnbA3WNxezev0jMCYuV0twHPN8avs
-    Jern+/n7vgQ3ziiLVdtrN8PqK1X1apSurVmaiIw4tRcv5TVL5OD95sTyJh5bUBpM
-    DGtCTraPZxLIDKm9byunobXtJVcutw4oHKtFy/LlFWePCnvFzvx6ZFswLAXgxhf9
-    EtjDf3v0cjDn9yRzjYFrwHiQ53A75YTwFyk21q7Gh1G0yspfBeq7cej2wK1PnfiC
-    42TI0UzcqRV4CWDoARMSV8yMLajZ0g1eEreUprwmFcOy17V7KCeV6E8lKb21OU8M
-    Ad9q3H0iXjct
-    -----END CERTIFICATE-----
-summary_file: summary.yaml
-summary_file_clean: summary_redacted.yaml
-extend_expiration: true
-force_expire: false
-pull_secret: "{\"auths\":{\"empty_registry\":{\"username\":\"empty\",\"password\":\"empty\",\"auth\":\"ZW1wdHk6ZW1wdHk=\",\"email\":\"\"}}}"
-threads: 1
-') cargo run --release
+	RECERT_CONFIG="$SCRIPT_DIR/hack/dummy_config.yaml" cargo run --release
 else
 	# shellcheck disable=2016
 	cargo run -- \
@@ -182,6 +83,7 @@ else
 		--cluster-customization-dir backup/etc/machine-config-daemon \
 		--cluster-customization-dir backup/etc/pki/ca-trust \
 		--cluster-customization-file backup/etc/mcs-machine-config-content.json \
+        --cluster-customization-file backup/etc/mco/proxy.env \
         \
 		--cn-san-replace api-int.seed.redhat.com:api-int.new-name.foo.com \
 		--cn-san-replace api.seed.redhat.com:api.new-name.foo.com \
@@ -192,6 +94,8 @@ else
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
 		--ip 192.168.126.99 \
+		--proxy 'http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost,moreproxy' \
+		--install-config 'dummy-install-config' \
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--additional-trust-bundle ./hack/dummy_trust_bundle.pem \
 		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \

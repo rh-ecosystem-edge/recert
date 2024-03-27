@@ -1,4 +1,4 @@
-use self::cluster_domain_rename::params::ClusterNamesRename;
+use self::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy};
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     config::{path::ConfigPath, ClusterCustomizations},
@@ -20,10 +20,13 @@ pub(crate) mod cluster_domain_rename;
 mod fnv;
 mod go_base32;
 pub(crate) mod hostname_rename;
+pub(crate) mod install_config_rename;
 pub(crate) mod ip_rename;
+pub(crate) mod proxy_rename;
 pub(crate) mod pull_secret_rename;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_customizations: &ClusterCustomizations,
@@ -91,6 +94,18 @@ async fn run_cluster_customizations(
         set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
             .await
             .context("setting kubeadmin password hash")?;
+    }
+
+    if let Some(proxy) = &cluster_customizations.proxy {
+        proxy_rename(in_memory_etcd_client, proxy, dirs, files)
+            .await
+            .context("renaming proxy")?;
+    }
+
+    if let Some(install_config) = &cluster_customizations.install_config {
+        install_config_rename(in_memory_etcd_client, install_config, dirs, files)
+            .await
+            .context("renaming install_config")?;
     }
 
     if let Some(pull_secret) = &cluster_customizations.pull_secret {
@@ -500,6 +515,36 @@ pub(crate) async fn additional_trust_bundle_rename(
     let etcd_client = in_memory_etcd_client;
 
     additional_trust_bundle::rename_all(etcd_client, additional_trust_bundle, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn proxy_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    proxy: &Proxy,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    proxy_rename::rename_all(etcd_client, proxy, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn install_config_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    install_config: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    install_config_rename::rename_all(etcd_client, install_config, static_dirs, static_files)
         .await
         .context("renaming all")?;
 
