@@ -372,7 +372,10 @@ pub(crate) async fn fix_configmap_pods(etcd_client: &InMemoryK8sEtcd, proxy: &Pr
 
                 data.insert(
                     "pod.yaml".to_string(),
-                    Value::String(serde_json::to_string(&pod).context("serializing pod")?),
+                    Value::String(format!(
+                        "{}\n",
+                        html_escape_serialized_json(&serde_json::to_string(&pod).context("serializing pod")?)
+                    )),
                 );
 
                 put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
@@ -385,4 +388,9 @@ pub(crate) async fn fix_configmap_pods(etcd_client: &InMemoryK8sEtcd, proxy: &Pr
     .collect::<Result<Vec<_>>>()?;
 
     Ok(())
+}
+
+/// Match the behavior of the Go code when serialized JSON to avoid diffs
+fn html_escape_serialized_json(s: &str) -> String {
+    s.replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
 }
