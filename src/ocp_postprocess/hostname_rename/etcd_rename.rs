@@ -209,6 +209,15 @@ pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, origina
                         .context("/metadata not an object")?
                         .insert("name".to_string(), serde_json::Value::String(new_secret_name.clone()));
 
+                    if let Some(description_annotation) = etcd_value.pointer_mut("/metadata/annotations/openshift.io~1description") {
+                        *description_annotation = Value::String(
+                            description_annotation
+                                .as_str()
+                                .context("openshift.io/description annotation not a string")?
+                                .replace(original_hostname, hostname),
+                        );
+                    }
+
                     etcd_client
                         .put(
                             &(format!("/kubernetes.io/secrets/openshift-etcd/{new_secret_name}")),

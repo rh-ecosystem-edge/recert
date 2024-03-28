@@ -76,14 +76,14 @@ async fn run_cluster_customizations(
             .context("renaming cluster")?;
     }
 
+    if let Some(ip) = &cluster_customizations.ip {
+        ip_rename(in_memory_etcd_client, ip, dirs, files).await.context("renaming IP")?;
+    }
+
     if let Some(hostname) = &cluster_customizations.hostname {
         hostname_rename(in_memory_etcd_client, hostname, dirs, files)
             .await
             .context("renaming hostname")?;
-    }
-
-    if let Some(ip) = &cluster_customizations.ip {
-        ip_rename(in_memory_etcd_client, ip, dirs, files).await.context("renaming IP")?;
     }
 
     if let Some(kubeadmin_password_hash) = &cluster_customizations.kubeadmin_password_hash {
