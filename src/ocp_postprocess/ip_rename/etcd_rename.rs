@@ -277,6 +277,51 @@ pub(crate) async fn fix_etcd_scripts(etcd_client: &Arc<InMemoryK8sEtcd>, origina
     Ok(())
 }
 
+pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
+    for key_prefix in ["etcd-peer", "etcd-serving", "etcd-serving-metrics"] {
+        join_all(
+            etcd_client
+                .list_keys(format!("secrets/openshift-etcd/{key_prefix}").as_str())
+                .await?
+                .into_iter()
+                .map(|key| async move {
+                    let etcd_result = etcd_client
+                        .get(key.clone())
+                        .await
+                        .with_context(|| format!("getting key {:?}", key))?
+                        .context("key disappeared")?;
+                    let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
+                        .with_context(|| format!("deserializing value of key {:?}", key,))?;
+                    let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+                    let mut secret = get_etcd_json(etcd_client, &k8s_resource_location)
+                        .await?
+                        .context("could not find secret")?;
+
+                    if let Some(certificate_hostnames) =
+                        secret.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-hostnames")
+                    {
+                        *certificate_hostnames = serde_json::Value::String(
+                            certificate_hostnames
+                                .as_str()
+                                .context("aut.openshift.io/certificate-hostnames annotation not a string")?
+                                .replace(original_ip, ip),
+                        );
+                    }
+
+                    put_etcd_yaml(etcd_client, &k8s_resource_location, secret).await?;
+
+                    Ok(())
+                }),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn fix_kubeapiservers_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "KubeAPIServer", "cluster", "operator.openshift.io/v1");
     let mut cluster = get_etcd_json(etcd_client, &k8s_resource_location)

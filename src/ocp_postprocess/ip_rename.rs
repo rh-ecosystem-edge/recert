@@ -66,6 +66,10 @@ async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Res
         .await
         .context("fixing etcd-scripts")?;
 
+    etcd_rename::fix_etcd_secrets(etcd_client, &original_ip, ip)
+        .await
+        .context("fixing etcd secrets")?;
+
     etcd_rename::fix_kube_apiserver_configs(etcd_client, &original_ip, ip)
         .await
         .context("fixing kube apiserver configs")?;
