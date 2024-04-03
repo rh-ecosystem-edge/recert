@@ -170,8 +170,8 @@ pub(crate) fn fix_containers(config: &mut Value, proxy: &Proxy, prefix: &str) ->
     Ok(())
 }
 
-// Remove all existing proxy env vars from the container's env and return the index of where
-// the first proxy env var should be inserted. Also removes the order in which the proxy env vars
+// Remove all existing proxy env vars from the container's env and return the index of where the
+// first proxy env var should be inserted. Also removes the order in which the proxy env vars
 // appeared in the original env.
 fn remove_existing_proxy_env_vars(container_env: &mut Vec<Value>, is_upper: bool) -> Result<Option<(usize, Vec<String>)>> {
     let original_proxy_envs = container_env
