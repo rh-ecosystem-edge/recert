@@ -82,12 +82,14 @@ struct Summary {
     recert_config: RecertConfig,
     logs: Vec<String>,
     run_times: Option<RunTimes>,
+    error: Option<String>,
 }
 
 pub(crate) fn generate_summary(
     recert_config: RecertConfig,
     cluster_crypto: ClusterCryptoObjects,
     run_result: Option<RunTimes>,
+    error: Option<&anyhow::Error>,
 ) -> Result<()> {
     let logs = match LOG_RECORDS.lock() {
         Ok(logs) => logs.clone(),
@@ -101,6 +103,7 @@ pub(crate) fn generate_summary(
         recert_config,
         logs,
         run_times: run_result,
+        error: error.map(|e| format!("{:?}", e)),
     };
 
     if let Some(summary_file) = summary.recert_config.summary_file.clone() {
