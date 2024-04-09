@@ -391,7 +391,7 @@ impl CertKeyPair {
             match &filelocation.content_location {
                 FileContentLocation::Raw(location_value_type) => match &location_value_type {
                     LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                        String::from_utf8(contents)?,
+                        &String::from_utf8(contents)?,
                         pem_location_info.pem_bundle_index,
                         &newpem,
                     )?,

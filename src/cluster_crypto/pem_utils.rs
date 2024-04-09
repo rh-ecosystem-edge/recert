@@ -53,11 +53,11 @@ pub fn pem_bundle_line_ending(pem_bundle: &str) -> Result<pem::LineEnding> {
     }
 }
 
-pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_index: u64, newpem: &pem::Pem) -> Result<String> {
-    let original_line_endings = pem_bundle_line_ending(original_pem_bundle.as_str())?;
+pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_index: u64, new_pem: &pem::Pem) -> Result<String> {
+    let original_line_endings = pem_bundle_line_ending(original_pem_bundle)?;
 
     let original_pem = {
-        let pems = pem::parse_many(original_pem_bundle.clone())?;
+        let pems = pem::parse_many(original_pem_bundle)?;
         ensure!(
             usize::try_from(pem_index)? < pems.len(),
             format!("pem_index {} out of range {}", pem_index, pems.len())
@@ -68,7 +68,9 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
         )
     };
 
-    let found_indices = original_pem_bundle.as_str().match_indices(&original_pem).collect::<Vec<_>>();
+    let original_pem = original_pem.trim_end();
+
+    let found_indices = original_pem_bundle.match_indices(&original_pem).collect::<Vec<_>>();
 
     ensure!(
         !found_indices.is_empty(),
@@ -82,9 +84,24 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: String, pem_i
             pem_index, found_indices
         )
     );
-    let new_bundle = original_pem_bundle.replace(
-        &original_pem,
-        &pem::encode_config(newpem, pem::EncodeConfig::new().set_line_ending(original_line_endings)).to_string(),
+
+    let new_pem = &pem::encode_config(new_pem, pem::EncodeConfig::new().set_line_ending(original_line_endings)).to_string();
+    let new_pem = new_pem.trim_end();
+
+    let new_bundle = original_pem_bundle.replace(original_pem, new_pem);
+
+    // TODO: This causes a crash on AWS
+    // ensure!(new_bundle != original_pem_bundle, format!("replacement did not change pem bundle"));
+
+    let line_ending_raw = match original_line_endings {
+        pem::LineEnding::LF => "\n",
+        pem::LineEnding::CRLF => "\r\n",
+    };
+
+    ensure!(
+        (new_bundle.ends_with(line_ending_raw) && original_pem_bundle.ends_with(line_ending_raw))
+            || (!new_bundle.ends_with(line_ending_raw) && !original_pem_bundle.ends_with(line_ending_raw)),
+        "line ending mismatch between original and new pem bundle"
     );
 
     let new_line_endings = pem_bundle_line_ending(new_bundle.as_str())?;
