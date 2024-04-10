@@ -125,12 +125,15 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Result<Option<Dis
 pub(crate) fn process_pem_bundle(value: &str, location: &Location, external_certs: &HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
     let pems = pem::parse_many(value).context("parsing pem")?;
 
+    #[allow(clippy::unwrap_used)] // The filter ensures that unwrap will never panic. We can't use
+    // a filter_map because we want to maintain the index of the pem in the bundle.
     pems.iter()
         .enumerate()
         .map(|(pem_index, pem)| {
             process_single_pem(pem, external_certs).with_context(|| format!("processing pem at index {} in the bundle", pem_index))
         })
-        .collect::<Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>>>()
+        .context("error processing PEM")?
         .into_iter()
         .enumerate()
         .filter(|(_, crypto_object)| crypto_object.is_some())

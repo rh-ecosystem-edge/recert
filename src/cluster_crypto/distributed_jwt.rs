@@ -107,7 +107,7 @@ impl DistributedJwt {
         Ok(())
     }
 
-    async fn commit_at_location(location: &Location, jwt_regenerated: &Jwt, etcd_client: &InMemoryK8sEtcd) -> Result<(), anyhow::Error> {
+    async fn commit_at_location(location: &Location, jwt_regenerated: &Jwt, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
         match location {
             Location::K8s(k8slocation) => {
                 Self::commit_to_etcd(jwt_regenerated, etcd_client, k8slocation)

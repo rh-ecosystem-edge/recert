@@ -68,7 +68,15 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
 
     let data = &data[4..];
     let unknown = Unknown::decode(data)?;
-    let kind = unknown.type_meta.as_ref().unwrap().kind.as_ref().unwrap().as_str();
+    let kind = unknown
+        .type_meta
+        .as_ref()
+        .context("missing meta")?
+        .kind
+        .as_ref()
+        .context("missing kind")?
+        .as_str();
+
     Ok(match kind {
         "Route" => serde_json::to_vec(&RouteWithMeta::try_from(unknown)?)?,
         "Deployment" => serde_json::to_vec(&DeploymentWithMeta::try_from(unknown)?)?,

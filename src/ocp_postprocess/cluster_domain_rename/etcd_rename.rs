@@ -734,7 +734,7 @@ pub(crate) async fn fix_dns_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, c
     Ok(())
 }
 
-fn fix_dns(config: &mut Value, cluster_domain: &str) -> Result<(), anyhow::Error> {
+fn fix_dns(config: &mut Value, cluster_domain: &str) -> Result<()> {
     let spec = &mut config
         .pointer_mut("/spec")
         .context("no /spec")?
@@ -849,7 +849,7 @@ pub(crate) async fn fix_infrastructure_cluster_config(
     Ok(())
 }
 
-fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result<(), anyhow::Error> {
+fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result<()> {
     let status = &mut config
         .pointer_mut("/status")
         .context("no /status")?

@@ -15,7 +15,7 @@ pub(crate) async fn rename_all(
     proxy: &Proxy,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     fix_etcd_resources(etcd_client, proxy).await.context("renaming etcd resources")?;
 
     fix_filesystem_resources(proxy, static_dirs, static_files)

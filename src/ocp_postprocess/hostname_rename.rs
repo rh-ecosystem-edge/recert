@@ -10,7 +10,7 @@ pub(crate) async fn rename_all(
     hostname: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let original_hostname = fix_etcd_resources(etcd_client, hostname).await.context("renaming etcd resources")?;
 
     fix_filesystem_resources(&original_hostname, hostname, static_dirs, static_files)
@@ -25,7 +25,7 @@ async fn fix_filesystem_resources(
     hostname: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     for dir in static_dirs {
         fix_dir_resources(original_hostname, hostname, dir).await?;
     }

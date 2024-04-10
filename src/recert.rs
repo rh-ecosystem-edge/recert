@@ -39,7 +39,7 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
     Ok(combine_timings(recertify_timing, finalize_timing))
 }
 
-async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK8sEtcd>, anyhow::Error> {
+async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK8sEtcd>> {
     let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &recert_config.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)

@@ -69,7 +69,7 @@ pub(crate) async fn ocp_postprocess(
 async fn run_cluster_customizations(
     cluster_customizations: &ClusterCustomizations,
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let dirs = &cluster_customizations.dirs;
     let files = &cluster_customizations.files;
 
@@ -253,7 +253,7 @@ async fn fix_dep_annotations(
     annotations: &mut serde_json::Map<String, serde_json::Value>,
     k8s_resource_location: &K8sResourceLocation,
     etcd_client: &Arc<InMemoryK8sEtcd>,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     for annotation_key in annotations.keys().cloned().collect::<Vec<_>>() {
         if !annotation_key.starts_with("operator.openshift.io/dep-") {
             continue;
@@ -348,7 +348,7 @@ pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMe
         .iter()
         .filter_map(|file_pathbuf| {
             let file_path = file_pathbuf.to_str()?;
-            Some((regex.captures(file_path)?[1].parse::<u32>().unwrap(), file_pathbuf))
+            Some((regex.captures(file_path)?[1].parse::<u32>().ok()?, file_pathbuf))
         })
         .collect::<HashSet<_>>();
     let (latest_revision, latest_kubeconfig) = captures

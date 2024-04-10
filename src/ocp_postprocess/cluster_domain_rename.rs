@@ -13,7 +13,7 @@ pub(crate) async fn rename_all(
     cluster_rename: &ClusterNamesRename,
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let cluster_domain = cluster_rename.cluster_domain();
     let cluster_name = cluster_rename.cluster_name.clone();
 
@@ -45,7 +45,7 @@ async fn fix_filesystem_resources(
     static_dirs: &Vec<ConfigPath>,
     static_files: &Vec<ConfigPath>,
     generated_infra_id: String,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     for dir in static_dirs {
         fix_dir_resources(cluster_name, cluster_domain, dir, &generated_infra_id).await?;
     }
@@ -57,7 +57,7 @@ async fn fix_filesystem_resources(
     Ok(())
 }
 
-async fn fix_dir_resources(cluster_name: &str, cluster_domain: &str, dir: &Path, generated_infra_id: &str) -> Result<(), anyhow::Error> {
+async fn fix_dir_resources(cluster_name: &str, cluster_domain: &str, dir: &Path, generated_infra_id: &str) -> Result<()> {
     filesystem_rename::fix_filesystem_kubeconfigs(cluster_name, cluster_domain, dir)
         .await
         .context("renaming kubeconfigs")?;
@@ -82,7 +82,7 @@ async fn fix_dir_resources(cluster_name: &str, cluster_domain: &str, dir: &Path,
     Ok(())
 }
 
-async fn fix_file_resources(cluster_domain: &str, file: &Path) -> Result<(), anyhow::Error> {
+async fn fix_file_resources(cluster_domain: &str, file: &Path) -> Result<()> {
     filesystem_rename::fix_filesystem_mcs_machine_config_content(cluster_domain, file)
         .await
         .context("fix filesystem mcs machine config content")?;
@@ -94,7 +94,7 @@ async fn fix_etcd_resources(
     cluster_domain: &str,
     generated_infra_id: String,
     cluster_rename: &ClusterNamesRename,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     etcd_rename::fix_router_certs(
         etcd_client,
         cluster_domain,

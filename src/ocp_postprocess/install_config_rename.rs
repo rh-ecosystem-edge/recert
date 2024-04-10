@@ -11,7 +11,7 @@ pub(crate) async fn rename_all(
     install_config: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     fix_etcd_resources(etcd_client, install_config)
         .await
         .context("renaming etcd resources")?;

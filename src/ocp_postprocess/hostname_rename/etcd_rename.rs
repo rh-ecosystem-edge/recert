@@ -65,10 +65,18 @@ async fn fix_etcd_all_certs_secret(etcd_client: &Arc<InMemoryK8sEtcd>, key: &str
             .iter()
             .flat_map(|prefix| suffixes.iter().map(move |suffix| format!("{}{}{}", prefix, new_hostname, suffix)));
 
-        old_keys.zip(new_keys).for_each(|(old_key, new_key)| {
-            let value = data.remove(&old_key).context(format!("could not remove key: {}", old_key)).unwrap();
-            data.insert(new_key, value);
-        });
+        old_keys
+            .zip(new_keys)
+            .map(|(old_key, new_key)| {
+                let value = data
+                    .remove(&old_key)
+                    .context(format!("could not remove key: {}", old_key))
+                    .context("key not found")?;
+                data.insert(new_key, value);
+                Ok(())
+            })
+            .collect::<Result<Vec<_>>>()
+            .context("Failed to replace keys")?;
 
         Ok(())
     }
@@ -179,6 +187,8 @@ pub(crate) async fn fix_etcd_all_certs(etcd_client: &Arc<InMemoryK8sEtcd>, hostn
         hostnames
     );
 
+    // Length ensured above
+    #[allow(clippy::unwrap_used)]
     let original_hostname = hostnames.into_iter().next().unwrap();
 
     Ok(original_hostname)
@@ -403,12 +413,17 @@ fn replace_node_status_name(cluster: &mut Value, hostname: &str) -> Result<()> {
         .as_array_mut()
         .context("/status/nodeStatuses not an array")?;
 
-    node_statuses.iter_mut().for_each(|status: &mut Value| {
-        status
-            .as_object_mut()
-            .unwrap()
-            .insert("nodeName".to_string(), Value::String(hostname.to_string()));
-    });
+    node_statuses
+        .iter_mut()
+        .map(|status: &mut Value| {
+            status
+                .as_object_mut()
+                .context("nodeStatus not an object")?
+                .insert("nodeName".to_string(), Value::String(hostname.to_string()));
+
+            Ok(())
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }

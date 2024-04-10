@@ -18,6 +18,9 @@ pub(crate) fn base32_encode(mut num: u64) -> String {
     output_index -= 1;
     output_array[output_index] = BASE32_DIGITS[num as usize];
 
+    // Unwrap can't panic because the array the above loop outputs is guaranteed to be valid UTF-8,
+    // we don't want this function to return a Result
+    #[allow(clippy::unwrap_used)]
     String::from_utf8(output_array[output_index..].to_vec()).unwrap()
 }
 

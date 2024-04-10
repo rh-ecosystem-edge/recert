@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use anyhow::{Context, Result};
 use cluster_crypto::ClusterCryptoObjects;
 use config::RecertConfig;
