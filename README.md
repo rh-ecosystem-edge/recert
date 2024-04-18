@@ -32,6 +32,10 @@ On Fedora a lot of these can be installed using: `sudo dnf install protobuf-comp
 
 See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
+## Syncing assets to skip specific OpenShift rollouts
+
+See [hack/assets](hack/assets/README.md)
+
 # Image build
 
 ```bash

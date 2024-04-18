@@ -5,17 +5,21 @@ use crate::{
     file_utils::{self, read_file_to_string},
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{
     engine::general_purpose::{STANDARD as base64_standard, URL_SAFE as base64_url},
     Engine as _,
 };
 use futures_util::future::join_all;
 use k8s_etcd::InMemoryK8sEtcd;
-use sha2::Digest;
-use std::{collections::HashSet, sync::Arc};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 pub(crate) mod additional_trust_bundle;
+mod arguments;
 pub(crate) mod cluster_domain_rename;
 mod fnv;
 mod go_base32;
@@ -56,12 +60,26 @@ pub(crate) async fn ocp_postprocess(
     .await
     .context("fixing dep annotations for openshift-apiserver")?;
 
+    fix_deployment_spec_hash_annotation(
+        in_memory_etcd_client,
+        K8sResourceLocation::new(Some("openshift-apiserver"), "Deployment", "apiserver", "v1"),
+    )
+    .await
+    .context("fixing spec-hash annotation for openshift-apiserver")?;
+
     fix_deployment_dep_annotations(
         in_memory_etcd_client,
         K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "v1"),
     )
     .await
     .context("fixing dep annotations for openshift-oauth-apiserver")?;
+
+    fix_deployment_spec_hash_annotation(
+        in_memory_etcd_client,
+        K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "v1"),
+    )
+    .await
+    .context("fixing spec-hash annotation for openshift-oauth-apiserver")?;
 
     Ok(())
 }
@@ -218,6 +236,170 @@ pub(crate) async fn fix_olm_secret_hash_annotation(in_memory_etcd_client: &Arc<I
     Ok(())
 }
 
+// https://github.com/openshift/library-go/blob/15d11d2f6bfcbe15679acd184ac69c77aa2e65bc/pkg/operator/loglevel/util.go#L13-L27
+fn operand_log_level(log_level: &str) -> String {
+    match log_level {
+        "Normal" => "2",
+        "Debug" => "4",
+        "Trace" => "6",
+        "TraceAll" => "8",
+        _ => "2",
+    }
+    .to_string()
+}
+
+async fn get_kube_apiserver_operator_image(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<String> {
+    let etcd_client = in_memory_etcd_client;
+
+    let location = &K8sResourceLocation::new(
+        Some("openshift-apiserver-operator"),
+        "Deployment",
+        "openshift-apiserver-operator",
+        "apps/v1",
+    );
+    let operator_deployment = get_etcd_json(etcd_client, location)
+        .await?
+        .context(format!("couldn't find {}", location))?;
+
+    let containers = operator_deployment
+        .pointer("/spec/template/spec/containers")
+        .context("no spec.template.spec.containers")?
+        .as_array()
+        .context("spec.template.spec.containers not an array")?;
+
+    let env = containers
+        .iter()
+        .find(|container| container["name"] == "openshift-apiserver-operator")
+        .context("could not find container named 'openshift-apiserver-operator'")?
+        .get("env")
+        .context("env not found")?
+        .as_array()
+        .context("env not an array")?;
+
+    let image = env
+        .iter()
+        .find_map(|var| {
+            (var.as_object()?.get("name") == Some(&serde_json::Value::String("KUBE_APISERVER_OPERATOR_IMAGE".to_string())))
+                .then_some(var.get("value")?)
+        })
+        .context("expected KUBE_APISERVER_OPERATOR_IMAGE to be in env vars")?
+        .as_str()
+        .context("value not a string")?;
+
+    Ok(image.to_string())
+}
+
+async fn get_openshift_apiserver_log_level(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<String> {
+    let etcd_client = in_memory_etcd_client;
+
+    let cluster = get_etcd_json(
+        etcd_client,
+        &K8sResourceLocation::new(None, "OpenShiftAPIServer", "cluster", "operator.openshift.io/v1"),
+    )
+    .await?
+    .context("couldn't find openshiftapiserver.operator/cluster resource")?;
+
+    let log_level = operand_log_level(
+        cluster
+            .pointer("/spec/logLevel")
+            .context("no spec.logLevel")?
+            .as_str()
+            .context("spec.logLevel")?,
+    );
+
+    Ok(log_level.to_string())
+}
+
+pub(crate) async fn fix_deployment_spec_hash_annotation(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    k8s_resource_location: K8sResourceLocation,
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context(format!("couldn't find {}", k8s_resource_location))?;
+    let dep = deployment.clone();
+
+    let revision = dep
+        .pointer("/metadata/labels/revision")
+        .context("no .metadata.labels.revision")?
+        .as_str()
+        .context("revision not a str")?;
+
+    let metadata_annotations = deployment
+        .pointer_mut("/metadata/annotations")
+        .context("no .metadata.annotations")?
+        .as_object_mut()
+        .context("annotations not an object")?;
+
+    match k8s_resource_location.namespace.as_deref() {
+        Some("openshift-apiserver") => {
+            let log_level = get_openshift_apiserver_log_level(in_memory_etcd_client)
+                .await
+                .context("could not get openshift-apiserver log level")?;
+
+            let kube_apiserver_operator_image = get_kube_apiserver_operator_image(in_memory_etcd_client)
+                .await
+                .context("could not get KUBE_APISERVER_OPERATOR_IMAGE")?;
+
+            fix_openshift_apiserver_spec_hash_annotation(metadata_annotations, revision, &log_level, &kube_apiserver_operator_image).await?
+        }
+        Some("openshift-oauth-apiserver") => {
+            let container_image = dep
+                .pointer("/spec/template/spec/containers")
+                .context("no spec.template.spec.containers")?
+                .as_array()
+                .context("spec.template.spec.containers not an array")?
+                .iter()
+                .find(|container| container["name"] == "oauth-apiserver")
+                .context("could not find container named 'oauth-apiserver'")?
+                .get("image")
+                .context("image not found")?
+                .as_str()
+                .context("image not a string")?;
+
+            let mut authentication = get_etcd_json(
+                etcd_client,
+                &K8sResourceLocation::new(None, "Authentication", "cluster", "operator.openshift.io/v1"),
+            )
+            .await?
+            .context("couldn't find authentication.operator/cluster resource")?;
+
+            let log_level = operand_log_level(
+                authentication
+                    .pointer("/spec/logLevel")
+                    .context("no spec.logLevel")?
+                    .as_str()
+                    .context("spec.logLevel")?,
+            );
+
+            let args = authentication
+                .pointer_mut("/spec/observedConfig/oauthAPIServer/apiServerArguments")
+                .context("spec.observedConfig.oauthAPIServer.apiServerArguments not found")?
+                .as_object_mut()
+                .context("spec.observedConfig.oauthAPIServer.apiServerArguments not an object")?;
+            args.insert("v".to_string(), serde_json::Value::String(log_level.clone()));
+
+            fix_openshift_oauth_apiserver_spec_hash_annotation(
+                metadata_annotations,
+                revision,
+                &log_level,
+                container_image,
+                arguments::encode_with_delimeter(args.clone(), r" \\\n  ")
+                    .context("could not encode arguments")?
+                    .as_str(),
+            )
+            .await?
+        }
+        _ => bail!("spec-hash annotation fix not supported for resource: '{}'", k8s_resource_location),
+    }
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
+
+    Ok(())
+}
+
 pub(crate) async fn fix_deployment_dep_annotations(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     k8s_resource_location: K8sResourceLocation,
@@ -292,20 +474,144 @@ async fn fix_dep_annotations(
             "v1",
         );
 
-        let data_json = &serde_json::to_string(
-            get_etcd_json(etcd_client, &resource_k8s_resource_location)
-                .await?
-                .context(format!("couldn't find {}", resource_k8s_resource_location))?
-                .pointer("/data")
-                .context("no .data")?,
-        )
-        .context("couldn't serialize data")?;
+        let data = get_etcd_json(etcd_client, &resource_k8s_resource_location)
+            .await?
+            .context(format!("couldn't find {}", resource_k8s_resource_location))?
+            .pointer("/data")
+            .context("no .data")?
+            .as_object()
+            .context("data not an object")?
+            .clone();
+
+        let data_json = if resource_k8s_resource_location.kind == "secret" {
+            // https://cs.opensource.google/go/go/+/refs/tags/go1.22.1:src/encoding/json/encode.go;l=751-753
+            // https://cs.opensource.google/go/go/+/refs/tags/go1.22.1:src/encoding/json/encode.go;l=790
+            let sorted: BTreeMap<_, _> = data
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        base64_standard
+                            .encode(serde_json::from_value::<Vec<u8>>(v.clone()).context("error tranforming serde_json value to Vec<u8>")?),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .collect();
+            serde_json::to_string(&sorted).context("couldn't serialize sorted data")?
+        } else if data.is_empty() {
+            // https://cs.opensource.google/go/go/+/refs/tags/go1.22.1:src/encoding/json/encode.go;l=724
+            "null".to_string()
+        } else {
+            serde_json::to_string(&data).context("couldn't serialize data")?
+        };
 
         annotations.insert(
             annotation_key,
             serde_json::Value::String(base64_url.encode(fnv::fnv1_32((format!("{}\n", data_json)).as_bytes()).to_be_bytes())),
         );
     }
+
+    Ok(())
+}
+
+async fn fix_openshift_apiserver_spec_hash_annotation(
+    annotations: &mut serde_json::Map<String, serde_json::Value>,
+    revision: &str,
+    log_level: &str,
+    kube_apiserver_operator_image: &str,
+) -> Result<(), anyhow::Error> {
+    let bytes = include_bytes!("bindata/openshift-apiserver-deployment.json");
+    let mut spec_json = String::from_utf8(bytes.to_vec()).context("invalid UTF-8 string")?;
+
+    let patterns = [
+        ("${IMAGE}", "openshiftapiservers.operator.openshift.io/pull-spec"),
+        ("${CONFIG_HASH}", "operator.openshift.io/dep-openshift-apiserver.config.configmap"),
+        (
+            "${ETCD_CLIENT_HASH}",
+            "operator.openshift.io/dep-openshift-apiserver.etcd-client.secret",
+        ),
+        (
+            "${ETCD_SERVING_CA_HASH}",
+            "operator.openshift.io/dep-openshift-apiserver.etcd-serving-ca.configmap",
+        ),
+        (
+            "${IMAGE_IMPORT_CA_HASH}",
+            "operator.openshift.io/dep-openshift-apiserver.image-import-ca.configmap",
+        ),
+        (
+            "${TRUSTED_CA_BUNDLE_HASH}",
+            "operator.openshift.io/dep-openshift-apiserver.trusted-ca-bundle.configmap",
+        ),
+        ("${DESIRED_GENERATION}", "operator.openshift.io/dep-desired.generation"),
+    ];
+
+    for (pattern, key) in patterns {
+        spec_json = spec_json.replace(
+            pattern,
+            annotations
+                .get(key)
+                .context(format!("key {key} not found"))?
+                .clone()
+                .as_str()
+                .context(format!("{key} not a string"))?,
+        );
+    }
+
+    spec_json = spec_json.replace("${REVISION}", revision);
+    spec_json = spec_json.replace("${VERBOSITY}", log_level);
+    spec_json = spec_json.replace("${KUBE_APISERVER_OPERATOR_IMAGE}", kube_apiserver_operator_image);
+
+    let mut sha256 = Sha256::new();
+    sha256.update(spec_json);
+    let spec_hash: String = format!("{:x}", sha256.finalize());
+    annotations.insert("operator.openshift.io/spec-hash".to_string(), serde_json::Value::String(spec_hash));
+
+    Ok(())
+}
+
+async fn fix_openshift_oauth_apiserver_spec_hash_annotation(
+    annotations: &mut serde_json::Map<String, serde_json::Value>,
+    revision: &str,
+    log_level: &str,
+    image: &str,
+    args: &str,
+) -> Result<(), anyhow::Error> {
+    let bytes = include_bytes!("bindata/openshift-oauth-apiserver-deployment.json");
+    let mut spec_json = String::from_utf8(bytes.to_vec()).context("invalid UTF-8 string")?;
+
+    let patterns = [
+        (
+            "${ETCD_CLIENT_HASH}",
+            "operator.openshift.io/dep-openshift-oauth-apiserver.etcd-client.secret",
+        ),
+        (
+            "${ETCD_SERVING_CA_HASH}",
+            "operator.openshift.io/dep-openshift-oauth-apiserver.etcd-serving-ca.configmap",
+        ),
+    ];
+
+    for (pattern, key) in patterns {
+        spec_json = spec_json.replace(
+            pattern,
+            annotations
+                .get(key)
+                .context(format!("key {key} not found"))?
+                .clone()
+                .as_str()
+                .context(format!("{key} not a string"))?,
+        );
+    }
+
+    spec_json = spec_json.replace("${IMAGE}", image);
+    spec_json = spec_json.replace("${REVISION}", revision);
+    spec_json = spec_json.replace("${FLAGS}", args);
+    spec_json = spec_json.replace("${VERBOSITY}", log_level);
+
+    let mut sha256 = Sha256::new();
+    sha256.update(spec_json);
+    let spec_hash: String = format!("{:x}", sha256.finalize());
+    annotations.insert("operator.openshift.io/spec-hash".to_string(), serde_json::Value::String(spec_hash));
 
     Ok(())
 }
