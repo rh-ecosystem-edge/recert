@@ -106,6 +106,13 @@ pub(crate) struct Cli {
     #[clap(long, value_parser = super::parse_additional_trust_bundle, groups = &["adt_dirs", "adt_files"])]
     pub(crate) additional_trust_bundle: Option<String>,
 
+    /// The CIDR of the machine network. If given, the machine network CIDR which appears in the
+    /// install-config found in the cluster-config-v1 configmaps will be modified to use this
+    /// machine CIDR. WARNING: If a different machine network CIDR is stated in the
+    /// --install-config parameter, it might overwrite the one given here.
+    #[clap(long)]
+    pub(crate) machine_network_cidr: Option<String>,
+
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For

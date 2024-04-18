@@ -1155,13 +1155,6 @@ pub(crate) async fn fix_install_config(
     )
     .context("could not find original install-config")?;
 
-    // TODO: We should probably keep the old one around but then it confuses scripts
-    // which scan for no leftover old cluster name in the manifests
-    // data.insert(
-    //     "install-config-proto-cluster".to_string(),
-    //     serde_json::Value::String(install_config_bytes.to_string()),
-    // );
-
     put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
 
     Ok(())
