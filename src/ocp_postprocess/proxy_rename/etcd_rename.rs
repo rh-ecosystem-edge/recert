@@ -245,9 +245,14 @@ pub(crate) async fn fix_containers(etcd_client: &InMemoryK8sEtcd, proxy: &Proxy)
 pub(crate) async fn fix_storages(etcd_client: &InMemoryK8sEtcd, proxy: &Proxy) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Storage", "cluster", "operator.openshift.io/v1");
 
-    let mut storage = get_etcd_json(etcd_client, &k8s_resource_location)
-        .await?
-        .context(format!("no {:?}", k8s_resource_location.as_etcd_key()))?;
+    let mut storage = match get_etcd_json(etcd_client, &k8s_resource_location).await? {
+        Some(value) => value,
+        None => {
+            // Some clusters don't have a storage resource because they disabled the storage
+            // capability, that's OK
+            return Ok(());
+        }
+    };
 
     let spec = storage
         .pointer_mut("/spec/observedConfig/targetconfig/proxy")
