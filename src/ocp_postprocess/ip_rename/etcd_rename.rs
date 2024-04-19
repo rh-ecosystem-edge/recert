@@ -58,7 +58,7 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
     Ok(original_ip)
 }
 
-fn fix_storage_config(config: &mut Value, ip: &str) -> Result<(), anyhow::Error> {
+fn fix_storage_config(config: &mut Value, ip: &str) -> Result<()> {
     let storage_config = config.pointer_mut("/storageConfig").context("storageConfig not found")?;
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
@@ -150,6 +150,8 @@ pub(crate) async fn fix_etcd_endpoints(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &
 
                 ensure!(data.len() == 1, "data has more than one key, is this SNO?");
 
+                // Ensure above guarantees that this unwrap will never panic
+                #[allow(clippy::unwrap_used)]
                 let current_member_id = data.keys().next().unwrap().clone();
                 data[&current_member_id] = serde_json::Value::String(ip.to_string());
 

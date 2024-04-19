@@ -366,7 +366,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
 
             *arg = serde_json::Value::String(
                 regex::Regex::new(r"--cluster-name=[^ ]+")
-                    .unwrap()
+                    .context("compiling regex")?
                     .replace_all(
                         arg.as_str().context("arg not string")?,
                         format!("--cluster-name={}", generated_infra_id).as_str(),

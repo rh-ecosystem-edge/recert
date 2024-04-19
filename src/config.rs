@@ -183,8 +183,10 @@ impl RecertConfig {
             .context("force_expire must be a boolean")?;
         let cluster_rename = match value.remove("cluster_rename") {
             Some(value) => Some(
-                ClusterNamesRename::parse(value.as_str().context("cluster_rename must be a string")?)
-                    .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
+                ClusterNamesRename::parse(value.as_str().context("cluster_rename must be a string")?).context(format!(
+                    "cluster_rename {}",
+                    value.as_str().context("cluster_rename must be a string")?
+                ))?,
             ),
             None => None,
         };
@@ -202,7 +204,8 @@ impl RecertConfig {
         };
         let proxy = match value.remove("proxy") {
             Some(value) => Some(
-                Proxy::parse(value.as_str().context("proxy must be a string")?).context(format!("proxy {}", value.as_str().unwrap()))?,
+                Proxy::parse(value.as_str().context("proxy must be a string")?)
+                    .context(format!("proxy {}", value.as_str().context("proxy must be a string")?))?,
             ),
             None => None,
         };
@@ -376,29 +379,33 @@ impl RecertConfig {
     }
 }
 
-fn parse_summary_file_clean(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
+fn parse_summary_file_clean(value: Value) -> Result<Option<ConfigPath>> {
     Ok(Some(
-        ConfigPath::new(value.as_str().context("summary_file_clean must be a string")?)
-            .context(format!("summary_file_clean {}", value.as_str().unwrap()))?,
+        ConfigPath::new(value.as_str().context("summary_file_clean must be a string")?).context(format!(
+            "summary_file_clean {}",
+            value.as_str().context("summary_file_clean must be a string")?
+        ))?,
     ))
 }
 
-fn parse_summary_file(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
+fn parse_summary_file(value: Value) -> Result<Option<ConfigPath>> {
     Ok(Some(
         ConfigPath::new(value.as_str().context("summary_file must be a string")?)
-            .context(format!("summary_file {}", value.as_str().unwrap()))?,
+            .context(format!("summary_file {}", value.as_str().context("summary_file must be a string")?))?,
     ))
 }
 
-fn parse_server_ssh_keys(value: Value) -> Result<Option<ConfigPath>, anyhow::Error> {
-    let config_path = ConfigPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?)
-        .context(format!("regenerate_server_ssh_keys {}", value.as_str().unwrap()))?;
+fn parse_server_ssh_keys(value: Value) -> Result<Option<ConfigPath>> {
+    let config_path = ConfigPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?).context(format!(
+        "regenerate_server_ssh_keys {}",
+        value.as_str().context("regenerate_server_ssh_keys must be a string")?
+    ))?;
     ensure!(config_path.try_exists()?, "regenerate_server_ssh_keys must exist");
     ensure!(config_path.is_dir(), "regenerate_server_ssh_keys must be a directory");
     Ok(Some(config_path))
 }
 
-fn parse_threads(value: Value) -> Result<Option<usize>, anyhow::Error> {
+fn parse_threads(value: Value) -> Result<Option<usize>> {
     Ok(Some(
         value
             .as_u64()
@@ -415,8 +422,10 @@ fn parse_cert_rules(value: Value) -> Result<UseCertRules> {
             .context("use_cert_rules must be an array")?
             .iter()
             .map(|value| {
-                UseCert::parse(value.as_str().context("use_cert_rules must be an array of strings")?)
-                    .context(format!("use_cert_rule {}", value.as_str().unwrap()))
+                UseCert::parse(value.as_str().context("use_cert_rules must be an array of strings")?).context(format!(
+                    "use_cert_rule {}",
+                    value.as_str().context("use_cert_rules must be an array of strings")?
+                ))
             })
             .collect::<Result<Vec<UseCert>>>()?,
     ))
@@ -429,8 +438,10 @@ fn parse_use_key_rules(value: Value) -> Result<UseKeyRules> {
             .context("use_key_rules must be an array")?
             .iter()
             .map(|value| {
-                UseKey::parse(value.as_str().context("use_key_rules must be an array of strings")?)
-                    .context(format!("use_key_rule {}", value.as_str().unwrap()))
+                UseKey::parse(value.as_str().context("use_key_rules must be an array of strings")?).context(format!(
+                    "use_key_rule {}",
+                    value.as_str().context("use_key_rules must be an array of strings")?
+                ))
             })
             .collect::<Result<Vec<UseKey>>>()?,
     ))
@@ -443,8 +454,10 @@ fn parse_cs_san_rules(value: Value) -> Result<CnSanReplaceRules> {
             .context("cn_san_replace_rules must be an array")?
             .iter()
             .map(|value| {
-                CnSanReplace::parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?)
-                    .context(format!("cn_san_replace_rule {}", value.as_str().unwrap()))
+                CnSanReplace::parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?).context(format!(
+                    "cn_san_replace_rule {}",
+                    value.as_str().context("cn_san_replace_rules must be an array of strings")?
+                ))
             })
             .collect::<Result<Vec<CnSanReplace>>>()?,
     ))
@@ -474,8 +487,9 @@ fn parse_dir_file_config(
                 .context("static_dirs must be an array")?
                 .iter()
                 .map(|value| {
-                    let config_path = ConfigPath::new(value.as_str().context("static_dirs must be an array of strings")?)
-                        .context(format!("config dir {}", value.as_str().unwrap()))?;
+                    let config_path = ConfigPath::new(value.as_str().context("static_dirs must be an array of strings")?).context(
+                        format!("config dir {}", value.as_str().context("static_dirs must be an array of strings")?),
+                    )?;
 
                     ensure!(config_path.try_exists()?, format!("static_dir must exist: {}", config_path));
                     ensure!(config_path.is_dir(), format!("static_dir must be a directory: {}", config_path));
@@ -506,8 +520,11 @@ fn parse_dir_file_config(
                 .context("static_files must be an array")?
                 .iter()
                 .map(|value| {
-                    let config_path = ConfigPath::new(value.as_str().context("static_files must be an array of strings")?)
-                        .context(format!("config file {}", value.as_str().unwrap()))?;
+                    let config_path =
+                        ConfigPath::new(value.as_str().context("static_files must be an array of strings")?).context(format!(
+                            "config file {}",
+                            value.as_str().context("static_files must be an array of strings")?
+                        ))?;
 
                     ensure!(config_path.try_exists()?, format!("static_file must exist: {}", config_path));
                     ensure!(config_path.is_file(), format!("static_file must be a file: {}", config_path));
@@ -525,8 +542,9 @@ fn parse_dir_file_config(
                 .context("crypto_dirs must be an array")?
                 .iter()
                 .map(|value| {
-                    let config_path = ConfigPath::new(value.as_str().context("crypto_dirs must be an array of strings")?)
-                        .context(format!("crypto dir {}", value.as_str().unwrap()))?;
+                    let config_path = ConfigPath::new(value.as_str().context("crypto_dirs must be an array of strings")?).context(
+                        format!("crypto dir {}", value.as_str().context("crypto_dirs must be an array of strings")?),
+                    )?;
 
                     ensure!(config_path.try_exists()?, format!("crypto_dir must exist: {}", config_path));
                     ensure!(config_path.is_dir(), format!("crypto_dir must be a directory: {}", config_path));
@@ -546,8 +564,11 @@ fn parse_dir_file_config(
                 .context("crypto_files must be an array")?
                 .iter()
                 .map(|value| {
-                    let config_path = ConfigPath::new(value.as_str().context("crypto_files must be an array of strings")?)
-                        .context(format!("crypto file {}", value.as_str().unwrap()))?;
+                    let config_path =
+                        ConfigPath::new(value.as_str().context("crypto_files must be an array of strings")?).context(format!(
+                            "crypto file {}",
+                            value.as_str().context("crypto_files must be an array of strings")?
+                        ))?;
 
                     ensure!(config_path.try_exists()?, format!("crypto_file must exist: {}", config_path));
                     ensure!(config_path.is_file(), format!("crypto_file must be a file: {}", config_path));
@@ -569,7 +590,10 @@ fn parse_dir_file_config(
                 .iter()
                 .map(|value| {
                     let config_path = ConfigPath::new(value.as_str().context("cluster_customization_dirs must be an array of strings")?)
-                        .context(format!("cluster_customization dir {}", value.as_str().unwrap()))?;
+                        .context(format!(
+                            "cluster_customization dir {}",
+                            value.as_str().context("cluster_customization_dirs must be an array of strings")?
+                        ))?;
 
                     ensure!(
                         config_path.try_exists()?,
@@ -597,7 +621,10 @@ fn parse_dir_file_config(
                 .iter()
                 .map(|value| {
                     let config_path = ConfigPath::new(value.as_str().context("cluster_customization_files must be an array of strings")?)
-                        .context(format!("cluster_customization file {}", value.as_str().unwrap()))?;
+                        .context(format!(
+                        "cluster_customization file {}",
+                        value.as_str().context("cluster_customization_files must be an array of strings")?
+                    ))?;
 
                     ensure!(
                         config_path.try_exists()?,

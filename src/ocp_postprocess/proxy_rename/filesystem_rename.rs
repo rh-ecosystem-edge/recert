@@ -24,7 +24,7 @@ pub(crate) async fn rename_proxy_env_file(proxy: &Proxy, file: &Path) -> Result<
     Ok(())
 }
 
-async fn rename_proxy_env(file: &Path, proxy: &Proxy) -> Result<(), anyhow::Error> {
+async fn rename_proxy_env(file: &Path, proxy: &Proxy) -> Result<()> {
     commit_file(
         file,
         utils::rename_proxy_env_file_contents(proxy, read_file_to_string(file).await.context("reading proxy.env")?),

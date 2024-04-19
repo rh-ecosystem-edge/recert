@@ -422,7 +422,7 @@ fn fix_akid(
     akid: &mut x509_cert::ext::pkix::AuthorityKeyIdentifier,
     skids: &mut SkidEdits,
     serial_numbers: &mut SerialNumberEdits,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     if let Some(key_identifier) = &akid.key_identifier {
         let matching_skid = skids
             .get(&HashableKeyID(key_identifier.clone()))
