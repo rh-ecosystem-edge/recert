@@ -44,6 +44,7 @@ pub(crate) struct ClusterCustomizations {
     #[serde(serialize_with = "redact")]
     pub(crate) pull_secret: Option<String>,
     pub(crate) additional_trust_bundle: Option<String>,
+    pub(crate) machine_network_cidr: Option<String>,
 }
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
@@ -142,6 +143,7 @@ impl RecertConfig {
                 additional_trust_bundle: None,
                 proxy: None,
                 install_config: None,
+                machine_network_cidr: None,
             },
             threads: None,
             regenerate_server_ssh_keys: None,
@@ -223,6 +225,10 @@ impl RecertConfig {
             )?),
             None => None,
         };
+        let machine_network_cidr = match value.remove("machine_network_cidr") {
+            Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
+            None => None,
+        };
         let dry_run = value
             .remove("dry_run")
             .unwrap_or(Value::Bool(false))
@@ -276,6 +282,7 @@ impl RecertConfig {
             additional_trust_bundle,
             proxy,
             install_config,
+            machine_network_cidr,
         };
 
         let recert_config = Self {
@@ -350,6 +357,7 @@ impl RecertConfig {
                 kubeadmin_password_hash: cli.kubeadmin_password_hash,
                 pull_secret: cli.pull_secret,
                 additional_trust_bundle: cli.additional_trust_bundle,
+                machine_network_cidr: cli.machine_network_cidr,
             },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),

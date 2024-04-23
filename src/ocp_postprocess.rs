@@ -26,6 +26,7 @@ mod go_base32;
 pub(crate) mod hostname_rename;
 pub(crate) mod install_config_rename;
 pub(crate) mod ip_rename;
+pub(crate) mod machine_config_cidr_rename;
 pub(crate) mod proxy_rename;
 pub(crate) mod pull_secret_rename;
 
@@ -137,6 +138,12 @@ async fn run_cluster_customizations(
         additional_trust_bundle_rename(in_memory_etcd_client, additional_trust_bundle, dirs, files)
             .await
             .context("renaming additional_trust_bundle")?;
+    }
+
+    if let Some(machine_network_cidr) = &cluster_customizations.machine_network_cidr {
+        fix_machine_network_cidr(in_memory_etcd_client, machine_network_cidr, dirs, files)
+            .await
+            .context("fixing machine network CIDR")?;
     }
 
     Ok(())
@@ -851,6 +858,21 @@ pub(crate) async fn install_config_rename(
     let etcd_client = in_memory_etcd_client;
 
     install_config_rename::rename_all(etcd_client, install_config, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+async fn fix_machine_network_cidr(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    machine_network_cidr: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    machine_config_cidr_rename::rename_all(etcd_client, machine_network_cidr, static_dirs, static_files)
         .await
         .context("renaming all")?;
 
