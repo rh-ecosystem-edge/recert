@@ -329,6 +329,31 @@ async fn get_openshift_apiserver_log_level(in_memory_etcd_client: &Arc<InMemoryK
     Ok(log_level.to_string())
 }
 
+async fn get_proxy_env_vars(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Option<BTreeMap<String, String>>> {
+    let etcd_client = in_memory_etcd_client;
+
+    let cluster = get_etcd_json(
+        etcd_client,
+        &K8sResourceLocation::new(None, "OpenShiftAPIServer", "cluster", "operator.openshift.io/v1"),
+    )
+    .await?
+    .context("couldn't find openshiftapiserver.operator/cluster resource")?;
+
+    if let Some(proxy_config) = cluster.pointer("/spec/observedConfig/workloadcontroller/proxy") {
+        let vars: BTreeMap<_, _> = proxy_config
+            .as_object()
+            .context("spec.observedConfig.workloadcontroller.proxy not an object")?
+            .iter()
+            .map(|(k, v)| Ok((k.clone(), String::from(v.as_str().context("value not a string")?))))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .collect();
+        Ok(Some(vars))
+    } else {
+        Ok(None)
+    }
+}
+
 pub(crate) async fn fix_deployment_spec_hash_annotation(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     k8s_resource_location: K8sResourceLocation,
@@ -362,7 +387,18 @@ pub(crate) async fn fix_deployment_spec_hash_annotation(
                 .await
                 .context("could not get KUBE_APISERVER_OPERATOR_IMAGE")?;
 
-            fix_openshift_apiserver_spec_hash_annotation(metadata_annotations, revision, &log_level, &kube_apiserver_operator_image).await?
+            let proxy_env_vars = get_proxy_env_vars(in_memory_etcd_client)
+                .await
+                .context("could not get proxy env vars")?;
+
+            fix_openshift_apiserver_spec_hash_annotation(
+                metadata_annotations,
+                revision,
+                &log_level,
+                &kube_apiserver_operator_image,
+                proxy_env_vars,
+            )
+            .await?
         }
         Some("openshift-oauth-apiserver") => {
             let container_image = dep
@@ -539,6 +575,7 @@ async fn fix_openshift_apiserver_spec_hash_annotation(
     revision: &str,
     log_level: &str,
     kube_apiserver_operator_image: &str,
+    proxy_env_vars: Option<BTreeMap<String, String>>,
 ) -> Result<(), anyhow::Error> {
     let bytes = include_bytes!("bindata/openshift-apiserver-deployment.json");
     let mut spec_json = String::from_utf8(bytes.to_vec()).context("invalid UTF-8 string")?;
@@ -580,6 +617,19 @@ async fn fix_openshift_apiserver_spec_hash_annotation(
     spec_json = spec_json.replace("${REVISION}", revision);
     spec_json = spec_json.replace("${VERBOSITY}", log_level);
     spec_json = spec_json.replace("${KUBE_APISERVER_OPERATOR_IMAGE}", kube_apiserver_operator_image);
+
+    match proxy_env_vars {
+        Some(vars) => {
+            for (key, value) in vars {
+                spec_json = spec_json.replace(format!("${{{}}}", key).as_str(), &value);
+            }
+        }
+        None => {
+            for var in ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"] {
+                spec_json = spec_json.replace(format!(",{{\"name\":\"{0}\",\"value\":\"${{{0}}}\"}}", var).as_str(), "");
+            }
+        }
+    }
 
     let mut sha256 = Sha256::new();
     sha256.update(spec_json);
