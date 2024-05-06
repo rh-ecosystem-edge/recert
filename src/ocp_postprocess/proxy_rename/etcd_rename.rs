@@ -112,13 +112,16 @@ pub(crate) async fn fix_controllerconfigs(etcd_client: &InMemoryK8sEtcd, proxy: 
 
                 let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
 
-                let mut cluster_proxy = get_etcd_json(etcd_client, &k8s_resource_location)
+                let mut controllerconfig = get_etcd_json(etcd_client, &k8s_resource_location)
                     .await?
                     .context("no controllerconfig")?;
 
-                let object_mut = cluster_proxy.pointer_mut("/spec/proxy").context("no /spec/proxy")?.as_object_mut();
+                let proxy_obj = controllerconfig
+                    .pointer_mut("/spec/proxy")
+                    .context("no /spec/proxy")?
+                    .as_object_mut();
 
-                match object_mut {
+                match proxy_obj {
                     None => {
                         // This is simply null when the proxy is not set
                         return Ok(());
@@ -128,7 +131,7 @@ pub(crate) async fn fix_controllerconfigs(etcd_client: &InMemoryK8sEtcd, proxy: 
                         spec_proxy.insert("httpsProxy".to_string(), Value::String(proxy.status_proxy.https_proxy.clone()));
                         spec_proxy.insert("noProxy".to_string(), Value::String(proxy.status_proxy.no_proxy.clone()));
 
-                        put_etcd_yaml(etcd_client, &k8s_resource_location, cluster_proxy).await?;
+                        put_etcd_yaml(etcd_client, &k8s_resource_location, controllerconfig).await?;
                     }
                 }
 

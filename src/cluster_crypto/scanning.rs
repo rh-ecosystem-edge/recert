@@ -25,26 +25,39 @@ pub(crate) mod external_certs;
 
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<ConfigPath>,
-    static_files: Vec<ConfigPath>,
+    crypto_dirs: Vec<ConfigPath>,
+    crypto_files: Vec<ConfigPath>,
     external_certs: HashSet<String>,
 ) -> Result<(RunTime, Vec<DiscoveredCryptoObect>)> {
+    log::info!("Scanning for cryptographic objects...");
+
     let start_time = std::time::Instant::now();
 
     // Launch separate paralllel long running background task
-    let discovered_filesystem_dir_objects = scan_static_dirs(static_dirs, &external_certs);
-    let discovered_filesystem_file_objects = scan_static_files(static_files, &external_certs);
+    let discovered_filesystem_dir_crypto_objects = scan_crypto_dirs(crypto_dirs, &external_certs);
+    let discovered_filesystem_file_crypto_objects = scan_crypto_files(crypto_files, &external_certs);
     let external_certs = external_certs.clone();
-    let discovered_etcd_objects = tokio::spawn(async move {
+    let discovered_etcd_crypto_objects = tokio::spawn(async move {
         scan_etcd_resources(in_memory_etcd_client, &external_certs)
             .await
             .context("etcd resources")
     });
 
     // ... and join them
-    let discovered_etcd_objects = discovered_etcd_objects.await??;
-    let discovered_filesystem_dir_objects = discovered_filesystem_dir_objects.await??;
-    let discovered_filesystem_file_objects = discovered_filesystem_file_objects.await??;
+    log::info!("Waiting for scanning to complete...");
+    let discovered_etcd_objects = discovered_etcd_crypto_objects.await??;
+    log::info!("Etcd scanning complete");
+    let discovered_filesystem_dir_objects = discovered_filesystem_dir_crypto_objects.await??;
+    log::info!("Static dir scanning complete");
+    let discovered_filesystem_file_objects = discovered_filesystem_file_crypto_objects.await??;
+    log::info!("Static file scanning complete");
+
+    log::info!(
+        "Scanning complete, filesystem dir objects: {}, filesystem file objects: {}, etcd objects: {}",
+        discovered_filesystem_dir_objects.len(),
+        discovered_filesystem_file_objects.len(),
+        discovered_etcd_objects.len()
+    );
 
     // Return all objects discovered as one large vector
     let all_discovered_objects = discovered_etcd_objects
@@ -53,25 +66,31 @@ pub(crate) async fn crypto_scan(
         .chain(discovered_filesystem_file_objects)
         .collect::<Vec<_>>();
 
+    log::info!(
+        "Scanning for cryptographic objects done, found {} objects",
+        all_discovered_objects.len()
+    );
+
     Ok((RunTime::since_start(start_time), all_discovered_objects))
 }
 
-fn scan_static_dirs(
-    static_dirs: Vec<ConfigPath>,
+fn scan_crypto_dirs(
+    crypto_dirs: Vec<ConfigPath>,
     external_certs: &HashSet<String>,
 ) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
     let external_certs = external_certs.clone();
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(
-                static_dirs
+                crypto_dirs
                     .into_iter()
-                    .map(|static_dir| {
+                    .map(|crypto_dir| {
                         let external_certs = external_certs.clone();
                         tokio::spawn(async move {
-                            scan_filesystem_directory(&static_dir, external_certs)
+                            log::trace!("Scanning dir {:?}", crypto_dir);
+                            scan_filesystem_directory(&crypto_dir, external_certs)
                                 .await
-                                .with_context(|| format!("static dir {:?}", static_dir))
+                                .with_context(|| format!("static dir {:?}", crypto_dir))
                         })
                     })
                     .collect::<Vec<_>>(),
@@ -88,22 +107,23 @@ fn scan_static_dirs(
     })
 }
 
-fn scan_static_files(
-    static_files: Vec<ConfigPath>,
+fn scan_crypto_files(
+    crypto_files: Vec<ConfigPath>,
     external_certs: &HashSet<String>,
 ) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
     let external_certs = external_certs.clone();
     tokio::spawn(async move {
         anyhow::Ok(
             join_all(
-                static_files
+                crypto_files
                     .into_iter()
-                    .map(|static_file| {
+                    .map(|crypto_file| {
                         let external_certs = external_certs.clone();
                         tokio::spawn(async move {
-                            scan_filesystem_file(static_file.to_path_buf(), external_certs)
+                            log::trace!("Scanning file {:?}", crypto_file);
+                            scan_filesystem_file(crypto_file.to_path_buf(), external_certs)
                                 .await
-                                .with_context(|| format!("static file {:?}", static_file))
+                                .with_context(|| format!("crypto file {:?}", crypto_file))
                         })
                     })
                     .collect::<Vec<_>>(),
@@ -168,6 +188,7 @@ pub(crate) async fn scan_etcd_resources(
                 let etcd_client = Arc::clone(&etcd_client);
                 let external_certs = external_certs.clone();
                 tokio::spawn(async move {
+                    log::trace!("Scanning etcd key {:?}", key);
                     let etcd_result = etcd_client
                         .get(key.clone())
                         .await
@@ -265,6 +286,8 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: HashSe
 }
 
 async fn scan_filesystem_file(file_path: PathBuf, external_certs: HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
+    log::trace!("Reading file {:?}", file_path);
+
     let contents = read_file_to_string(&file_path).await?;
 
     anyhow::Ok(

@@ -16,7 +16,6 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, conte
 pub(crate) async fn fix_pull_secret_secret(etcd_client: &Arc<InMemoryK8sEtcd>, pull_secret: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-config"), "Secret", "pull-secret", "v1");
 
-    log::info!("setting pull secret secret");
     let mut secret = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context(format!("couldn't find {}", k8s_resource_location))?;

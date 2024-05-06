@@ -46,7 +46,7 @@ impl CnSanReplaceRules {
 
         for rule in &self.0 {
             if rule.old == input {
-                output = rule.new.clone();
+                output.clone_from(&rule.new);
             }
         }
 

@@ -8,29 +8,25 @@ mod filesystem_rename;
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     machine_config_cidr: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
 ) -> Result<(), anyhow::Error> {
     fix_etcd_resources(etcd_client, machine_config_cidr)
         .await
         .context("renaming etcd resources")?;
 
-    fix_filesystem_resources(machine_config_cidr, static_dirs, static_files)
+    fix_filesystem_resources(machine_config_cidr, dirs, files)
         .await
         .context("renaming filesystem resources")?;
 
     Ok(())
 }
 
-async fn fix_filesystem_resources(
-    machine_config_cidr: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
-    for dir in static_dirs {
+async fn fix_filesystem_resources(machine_config_cidr: &str, dirs: &[ConfigPath], files: &[ConfigPath]) -> Result<(), anyhow::Error> {
+    for dir in dirs {
         fix_dir_resources(machine_config_cidr, dir).await?;
     }
-    for file in static_files {
+    for file in files {
         fix_file_resources(machine_config_cidr, file).await?;
     }
 

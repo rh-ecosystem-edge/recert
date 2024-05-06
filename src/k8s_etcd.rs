@@ -112,7 +112,7 @@ impl InMemoryK8sEtcd {
         {
             let hashmap = self.etcd_keyvalue_hashmap.lock().await;
             if let Some(value) = hashmap.get(&key) {
-                result.value = value.clone();
+                result.value.clone_from(value);
                 return Ok(Some(result));
             }
         }

@@ -1,6 +1,9 @@
 use crate::{
     cnsanreplace::CnSanReplace,
-    ocp_postprocess::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy},
+    ocp_postprocess::{
+        additional_trust_bundle::params::ProxyAdditionalTrustBundle, cluster_domain_rename::params::ClusterNamesRename,
+        proxy_rename::args::Proxy,
+    },
     use_cert::UseCert,
     use_key::UseKey,
 };
@@ -96,15 +99,26 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) pull_secret: Option<String>,
 
-    /// Change a cluster's trust bundle. Changes all locations where the trust bundle is stored in
-    /// the cluster. If an existing trust bundle is not found, this will cause an error, as
+    /// Change a cluster's user-ca-bundle configmap, and all locations where that trust bundle is
+    /// typically stored in the cluster. If an existing trust bundle is not found, this will cause
+    /// an error, as creating the relevant resources is beyond the scope of this tool. The trust
+    /// bundle's validity will not be checked. When using a RECERT_CONFIG file, raw PEMS can be
+    /// used instead of paths to trust bundle files. When using this option it is recommended to
+    /// also run update-ca-trust after running recert to ensure that the trust bundle is properly
+    /// updated in all system locations.
+    #[clap(long, value_parser = super::parse_additional_trust_bundle)]
+    pub(crate) user_ca_bundle: Option<String>,
+
+    /// Change a cluster's Proxy CR's trustedCA bundle, and all locations where that trust bundle
+    /// is typically stored in the cluster. Given as configmap-name:trust_bundle_path. If an
+    /// existing proxy trust bundle with that name is not found, this will cause an error, as
     /// creating the relevant resources is beyond the scope of this tool. The trust bundle's
     /// validity will not be checked. When using a RECERT_CONFIG file, raw PEMS can be used instead
-    /// of paths to trust bundle files. When using this option it is recommended to also run
-    /// update-ca-trust after running recert to ensure that the trust bundle is properly updated in
-    /// all locations.
-    #[clap(long, value_parser = super::parse_additional_trust_bundle, groups = &["adt_dirs", "adt_files"])]
-    pub(crate) additional_trust_bundle: Option<String>,
+    /// of a path to the trust bundle file. When --user-ca-bundle is also used, and configmap-name
+    /// is "user-ca-bundle", the bundle must be omitted, as it will be taken from the user-ca-bundle
+    /// option (which must be set).
+    #[clap(long, value_parser = ProxyAdditionalTrustBundle::parse)]
+    pub(crate) proxy_trusted_ca_bundle: Option<ProxyAdditionalTrustBundle>,
 
     /// The CIDR of the machine network. If given, the machine network CIDR which appears in the
     /// install-config found in the cluster-config-v1 configmaps will be modified to use this
@@ -167,6 +181,10 @@ pub(crate) struct Cli {
     /// Note: the act of reading from etcd might sometimes cause changes to etcd
     #[clap(long, group = "dry")]
     pub(crate) dry_run: bool,
+
+    /// Don't scan/process crypto objects, only run the postprocessing steps.
+    #[clap(long)]
+    pub(crate) postprocess_only: bool,
 
     /// Intentionally give all certificates an expiration date in the past. Useful to run before
     /// creating a seed image to make sure that this seed image will not be accidentally used
