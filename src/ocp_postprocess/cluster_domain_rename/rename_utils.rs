@@ -1,4 +1,5 @@
 use anyhow::{bail, ensure, Context, Result};
+use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
@@ -26,7 +27,6 @@ pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &st
                 line.to_string()
             }
         })
-        .collect::<Vec<_>>()
         .join("\n");
 
     if !found {
@@ -182,9 +182,9 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
 
 pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: &str, hostname: &str) -> Result<String> {
     let cluster_backup = cluster_backup_sh.to_string();
-    let pattern = format!(r"NODE_{original_hostname}_IP");
+    let pattern = format!(r"NODE_{}_IP", env_var_safe(original_hostname));
     let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
-    Ok(cluster_backup.replace(&pattern, &replacement))
+    Ok(cluster_backup.replace(&pattern, &replacement).to_string())
 }
 
 pub(crate) fn fix_etcd_env(etcd_env: &str, original_hostname: &str, hostname: &str) -> Result<String> {
@@ -366,7 +366,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
 
             *arg = serde_json::Value::String(
                 regex::Regex::new(r"--cluster-name=[^ ]+")
-                    .unwrap()
+                    .context("compiling regex")?
                     .replace_all(
                         arg.as_str().context("arg not string")?,
                         format!("--cluster-name={}", generated_infra_id).as_str(),

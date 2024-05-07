@@ -29,6 +29,11 @@ pub mod k8s {
                     include!("k8s.io.api.apps.v1.rs");
                 }
             }
+            pub mod batch {
+                pub mod v1 {
+                    include!("k8s.io.api.batch.v1.rs");
+                }
+            }
             pub mod core {
                 pub mod v1 {
                     include!("k8s.io.api.core.v1.rs");

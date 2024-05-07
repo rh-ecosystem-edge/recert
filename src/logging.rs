@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::{ClusterCryptoObjects, REDACT_SECRETS},
     config::RecertConfig,
-    recert::RunTimes,
+    recert::timing::RunTimes,
 };
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
@@ -14,7 +14,24 @@ static LOGGER: RecertLogger = RecertLogger;
 
 pub fn init() -> Result<()> {
     match log::set_logger(&LOGGER) {
-        Ok(_) => log::set_max_level(LevelFilter::Info),
+        Ok(_) => match std::env::var("RECERT_LOG_LEVEL") {
+            Ok(log_level) => {
+                log::set_max_level(
+                    (match log_level.to_lowercase().as_str() {
+                        "trace" => Level::Trace,
+                        "debug" => Level::Debug,
+                        "info" => Level::Info,
+                        "warn" => Level::Warn,
+                        "error" => Level::Error,
+                        _ => bail!("Invalid log level: {}", log_level),
+                    })
+                    .to_level_filter(),
+                );
+            }
+            Err(_) => {
+                log::set_max_level(LevelFilter::Info);
+            }
+        },
         Err(_) => bail!("Logger initalization failed"),
     };
 
@@ -27,8 +44,7 @@ lazy_static! {
 
 impl log::Log for RecertLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        // TODO: Make this configurable
-        metadata.level() <= Level::Info
+        log::max_level() >= metadata.level()
     }
 
     fn log(&self, record: &Record) {
@@ -66,12 +82,14 @@ struct Summary {
     recert_config: RecertConfig,
     logs: Vec<String>,
     run_times: Option<RunTimes>,
+    error: Option<String>,
 }
 
 pub(crate) fn generate_summary(
     recert_config: RecertConfig,
     cluster_crypto: ClusterCryptoObjects,
     run_result: Option<RunTimes>,
+    error: Option<&anyhow::Error>,
 ) -> Result<()> {
     let logs = match LOG_RECORDS.lock() {
         Ok(logs) => logs.clone(),
@@ -85,6 +103,7 @@ pub(crate) fn generate_summary(
         recert_config,
         logs,
         run_times: run_result,
+        error: error.map(|e| format!("{:?}", e)),
     };
 
     if let Some(summary_file) = summary.recert_config.summary_file.clone() {

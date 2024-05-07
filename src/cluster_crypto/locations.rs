@@ -483,6 +483,7 @@ impl K8sResourceLocation {
                 Some(apiversion_first_component_value) => {
                     match apiversion_first_component_value {
                         "operator.openshift.io"
+                        | "monitoring.coreos.com"
                         | "apiregistration.k8s.io"
                         | "machineconfiguration.openshift.io"
                         | "config.openshift.io"

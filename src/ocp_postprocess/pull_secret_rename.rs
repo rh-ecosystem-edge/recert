@@ -1,4 +1,4 @@
-use crate::{config::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
+use crate::{config::path::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
 
@@ -11,7 +11,7 @@ pub(crate) async fn rename_all(
     pull_secret: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     fix_etcd_resources(etcd_client, pull_secret)
         .await
         .context("renaming etcd resources")?;
@@ -23,7 +23,7 @@ pub(crate) async fn rename_all(
     Ok(())
 }
 
-async fn fix_filesystem_resources(pull_secret: &str, static_dirs: &[ConfigPath], static_files: &[ConfigPath]) -> Result<(), anyhow::Error> {
+async fn fix_filesystem_resources(pull_secret: &str, static_dirs: &[ConfigPath], static_files: &[ConfigPath]) -> Result<()> {
     for dir in static_dirs {
         fix_dir_resources(pull_secret, dir).await?;
     }
@@ -34,7 +34,7 @@ async fn fix_filesystem_resources(pull_secret: &str, static_dirs: &[ConfigPath],
     Ok(())
 }
 
-async fn fix_dir_resources(pull_secret: &str, dir: &Path) -> Result<(), anyhow::Error> {
+async fn fix_dir_resources(pull_secret: &str, dir: &Path) -> Result<()> {
     filesystem_rename::fix_filesystem_currentconfig(pull_secret, dir)
         .await
         .context("renaming currentconfig")?;
@@ -45,7 +45,7 @@ async fn fix_dir_resources(pull_secret: &str, dir: &Path) -> Result<(), anyhow::
     Ok(())
 }
 
-async fn fix_file_resources(pull_secret: &str, file: &Path) -> Result<(), anyhow::Error> {
+async fn fix_file_resources(pull_secret: &str, file: &Path) -> Result<()> {
     filesystem_rename::fix_filesystem_mcs_machine_config_content(pull_secret, file)
         .await
         .context("fix filesystem mcs machine config content")?;

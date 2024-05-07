@@ -18,7 +18,7 @@ impl std::fmt::Display for UseCert {
 }
 
 impl UseCert {
-    pub(crate) fn cli_parse(cert_path_or_pem: &str) -> Result<Self> {
+    pub(crate) fn parse(cert_path_or_pem: &str) -> Result<Self> {
         let pem = pem::parse_many(if cert_path_or_pem.contains('\n') {
             cert_path_or_pem.as_bytes().to_vec()
         } else {

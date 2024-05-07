@@ -1,56 +1,46 @@
 use crate::{
     cluster_crypto::{crypto_utils::ensure_openssl_version, scanning, ClusterCryptoObjects},
-    config::{ConfigPath, Customizations, RecertConfig},
+    config::{ClusterCustomizations, CryptoCustomizations, RecertConfig},
     k8s_etcd::InMemoryK8sEtcd,
-    ocp_postprocess::{cluster_domain_rename::params::ClusterRenameParameters, ocp_postprocess},
+    ocp_postprocess::ocp_postprocess,
     rsa_key_pool, server_ssh_keys,
 };
 use anyhow::{Context, Result};
 use etcd_client::Client as EtcdClient;
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
-#[derive(Clone)]
-pub(crate) struct RunTime {
-    start: std::time::Instant,
-    end: std::time::Instant,
-}
+use self::timing::{combine_timings, FinalizeTiming, RecertifyTiming, RunTime, RunTimes};
 
-impl RunTime {
-    pub(crate) fn since_start(start: std::time::Instant) -> Self {
-        Self {
-            start,
-            end: std::time::Instant::now(),
-        }
-    }
-}
+pub(crate) mod timing;
 
-impl serde::Serialize for RunTime {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let duration = self.end - self.start;
-        serializer.serialize_str(&format!("{}.{:03}s", duration.as_secs(), duration.subsec_millis()))
-    }
-}
-
-#[derive(serde::Serialize, Clone)]
-pub(crate) struct RunTimes {
-    scan_run_time: RunTime,
-    rsa_run_time: RunTime,
-    processing_run_time: RunTime,
-    commit_to_etcd_and_disk_run_time: RunTime,
-    ocp_postprocessing_run_time: RunTime,
-    commit_to_actual_etcd_run_time: RunTime,
-}
-
-pub(crate) async fn run(
-    parsed_cli: &RecertConfig,
-    cluster_crypto: &mut ClusterCryptoObjects,
-) -> std::result::Result<RunTimes, anyhow::Error> {
+pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut ClusterCryptoObjects) -> Result<RunTimes> {
     ensure_openssl_version().context("checking openssl version compatibility")?;
 
-    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &parsed_cli.etcd_endpoint {
+    let in_memory_etcd_client = get_etcd_endpoint(recert_config).await?;
+
+    let recertify_timing = recertify(
+        cluster_crypto,
+        Arc::clone(&in_memory_etcd_client),
+        &recert_config.crypto_customizations,
+    )
+    .await
+    .context("scanning and recertification")?;
+
+    let finalize_timing = finalize(
+        Arc::clone(&in_memory_etcd_client),
+        cluster_crypto,
+        &recert_config.cluster_customizations,
+        recert_config.regenerate_server_ssh_keys.as_deref(),
+        recert_config.dry_run,
+    )
+    .await
+    .context("finalizing")?;
+
+    Ok(combine_timings(recertify_timing, finalize_timing))
+}
+
+async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK8sEtcd>> {
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &recert_config.etcd_endpoint {
         Some(etcd_endpoint) => Some(
             EtcdClient::connect([etcd_endpoint.as_str()], None)
                 .await
@@ -58,59 +48,30 @@ pub(crate) async fn run(
         ),
         None => None,
     }));
-
-    let (scan_run_time, rsa_run_time, processing_run_time) = recertify(
-        cluster_crypto,
-        Arc::clone(&in_memory_etcd_client),
-        parsed_cli.static_dirs.clone(),
-        parsed_cli.static_files.clone(),
-        &parsed_cli.customizations,
-    )
-    .await
-    .context("scanning and recertification")?;
-
-    let (commit_to_etcd_and_disk_run_time, ocp_postprocessing_run_time, commit_to_actual_etcd_run_time) = finalize(
-        Arc::clone(&in_memory_etcd_client),
-        cluster_crypto,
-        &parsed_cli.cluster_rename,
-        &parsed_cli.hostname,
-        &parsed_cli.ip,
-        &parsed_cli.kubeadmin_password_hash,
-        &parsed_cli.pull_secret,
-        &parsed_cli.static_dirs,
-        &parsed_cli.static_files,
-        parsed_cli.regenerate_server_ssh_keys.as_deref(),
-        parsed_cli.dry_run,
-    )
-    .await
-    .context("finalizing")?;
-
-    Ok(RunTimes {
-        scan_run_time,
-        rsa_run_time,
-        processing_run_time,
-        commit_to_etcd_and_disk_run_time,
-        ocp_postprocessing_run_time,
-        commit_to_actual_etcd_run_time,
-    })
+    Ok(in_memory_etcd_client)
 }
 
 async fn recertify(
     cluster_crypto: &mut ClusterCryptoObjects,
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
-    static_dirs: Vec<ConfigPath>,
-    static_files: Vec<ConfigPath>,
-    customizations: &Customizations,
-) -> Result<(RunTime, RunTime, RunTime)> {
-    if in_memory_etcd_client.etcd_client.is_some() {
-        scanning::discover_external_certs(Arc::clone(&in_memory_etcd_client))
+    crypto_customizations: &CryptoCustomizations,
+) -> Result<RecertifyTiming> {
+    let external_certs = if in_memory_etcd_client.etcd_client.is_some() {
+        scanning::external_certs::discover_external_certs(Arc::clone(&in_memory_etcd_client))
             .await
-            .context("discovering external certs to ignore")?;
-    }
+            .context("discovering external certs to ignore")?
+    } else {
+        HashSet::new()
+    };
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
-    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(in_memory_etcd_client, static_dirs, static_files));
+    let all_discovered_crypto_objects = tokio::spawn(scanning::crypto_scan(
+        in_memory_etcd_client,
+        crypto_customizations.dirs.clone(),
+        crypto_customizations.files.clone(),
+        external_certs.clone(),
+    ));
     let rsa_keys = tokio::spawn(fill_keys());
 
     // Wait for the parallelizable tasks to finish and get their results
@@ -120,11 +81,15 @@ async fn recertify(
     // We discovered all crypto objects, process them
     let start = std::time::Instant::now();
     cluster_crypto
-        .process_objects(all_discovered_crypto_objects, customizations, rsa_pool)
+        .process_objects(all_discovered_crypto_objects, crypto_customizations, rsa_pool)
         .context("processing discovered objects")?;
     let processing_run_time = RunTime::since_start(start);
 
-    Ok((scan_run_time, rsa_run_time, processing_run_time))
+    Ok(RecertifyTiming {
+        scan_run_time,
+        rsa_run_time,
+        processing_run_time,
+    })
 }
 
 async fn fill_keys() -> Result<(RunTime, rsa_key_pool::RsaKeyPool)> {
@@ -133,20 +98,13 @@ async fn fill_keys() -> Result<(RunTime, rsa_key_pool::RsaKeyPool)> {
     Ok((RunTime::since_start(start_time), pool))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
-    cluster_rename: &Option<ClusterRenameParameters>,
-    hostname: &Option<String>,
-    ip: &Option<String>,
-    kubeadmin_password_hash: &Option<String>,
-    pull_secret: &Option<String>,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
+    cluster_customizations: &ClusterCustomizations,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
-) -> Result<(RunTime, RunTime, RunTime)> {
+) -> Result<FinalizeTiming> {
     let start = std::time::Instant::now();
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
@@ -156,18 +114,9 @@ async fn finalize(
 
     let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
-        ocp_postprocess(
-            &in_memory_etcd_client,
-            cluster_rename,
-            hostname,
-            ip,
-            kubeadmin_password_hash,
-            pull_secret,
-            static_dirs,
-            static_files,
-        )
-        .await
-        .context("performing ocp specific post-processing")?;
+        ocp_postprocess(&in_memory_etcd_client, cluster_customizations)
+            .await
+            .context("performing ocp specific post-processing")?;
     }
     let ocp_postprocessing_run_time = RunTime::since_start(start);
 
@@ -192,9 +141,9 @@ async fn finalize(
 
     let commit_to_actual_etcd_run_time = RunTime::since_start(start);
 
-    Ok((
+    Ok(FinalizeTiming {
         commit_to_etcd_and_disk_run_time,
         ocp_postprocessing_run_time,
         commit_to_actual_etcd_run_time,
-    ))
+    })
 }

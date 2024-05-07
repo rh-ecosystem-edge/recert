@@ -1,14 +1,14 @@
 use anyhow::{ensure, Result};
 
 #[derive(Clone, serde::Serialize)]
-pub(crate) struct ClusterRenameParameters {
+pub(crate) struct ClusterNamesRename {
     pub(crate) cluster_name: String,
     pub(crate) cluster_base_domain: String,
     pub(crate) infra_id: Option<String>,
 }
 
-impl ClusterRenameParameters {
-    pub(crate) fn cli_parse(value: &str) -> Result<Self> {
+impl ClusterNamesRename {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
         let parts = value.split(':').collect::<Vec<_>>();
 
         ensure!(

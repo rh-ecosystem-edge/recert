@@ -66,8 +66,10 @@ async fn fix_etcd_all_certs_secret(etcd_client: &Arc<InMemoryK8sEtcd>, key: &str
             .flat_map(|prefix| suffixes.iter().map(move |suffix| format!("{}{}{}", prefix, new_hostname, suffix)));
 
         old_keys.zip(new_keys).for_each(|(old_key, new_key)| {
-            let value = data.remove(&old_key).context(format!("could not remove key: {}", old_key)).unwrap();
-            data.insert(new_key, value);
+            // optionally try to replace fields, as we have seen managedFields missing
+            if let Some(value) = data.remove(&old_key) {
+                data.insert(new_key, value);
+            }
         });
 
         Ok(())
@@ -179,6 +181,8 @@ pub(crate) async fn fix_etcd_all_certs(etcd_client: &Arc<InMemoryK8sEtcd>, hostn
         hostnames
     );
 
+    // Length ensured above
+    #[allow(clippy::unwrap_used)]
     let original_hostname = hostnames.into_iter().next().unwrap();
 
     Ok(original_hostname)
@@ -208,6 +212,15 @@ pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, origina
                         .as_object_mut()
                         .context("/metadata not an object")?
                         .insert("name".to_string(), serde_json::Value::String(new_secret_name.clone()));
+
+                    if let Some(description_annotation) = etcd_value.pointer_mut("/metadata/annotations/openshift.io~1description") {
+                        *description_annotation = Value::String(
+                            description_annotation
+                                .as_str()
+                                .context("openshift.io/description annotation not a string")?
+                                .replace(original_hostname, hostname),
+                        );
+                    }
 
                     etcd_client
                         .put(
@@ -394,12 +407,17 @@ fn replace_node_status_name(cluster: &mut Value, hostname: &str) -> Result<()> {
         .as_array_mut()
         .context("/status/nodeStatuses not an array")?;
 
-    node_statuses.iter_mut().for_each(|status: &mut Value| {
-        status
-            .as_object_mut()
-            .unwrap()
-            .insert("nodeName".to_string(), Value::String(hostname.to_string()));
-    });
+    node_statuses
+        .iter_mut()
+        .map(|status: &mut Value| {
+            status
+                .as_object_mut()
+                .context("nodeStatus not an object")?
+                .insert("nodeName".to_string(), Value::String(hostname.to_string()));
+
+            Ok(())
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }

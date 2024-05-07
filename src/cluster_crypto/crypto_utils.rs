@@ -17,12 +17,13 @@ pub(crate) mod jwt;
 
 pub(crate) struct SigningKey {
     pub in_memory_signing_key_pair: InMemorySigningKeyPair,
-    pub pkcs8_pem: Vec<u8>,
+    pkcs8_pem: Vec<u8>,
 }
 
 impl Clone for SigningKey {
     fn clone(&self) -> Self {
         Self {
+            #[allow(clippy::unwrap_used)] // This can never panic because a SigningKey could never be created with an invalid pkcs8_pem
             in_memory_signing_key_pair: InMemorySigningKeyPair::from_pkcs8_pem(&self.pkcs8_pem).unwrap(),
             pkcs8_pem: self.pkcs8_pem.clone(),
         }
@@ -126,7 +127,7 @@ pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
 
     let pkcs8_pem_data = StdCommand::new("openssl")
         .args(["pkcs8", "-topk8", "-nocrypt", "-inform", "DER"])
-        .stdin(gen_sec1_ec.stdout.unwrap())
+        .stdin(gen_sec1_ec.stdout.context("no stdout")?)
         .output()
         .context("openssl pkcs8")?
         .stdout;

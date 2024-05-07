@@ -44,7 +44,7 @@ pub(crate) fn write_new_keys(regenerate_server_ssh_keys: &Path, original_key_typ
 
     generated_key_files
         .iter()
-        .filter(|key_file| original_key_types.contains(&get_key_type(key_file).unwrap()))
+        .filter(|key_file| original_key_types.contains(&get_key_type(key_file).unwrap_or("no type found".to_string())))
         .try_for_each(|key_file| {
             std::fs::copy(
                 key_file,
