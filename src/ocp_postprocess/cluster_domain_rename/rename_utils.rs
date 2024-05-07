@@ -182,9 +182,9 @@ pub(crate) fn fix_kcm_extended_args(config: &mut Value, generated_infra_id: &str
 
 pub(crate) fn fix_cluster_backup_sh(cluster_backup_sh: &str, original_hostname: &str, hostname: &str) -> Result<String> {
     let cluster_backup = cluster_backup_sh.to_string();
-    let pattern = format!(r"NODE_{original_hostname}_IP");
+    let pattern = format!(r"NODE_{}_IP", env_var_safe(original_hostname));
     let replacement = format!(r"NODE_{}_IP", env_var_safe(hostname));
-    Ok(cluster_backup.replace(&pattern, &replacement))
+    Ok(cluster_backup.replace(&pattern, &replacement).to_string())
 }
 
 pub(crate) fn fix_etcd_env(etcd_env: &str, original_hostname: &str, hostname: &str) -> Result<String> {
