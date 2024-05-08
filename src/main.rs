@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use anyhow::{Context, Result};
 use cluster_crypto::ClusterCryptoObjects;
 use config::RecertConfig;
@@ -36,12 +38,12 @@ async fn main_internal(config: RecertConfig) -> Result<()> {
 
     let run_result = recert::run(&config, &mut cluster_crypto).await;
 
-    let run_times = match &run_result {
-        Ok(run_times) => Some(run_times.clone()),
-        Err(_) => None,
+    let (maybe_error, run_times) = match &run_result {
+        Ok(run_times) => (None, Some(run_times.clone())),
+        Err(err) => (Some(err), None),
     };
 
-    logging::generate_summary(config, cluster_crypto, run_times)?;
+    logging::generate_summary(config, cluster_crypto, run_times, maybe_error)?;
 
     if let Err(err) = run_result {
         Err(err)

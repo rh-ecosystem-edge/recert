@@ -230,26 +230,26 @@ pub(crate) async fn fix_filesystem_kapi_startup_monitor_configmap_pod_yaml(
 }
 
 pub(crate) async fn fix_filesystem_etcd_all_certs(original_hostname: &str, hostname: &str, dir: &Path) -> Result<()> {
-    join_all(file_utils::globvec(dir, "**/etcd-all-certs/etcd-*")?.into_iter().map(|file_path| {
-        let original_path = file_path.clone();
-        let new_path = file_path
-            .clone()
-            .into_os_string()
-            .into_string()
-            .unwrap()
-            .replace(original_hostname, hostname);
-        tokio::spawn(async move {
-            async move {
-                if !DRY_RUN.load(Relaxed) {
-                    fs::rename(original_path, new_path)?;
-                }
+    join_all(
+        file_utils::globvec(dir, "**/etcd-all-certs/etcd-*")?
+            .into_iter()
+            .filter_map(|file_path| file_path.into_os_string().into_string().ok())
+            .map(|file_path| {
+                let original_path = file_path.clone();
+                let new_path = file_path.replace(original_hostname, hostname);
+                tokio::spawn(async move {
+                    async move {
+                        if !DRY_RUN.load(Relaxed) {
+                            fs::rename(original_path, new_path)?;
+                        }
 
-                anyhow::Ok(())
-            }
-            .await
-            .context(format!("renaming {:?}", file_path))
-        })
-    }))
+                        anyhow::Ok(())
+                    }
+                    .await
+                    .context(format!("renaming {:?}", file_path))
+                })
+            }),
+    )
     .await
     .into_iter()
     .collect::<Result<Vec<_>, _>>()?

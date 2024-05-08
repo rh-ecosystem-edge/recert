@@ -1,4 +1,4 @@
-use crate::{config::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
+use crate::{config::path::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
 use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
 
@@ -10,7 +10,7 @@ pub(crate) async fn rename_all(
     ip: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     let original_ip = fix_etcd_resources(etcd_client, ip).await.context("renaming etcd resources")?;
 
     fix_filesystem_resources(&original_ip, ip, static_dirs, static_files)
@@ -20,12 +20,7 @@ pub(crate) async fn rename_all(
     Ok(())
 }
 
-async fn fix_filesystem_resources(
-    original_ip: &str,
-    ip: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
-) -> Result<(), anyhow::Error> {
+async fn fix_filesystem_resources(original_ip: &str, ip: &str, static_dirs: &[ConfigPath], static_files: &[ConfigPath]) -> Result<()> {
     for dir in static_dirs {
         fix_dir_resources(original_ip, ip, dir).await?;
     }
@@ -65,6 +60,10 @@ async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Res
     etcd_rename::fix_etcd_scripts(etcd_client, &original_ip, ip)
         .await
         .context("fixing etcd-scripts")?;
+
+    etcd_rename::fix_etcd_secrets(etcd_client, &original_ip, ip)
+        .await
+        .context("fixing etcd secrets")?;
 
     etcd_rename::fix_kube_apiserver_configs(etcd_client, &original_ip, ip)
         .await

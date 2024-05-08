@@ -58,7 +58,7 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
     Ok(original_ip)
 }
 
-fn fix_storage_config(config: &mut Value, ip: &str) -> Result<(), anyhow::Error> {
+fn fix_storage_config(config: &mut Value, ip: &str) -> Result<()> {
     let storage_config = config.pointer_mut("/storageConfig").context("storageConfig not found")?;
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
@@ -150,6 +150,8 @@ pub(crate) async fn fix_etcd_endpoints(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &
 
                 ensure!(data.len() == 1, "data has more than one key, is this SNO?");
 
+                // Ensure above guarantees that this unwrap will never panic
+                #[allow(clippy::unwrap_used)]
                 let current_member_id = data.keys().next().unwrap().clone();
                 data[&current_member_id] = serde_json::Value::String(ip.to_string());
 
@@ -273,6 +275,51 @@ pub(crate) async fn fix_etcd_scripts(etcd_client: &Arc<InMemoryK8sEtcd>, origina
     data.insert("etcd.env".to_string(), serde_json::Value::String(pod_yaml));
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
+    for key_prefix in ["etcd-peer", "etcd-serving", "etcd-serving-metrics"] {
+        join_all(
+            etcd_client
+                .list_keys(format!("secrets/openshift-etcd/{key_prefix}").as_str())
+                .await?
+                .into_iter()
+                .map(|key| async move {
+                    let etcd_result = etcd_client
+                        .get(key.clone())
+                        .await
+                        .with_context(|| format!("getting key {:?}", key))?
+                        .context("key disappeared")?;
+                    let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
+                        .with_context(|| format!("deserializing value of key {:?}", key,))?;
+                    let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+                    let mut secret = get_etcd_json(etcd_client, &k8s_resource_location)
+                        .await?
+                        .context("could not find secret")?;
+
+                    if let Some(certificate_hostnames) =
+                        secret.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-hostnames")
+                    {
+                        *certificate_hostnames = serde_json::Value::String(
+                            certificate_hostnames
+                                .as_str()
+                                .context("aut.openshift.io/certificate-hostnames annotation not a string")?
+                                .replace(original_ip, ip),
+                        );
+                    }
+
+                    put_etcd_yaml(etcd_client, &k8s_resource_location, secret).await?;
+
+                    Ok(())
+                }),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    }
 
     Ok(())
 }

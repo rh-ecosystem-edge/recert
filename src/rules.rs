@@ -1,7 +1,7 @@
 use lazy_regex::{regex, Lazy};
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::{collections::HashSet, sync::RwLock};
+use std::collections::HashSet;
 
 lazy_static! {
     pub(crate) static ref IGNORE_LIST_CONFIGMAP: HashSet<String> = vec![
@@ -44,9 +44,4 @@ lazy_static! {
         // https://github.com/operator-framework/operator-lifecycle-manager/blob/9ced412f3e263b8827680dc0ad3477327cd9a508/pkg/controller/install/certresources.go#L295
         regex!("CN=olm-selfsigned-[0-9a-f]{10,32}, O=Red Hat, Inc."),
     ].into_iter().collect();
-
-    pub(crate) static ref EXTERNAL_CERTS: RwLock<HashSet<String>> = RwLock::new(vec![]
-        .into_iter()
-        .map(str::to_string)
-        .collect());
 }

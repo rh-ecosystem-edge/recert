@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     cluster_crypto::locations::LocationValueType,
-    config::Customizations,
+    config::CryptoCustomizations,
     file_utils::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, recreate_yaml_at_location_with_new_pem,
         update_auth_certificate_annotations,
@@ -64,11 +64,11 @@ impl CertKeyPair {
         &mut self,
         sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
-        customizations: &Customizations,
+        crypto_customizations: &CryptoCustomizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<()> {
-        let alternative_certificate = customizations
+        let alternative_certificate = crypto_customizations
             .use_cert_rules
             .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.cert.subject_name())
             .context("evaluating replacement cert")?;
@@ -78,7 +78,7 @@ impl CertKeyPair {
             // so simply regenerate the cert and all of its children
             None => {
                 let (new_cert_subject_signing_key, new_cert) =
-                    self.re_sign_cert(sign_with, rsa_key_pool, customizations, skid_edits, serial_number_edits)?;
+                    self.re_sign_cert(sign_with, rsa_key_pool, crypto_customizations, skid_edits, serial_number_edits)?;
                 let new_cert = Certificate::try_from(&new_cert)?;
                 (*self.distributed_cert).borrow_mut().certificate_regenerated = Some(new_cert.clone());
 
@@ -86,7 +86,7 @@ impl CertKeyPair {
                     signee.regenerate(
                         Some(&new_cert_subject_signing_key),
                         rsa_key_pool,
-                        customizations,
+                        crypto_customizations,
                         Some(skid_edits),
                         Some(serial_number_edits),
                     )?;
@@ -140,7 +140,7 @@ impl CertKeyPair {
         &mut self,
         sign_with: Option<&SigningKey>,
         rsa_key_pool: &mut RsaKeyPool,
-        customizations: &Customizations,
+        crypto_customizations: &CryptoCustomizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
     ) -> Result<(SigningKey, CapturedX509Certificate)> {
@@ -165,7 +165,7 @@ impl CertKeyPair {
         // mkoid 1.2.840.10045.2.1
         let ec_public_key_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 206, 61, 2, 1]));
 
-        let self_new_key_pair = if let Some(use_key_rule) = customizations
+        let self_new_key_pair = if let Some(use_key_rule) = crypto_customizations
             .use_key_rules
             .key_file(tbs_certificate.subject.clone())
             .context("getting use key file for cert")?
@@ -259,9 +259,9 @@ impl CertKeyPair {
         // Perform all requested mutations on the certificate
         cert_mutations::mutate_cert(
             &mut tbs_certificate,
-            &customizations.cn_san_replace_rules,
-            customizations.extend_expiration,
-            customizations.force_expire,
+            &crypto_customizations.cn_san_replace_rules,
+            crypto_customizations.extend_expiration,
+            crypto_customizations.force_expire,
         )
         .context("mutating cert")?;
 
@@ -391,7 +391,7 @@ impl CertKeyPair {
             match &filelocation.content_location {
                 FileContentLocation::Raw(location_value_type) => match &location_value_type {
                     LocationValueType::Pem(pem_location_info) => pem_utils::pem_bundle_replace_pem_at_index(
-                        String::from_utf8(contents)?,
+                        &String::from_utf8(contents)?,
                         pem_location_info.pem_bundle_index,
                         &newpem,
                     )?,
@@ -422,7 +422,7 @@ fn fix_akid(
     akid: &mut x509_cert::ext::pkix::AuthorityKeyIdentifier,
     skids: &mut SkidEdits,
     serial_numbers: &mut SerialNumberEdits,
-) -> Result<(), anyhow::Error> {
+) -> Result<()> {
     if let Some(key_identifier) = &akid.key_identifier {
         let matching_skid = skids
             .get(&HashableKeyID(key_identifier.clone()))

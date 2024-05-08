@@ -1,54 +1,29 @@
-use std::{env, ops::Deref, path::Path, sync::atomic::Ordering::Relaxed};
-
+use self::{cli::Cli, path::ConfigPath};
 use crate::{
     cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
-    ocp_postprocess::cluster_domain_rename::params::ClusterRenameParameters,
+    ocp_postprocess::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy},
     use_cert::{UseCert, UseCertRules},
     use_key::{UseKey, UseKeyRules},
 };
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
-use clio::ClioPath;
+use itertools::Itertools;
 use serde::Serialize;
 use serde_json::Value;
+use std::{env, path::PathBuf, sync::atomic::Ordering::Relaxed};
 
-use self::cli::Cli;
+#[cfg(test)]
+use serde_json::json;
 
 mod cli;
-
-#[derive(Clone, Debug)]
-pub(crate) struct ConfigPath(pub(crate) ClioPath);
-
-impl AsRef<ClioPath> for ConfigPath {
-    fn as_ref(&self) -> &ClioPath {
-        &self.0
-    }
-}
-
-impl Deref for ConfigPath {
-    type Target = Path;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.path()
-    }
-}
-
-impl From<ClioPath> for ConfigPath {
-    fn from(clio_path: ClioPath) -> Self {
-        Self(clio_path)
-    }
-}
-
-impl serde::Serialize for ConfigPath {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.0.to_string_lossy().as_ref())
-    }
-}
+pub(crate) mod path;
 
 /// All the user requested customizations, coalesced into a single struct for convenience
 #[derive(serde::Serialize)]
-pub(crate) struct Customizations {
+pub(crate) struct CryptoCustomizations {
+    pub(crate) dirs: Vec<ConfigPath>,
+    pub(crate) files: Vec<ConfigPath>,
     pub(crate) cn_san_replace_rules: CnSanReplaceRules,
     pub(crate) use_key_rules: UseKeyRules,
     pub(crate) use_cert_rules: UseCertRules,
@@ -56,19 +31,29 @@ pub(crate) struct Customizations {
     pub(crate) force_expire: bool,
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct ClusterCustomizations {
+    pub(crate) dirs: Vec<ConfigPath>,
+    pub(crate) files: Vec<ConfigPath>,
+    pub(crate) cluster_rename: Option<ClusterNamesRename>,
+    pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
+    pub(crate) proxy: Option<Proxy>,
+    pub(crate) install_config: Option<String>,
+    pub(crate) kubeadmin_password_hash: Option<String>,
+    #[serde(serialize_with = "redact")]
+    pub(crate) pull_secret: Option<String>,
+    pub(crate) additional_trust_bundle: Option<String>,
+    pub(crate) machine_network_cidr: Option<String>,
+}
+
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 #[derive(serde::Serialize)]
 pub(crate) struct RecertConfig {
     pub(crate) dry_run: bool,
     pub(crate) etcd_endpoint: Option<String>,
-    pub(crate) static_dirs: Vec<ConfigPath>,
-    pub(crate) static_files: Vec<ConfigPath>,
-    pub(crate) customizations: Customizations,
-    pub(crate) cluster_rename: Option<ClusterRenameParameters>,
-    pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
-    pub(crate) kubeadmin_password_hash: Option<String>,
-    pub(crate) pull_secret: Option<String>,
+    pub(crate) crypto_customizations: CryptoCustomizations,
+    pub(crate) cluster_customizations: ClusterCustomizations,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
     pub(crate) summary_file: Option<ConfigPath>,
@@ -84,6 +69,8 @@ pub(crate) struct RecertConfig {
 // private keys instead of file paths)
 //
 // A bit hacky but couldn't find a better way to do this
+//
+// Also redacts the entire field if the config contains a pull secret
 fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
     if REDACT_SECRETS.load(Relaxed) {
         if let Some(config_file_raw) = config_file_raw {
@@ -91,6 +78,9 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
 
             match value {
                 Ok(value) => {
+                    if value.get("pull_secret").is_some() {
+                        return "<redacted due to inclusion of pull secret in config>".serialize(serializer);
+                    }
                     if let Some(value) = value.get("use_key_rules") {
                         match value.as_array() {
                             Some(seq) => {
@@ -119,208 +109,187 @@ fn config_file_raw_optionally_redacted<S: serde::Serializer>(config_file_raw: &O
     config_file_raw.serialize(serializer)
 }
 
+fn redact<S: serde::Serializer>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    if REDACT_SECRETS.load(Relaxed) {
+        "<redacted>".serialize(serializer)
+    } else {
+        value.serialize(serializer)
+    }
+}
+
 impl RecertConfig {
+    #[cfg(test)]
+    fn empty() -> Result<RecertConfig> {
+        Ok(RecertConfig {
+            dry_run: true,
+            etcd_endpoint: None,
+            crypto_customizations: CryptoCustomizations {
+                dirs: vec![],
+                files: vec![],
+                cn_san_replace_rules: parse_cs_san_rules(json!([]))?,
+                use_key_rules: parse_use_key_rules(json!([]))?,
+                use_cert_rules: parse_cert_rules(json!([]))?,
+                extend_expiration: false,
+                force_expire: false,
+            },
+            cluster_customizations: ClusterCustomizations {
+                dirs: vec![],
+                files: vec![],
+                cluster_rename: None,
+                hostname: None,
+                ip: None,
+                kubeadmin_password_hash: None,
+                pull_secret: None,
+                additional_trust_bundle: None,
+                proxy: None,
+                install_config: None,
+                machine_network_cidr: None,
+            },
+            threads: None,
+            regenerate_server_ssh_keys: None,
+            summary_file: None,
+            summary_file_clean: None,
+            config_file_raw: None,
+            cli_raw: None,
+        })
+    }
+
     pub(crate) fn parse_from_config_file(config_bytes: &[u8]) -> Result<Self> {
         let value: Value = serde_yaml::from_slice(config_bytes)?;
 
         let mut value = value.as_object().context("config file must be a YAML object")?.clone();
 
-        let dry_run = value
-            .remove("dry_run")
-            .unwrap_or(Value::Bool(false))
-            .as_bool()
-            .context("dry_run must be a boolean")?;
-
-        let etcd_endpoint = match value.remove("etcd_endpoint") {
-            Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
-            None => None,
-        };
-
-        let static_dirs = match value.remove("static_dirs") {
-            Some(value) => value
-                .as_array()
-                .context("static_dirs must be an array")?
-                .iter()
-                .map(|value| {
-                    let clio_path = ClioPath::new(value.as_str().context("static_dirs must be an array of strings")?)
-                        .context(format!("config dir {}", value.as_str().unwrap()))?;
-
-                    ensure!(clio_path.try_exists()?, format!("static_dir must exist: {}", clio_path));
-                    ensure!(clio_path.is_dir(), format!("static_dir must be a directory: {}", clio_path));
-
-                    Ok(ConfigPath::from(clio_path))
-                })
-                .collect::<Result<Vec<ConfigPath>>>()?,
-            None => vec![],
-        };
-
-        let static_files = match value.remove("static_files") {
-            Some(value) => value
-                .as_array()
-                .context("static_files must be an array")?
-                .iter()
-                .map(|value| {
-                    let clio_path = ClioPath::new(value.as_str().context("static_files must be an array of strings")?)
-                        .context(format!("config file {}", value.as_str().unwrap()))?;
-
-                    ensure!(clio_path.try_exists()?, format!("static_file must exist: {}", clio_path));
-                    ensure!(clio_path.is_file(), format!("static_file must be a file: {}", clio_path));
-
-                    Ok(ConfigPath::from(clio_path))
-                })
-                .collect::<Result<Vec<ConfigPath>>>()?,
-            None => vec![],
-        };
+        let (crypto_dirs, crypto_files, cluster_customization_dirs, cluster_customization_files) = parse_dir_file_config(&mut value)?;
 
         let cn_san_replace_rules = match value.remove("cn_san_replace_rules") {
-            Some(value) => CnSanReplaceRules(
-                value
-                    .as_array()
-                    .context("cn_san_replace_rules must be an array")?
-                    .iter()
-                    .map(|value| {
-                        CnSanReplace::cli_parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?)
-                            .context(format!("cn_san_replace_rule {}", value.as_str().unwrap()))
-                    })
-                    .collect::<Result<Vec<CnSanReplace>>>()?,
-            ),
+            Some(value) => parse_cs_san_rules(value)?,
             None => CnSanReplaceRules(vec![]),
         };
-
         let use_key_rules = match value.remove("use_key_rules") {
-            Some(value) => UseKeyRules(
-                value
-                    .as_array()
-                    .context("use_key_rules must be an array")?
-                    .iter()
-                    .map(|value| {
-                        UseKey::cli_parse(value.as_str().context("use_key_rules must be an array of strings")?)
-                            .context(format!("use_key_rule {}", value.as_str().unwrap()))
-                    })
-                    .collect::<Result<Vec<UseKey>>>()?,
-            ),
+            Some(value) => parse_use_key_rules(value)?,
             None => UseKeyRules(vec![]),
         };
-
         let use_cert_rules = match value.remove("use_cert_rules") {
-            Some(value) => UseCertRules(
-                value
-                    .as_array()
-                    .context("use_cert_rules must be an array")?
-                    .iter()
-                    .map(|value| {
-                        UseCert::cli_parse(value.as_str().context("use_cert_rules must be an array of strings")?)
-                            .context(format!("use_cert_rule {}", value.as_str().unwrap()))
-                    })
-                    .collect::<Result<Vec<UseCert>>>()?,
-            ),
+            Some(value) => parse_cert_rules(value)?,
             None => UseCertRules(vec![]),
         };
-
         let extend_expiration = value
             .remove("extend_expiration")
             .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("extend_expiration must be a boolean")?;
-
         let force_expire = value
             .remove("force_expire")
             .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("force_expire must be a boolean")?;
-
         let cluster_rename = match value.remove("cluster_rename") {
             Some(value) => Some(
-                ClusterRenameParameters::cli_parse(value.as_str().context("cluster_rename must be a string")?)
-                    .context(format!("cluster_rename {}", value.as_str().unwrap()))?,
+                ClusterNamesRename::parse(value.as_str().context("cluster_rename must be a string")?).context(format!(
+                    "cluster_rename {}",
+                    value.as_str().context("cluster_rename must be a string")?
+                ))?,
             ),
             None => None,
         };
-
         let hostname = match value.remove("hostname") {
             Some(value) => Some(value.as_str().context("hostname must be a string")?.to_string()),
             None => None,
         };
-
         let ip = match value.remove("ip") {
             Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
             None => None,
         };
-
         let pull_secret = match value.remove("pull_secret") {
             Some(value) => Some(value.as_str().context("pull_secret must be a string")?.to_string()),
             None => None,
         };
-
+        let proxy = match value.remove("proxy") {
+            Some(value) => Some(
+                Proxy::parse(value.as_str().context("proxy must be a string")?)
+                    .context(format!("proxy {}", value.as_str().context("proxy must be a string")?))?,
+            ),
+            None => None,
+        };
+        let install_config = match value.remove("install_config") {
+            Some(value) => Some(value.as_str().context("install_config must be a string")?.to_string()),
+            None => None,
+        };
         let set_kubeadmin_password_hash = match value.remove("kubeadmin_password_hash") {
             Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
             None => None,
         };
-
+        let additional_trust_bundle = match value.remove("additional_trust_bundle") {
+            Some(value) => Some(parse_additional_trust_bundle(
+                value.as_str().context("additional_trust_bundle must be a string")?,
+            )?),
+            None => None,
+        };
+        let machine_network_cidr = match value.remove("machine_network_cidr") {
+            Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
+            None => None,
+        };
+        let dry_run = value
+            .remove("dry_run")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("dry_run must be a boolean")?;
+        let etcd_endpoint = match value.remove("etcd_endpoint") {
+            Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
+            None => None,
+        };
         let threads = match value.remove("threads") {
-            Some(value) => Some(
-                value
-                    .as_u64()
-                    .context("threads must be an integer")?
-                    .try_into()
-                    .context("threads must be an integer")?,
-            ),
+            Some(value) => parse_threads(value)?,
             None => None,
         };
-
         let regenerate_server_ssh_keys = match value.remove("regenerate_server_ssh_keys") {
-            Some(value) => {
-                let clio_path = ConfigPath::from(
-                    ClioPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?)
-                        .context(format!("regenerate_server_ssh_keys {}", value.as_str().unwrap()))?,
-                );
-
-                ensure!(clio_path.try_exists()?, "regenerate_server_ssh_keys must exist");
-                ensure!(clio_path.is_dir(), "regenerate_server_ssh_keys must be a directory");
-                Some(clio_path)
-            }
+            Some(value) => parse_server_ssh_keys(value)?,
             None => None,
         };
-
         let summary_file = match value.remove("summary_file") {
-            Some(value) => Some(ConfigPath::from(
-                ClioPath::new(value.as_str().context("summary_file must be a string")?)
-                    .context(format!("summary_file {}", value.as_str().unwrap()))?,
-            )),
+            Some(value) => parse_summary_file(value)?,
             None => None,
         };
-
         let summary_file_clean = match value.remove("summary_file_clean") {
-            Some(value) => Some(ConfigPath::from(
-                ClioPath::new(value.as_str().context("summary_file_clean must be a string")?)
-                    .context(format!("summary_file_clean {}", value.as_str().unwrap()))?,
-            )),
+            Some(value) => parse_summary_file_clean(value)?,
             None => None,
         };
 
         ensure!(
             value.is_empty(),
             "unknown keys {:?} in config file",
-            value.keys().map(|key| key.to_string()).collect::<Vec<String>>().join(", ")
+            value.keys().map(|key| key.to_string()).join(", ")
         );
 
-        let recert_config = Self {
-            dry_run,
-            etcd_endpoint,
-            static_dirs,
-            static_files,
-            customizations: Customizations {
-                cn_san_replace_rules,
-                use_key_rules,
-                use_cert_rules,
-                extend_expiration,
-                force_expire,
-            },
+        let crypto_customizations = CryptoCustomizations {
+            dirs: crypto_dirs,
+            files: crypto_files,
+            cn_san_replace_rules,
+            use_key_rules,
+            use_cert_rules,
+            extend_expiration,
+            force_expire,
+        };
+
+        let cluster_customizations = ClusterCustomizations {
+            dirs: cluster_customization_dirs,
+            files: cluster_customization_files,
             cluster_rename,
             hostname,
             ip,
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             pull_secret,
+            additional_trust_bundle,
+            proxy,
+            install_config,
+            machine_network_cidr,
+        };
+
+        let recert_config = Self {
+            dry_run,
+            etcd_endpoint,
+            crypto_customizations,
+            cluster_customizations,
             threads,
             regenerate_server_ssh_keys,
             summary_file,
@@ -331,17 +300,17 @@ impl RecertConfig {
         };
 
         ensure!(
-            !(recert_config.customizations.extend_expiration && recert_config.customizations.force_expire),
+            !(recert_config.crypto_customizations.extend_expiration && recert_config.crypto_customizations.force_expire),
             "extend_expiration and force_expire are mutually exclusive"
         );
 
         ensure!(
-            !(recert_config.dry_run && recert_config.customizations.force_expire),
+            !(recert_config.dry_run && recert_config.crypto_customizations.force_expire),
             "dry_run and force_expire are mutually exclusive"
         );
 
         ensure!(
-            !(recert_config.dry_run && recert_config.customizations.extend_expiration),
+            !(recert_config.dry_run && recert_config.crypto_customizations.extend_expiration),
             "dry_run and extend_expiration are mutually exclusive"
         );
 
@@ -352,20 +321,44 @@ impl RecertConfig {
         Ok(Self {
             dry_run: cli.dry_run,
             etcd_endpoint: cli.etcd_endpoint,
-            static_dirs: cli.static_dir.into_iter().map(ConfigPath::from).collect(),
-            static_files: cli.static_file.into_iter().map(ConfigPath::from).collect(),
-            customizations: Customizations {
+            crypto_customizations: CryptoCustomizations {
+                dirs: if cli.static_dir.is_empty() {
+                    cli.crypto_dir.into_iter().map(ConfigPath::from).collect()
+                } else {
+                    cli.static_dir.clone().into_iter().map(ConfigPath::from).collect()
+                },
+                files: if cli.static_file.is_empty() {
+                    cli.crypto_file.into_iter().map(ConfigPath::from).collect()
+                } else {
+                    cli.static_file.clone().into_iter().map(ConfigPath::from).collect()
+                },
                 cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
                 use_key_rules: UseKeyRules(cli.use_key),
                 use_cert_rules: UseCertRules(cli.use_cert),
                 extend_expiration: cli.extend_expiration,
                 force_expire: cli.force_expire,
             },
-            cluster_rename: cli.cluster_rename,
-            hostname: cli.hostname,
-            ip: cli.ip,
-            kubeadmin_password_hash: cli.kubeadmin_password_hash,
-            pull_secret: cli.pull_secret,
+            cluster_customizations: ClusterCustomizations {
+                dirs: if cli.static_dir.is_empty() {
+                    cli.cluster_customization_dir.into_iter().map(ConfigPath::from).collect()
+                } else {
+                    cli.static_dir.into_iter().map(ConfigPath::from).collect()
+                },
+                files: if cli.static_file.is_empty() {
+                    cli.cluster_customization_file.into_iter().map(ConfigPath::from).collect()
+                } else {
+                    cli.static_file.into_iter().map(ConfigPath::from).collect()
+                },
+                cluster_rename: cli.cluster_rename,
+                hostname: cli.hostname,
+                ip: cli.ip,
+                proxy: cli.proxy,
+                install_config: cli.install_config,
+                kubeadmin_password_hash: cli.kubeadmin_password_hash,
+                pull_secret: cli.pull_secret,
+                additional_trust_bundle: cli.additional_trust_bundle,
+                machine_network_cidr: cli.machine_network_cidr,
+            },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),
             summary_file: cli.summary_file.map(ConfigPath::from),
@@ -391,5 +384,375 @@ impl RecertConfig {
             }
             Err(_) => RecertConfig::parse_from_cli(Cli::parse()).context("CLI parsing")?,
         })
+    }
+}
+
+fn parse_summary_file_clean(value: Value) -> Result<Option<ConfigPath>> {
+    Ok(Some(
+        ConfigPath::new(value.as_str().context("summary_file_clean must be a string")?).context(format!(
+            "summary_file_clean {}",
+            value.as_str().context("summary_file_clean must be a string")?
+        ))?,
+    ))
+}
+
+fn parse_summary_file(value: Value) -> Result<Option<ConfigPath>> {
+    Ok(Some(
+        ConfigPath::new(value.as_str().context("summary_file must be a string")?)
+            .context(format!("summary_file {}", value.as_str().context("summary_file must be a string")?))?,
+    ))
+}
+
+fn parse_server_ssh_keys(value: Value) -> Result<Option<ConfigPath>> {
+    let config_path = ConfigPath::new(value.as_str().context("regenerate_server_ssh_keys must be a string")?).context(format!(
+        "regenerate_server_ssh_keys {}",
+        value.as_str().context("regenerate_server_ssh_keys must be a string")?
+    ))?;
+    ensure!(config_path.try_exists()?, "regenerate_server_ssh_keys must exist");
+    ensure!(config_path.is_dir(), "regenerate_server_ssh_keys must be a directory");
+    Ok(Some(config_path))
+}
+
+fn parse_threads(value: Value) -> Result<Option<usize>> {
+    Ok(Some(
+        value
+            .as_u64()
+            .context("threads must be an integer")?
+            .try_into()
+            .context("threads must be an integer")?,
+    ))
+}
+
+fn parse_cert_rules(value: Value) -> Result<UseCertRules> {
+    Ok(UseCertRules(
+        value
+            .as_array()
+            .context("use_cert_rules must be an array")?
+            .iter()
+            .map(|value| {
+                UseCert::parse(value.as_str().context("use_cert_rules must be an array of strings")?).context(format!(
+                    "use_cert_rule {}",
+                    value.as_str().context("use_cert_rules must be an array of strings")?
+                ))
+            })
+            .collect::<Result<Vec<UseCert>>>()?,
+    ))
+}
+
+fn parse_use_key_rules(value: Value) -> Result<UseKeyRules> {
+    Ok(UseKeyRules(
+        value
+            .as_array()
+            .context("use_key_rules must be an array")?
+            .iter()
+            .map(|value| {
+                UseKey::parse(value.as_str().context("use_key_rules must be an array of strings")?).context(format!(
+                    "use_key_rule {}",
+                    value.as_str().context("use_key_rules must be an array of strings")?
+                ))
+            })
+            .collect::<Result<Vec<UseKey>>>()?,
+    ))
+}
+
+fn parse_cs_san_rules(value: Value) -> Result<CnSanReplaceRules> {
+    Ok(CnSanReplaceRules(
+        value
+            .as_array()
+            .context("cn_san_replace_rules must be an array")?
+            .iter()
+            .map(|value| {
+                CnSanReplace::parse(value.as_str().context("cn_san_replace_rules must be an array of strings")?).context(format!(
+                    "cn_san_replace_rule {}",
+                    value.as_str().context("cn_san_replace_rules must be an array of strings")?
+                ))
+            })
+            .collect::<Result<Vec<CnSanReplace>>>()?,
+    ))
+}
+
+#[allow(clippy::type_complexity)]
+fn parse_dir_file_config(
+    value: &mut serde_json::Map<String, Value>,
+) -> Result<(Vec<ConfigPath>, Vec<ConfigPath>, Vec<ConfigPath>, Vec<ConfigPath>)> {
+    let static_dirs = match value.remove("static_dirs") {
+        Some(value) => {
+            ensure!(
+                value.get("crypto_dirs").is_none(),
+                "static_dirs and crypto_dirs are mutually exclusive"
+            );
+            ensure!(
+                value.get("cluster_customization_dirs").is_none(),
+                "static_dirs and cluster_customization_dirs are mutually exclusive"
+            );
+            ensure!(
+                value.get("additional_trust_bundle").is_none(),
+                "static_dirs and cluster_customization_dirs are mutually exclusive"
+            );
+
+            value
+                .as_array()
+                .context("static_dirs must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path = ConfigPath::new(value.as_str().context("static_dirs must be an array of strings")?).context(
+                        format!("config dir {}", value.as_str().context("static_dirs must be an array of strings")?),
+                    )?;
+
+                    ensure!(config_path.try_exists()?, format!("static_dir must exist: {}", config_path));
+                    ensure!(config_path.is_dir(), format!("static_dir must be a directory: {}", config_path));
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?
+        }
+        None => vec![],
+    };
+    let static_files = match value.remove("static_files") {
+        Some(value) => {
+            ensure!(
+                value.get("crypto_files").is_none(),
+                "static_files and crypto_files are mutually exclusive"
+            );
+            ensure!(
+                value.get("cluster_customization_files").is_none(),
+                "static_files and cluster_customization_files are mutually exclusive"
+            );
+            ensure!(
+                value.get("additional_trust_bundle").is_none(),
+                "static_files and cluster_customization_files are mutually exclusive"
+            );
+
+            value
+                .as_array()
+                .context("static_files must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path =
+                        ConfigPath::new(value.as_str().context("static_files must be an array of strings")?).context(format!(
+                            "config file {}",
+                            value.as_str().context("static_files must be an array of strings")?
+                        ))?;
+
+                    ensure!(config_path.try_exists()?, format!("static_file must exist: {}", config_path));
+                    ensure!(config_path.is_file(), format!("static_file must be a file: {}", config_path));
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?
+        }
+        None => vec![],
+    };
+    let crypto_dirs = if static_dirs.is_empty() {
+        match value.remove("crypto_dirs") {
+            Some(value) => value
+                .as_array()
+                .context("crypto_dirs must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path = ConfigPath::new(value.as_str().context("crypto_dirs must be an array of strings")?).context(
+                        format!("crypto dir {}", value.as_str().context("crypto_dirs must be an array of strings")?),
+                    )?;
+
+                    ensure!(config_path.try_exists()?, format!("crypto_dir must exist: {}", config_path));
+                    ensure!(config_path.is_dir(), format!("crypto_dir must be a directory: {}", config_path));
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?,
+            None => vec![],
+        }
+    } else {
+        static_dirs.clone()
+    };
+    let crypto_files = if static_files.is_empty() {
+        match value.remove("crypto_files") {
+            Some(value) => value
+                .as_array()
+                .context("crypto_files must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path =
+                        ConfigPath::new(value.as_str().context("crypto_files must be an array of strings")?).context(format!(
+                            "crypto file {}",
+                            value.as_str().context("crypto_files must be an array of strings")?
+                        ))?;
+
+                    ensure!(config_path.try_exists()?, format!("crypto_file must exist: {}", config_path));
+                    ensure!(config_path.is_file(), format!("crypto_file must be a file: {}", config_path));
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?,
+            None => vec![],
+        }
+    } else {
+        static_files.clone()
+    };
+
+    let cluster_customization_dirs = if static_dirs.is_empty() {
+        match value.remove("cluster_customization_dirs") {
+            Some(value) => value
+                .as_array()
+                .context("cluster_customization_dirs must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path = ConfigPath::new(value.as_str().context("cluster_customization_dirs must be an array of strings")?)
+                        .context(format!(
+                            "cluster_customization dir {}",
+                            value.as_str().context("cluster_customization_dirs must be an array of strings")?
+                        ))?;
+
+                    ensure!(
+                        config_path.try_exists()?,
+                        format!("cluster_customization_dir must exist: {}", config_path)
+                    );
+                    ensure!(
+                        config_path.is_dir(),
+                        format!("cluster_customization_dir must be a directory: {}", config_path)
+                    );
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?,
+            None => vec![],
+        }
+    } else {
+        static_dirs
+    };
+
+    let cluster_customization_files = if static_files.is_empty() {
+        match value.remove("cluster_customization_files") {
+            Some(value) => value
+                .as_array()
+                .context("cluster_customization_files must be an array")?
+                .iter()
+                .map(|value| {
+                    let config_path = ConfigPath::new(value.as_str().context("cluster_customization_files must be an array of strings")?)
+                        .context(format!(
+                        "cluster_customization file {}",
+                        value.as_str().context("cluster_customization_files must be an array of strings")?
+                    ))?;
+
+                    ensure!(
+                        config_path.try_exists()?,
+                        format!("cluster_customization_file must exist: {}", config_path)
+                    );
+                    ensure!(
+                        config_path.is_file(),
+                        format!("cluster_customization_file must be a file: {}", config_path)
+                    );
+
+                    Ok(config_path)
+                })
+                .collect::<Result<Vec<ConfigPath>>>()?,
+            None => vec![],
+        }
+    } else {
+        static_files
+    };
+    Ok((crypto_dirs, crypto_files, cluster_customization_dirs, cluster_customization_files))
+}
+
+pub(crate) fn parse_additional_trust_bundle(value: &str) -> Result<String> {
+    let bundle = if !value.contains('\n') {
+        let path = PathBuf::from(&value);
+
+        ensure!(path.try_exists()?, "additional_trust_bundle must exist");
+        ensure!(path.is_file(), "additional_trust_bundle must be a file");
+
+        String::from_utf8(std::fs::read(&path).context("failed to read additional_trust_bundle")?)
+            .context("additional_trust_bundle must be valid UTF-8")?
+    } else {
+        value.to_string()
+    };
+
+    let pems = pem::parse_many(bundle.as_bytes()).context("additional_trust_bundle must be valid PEM")?;
+
+    ensure!(!pems.is_empty(), "additional_trust_bundle must contain at least one certificate");
+
+    ensure!(
+        pems.iter().all(|pem| pem.tag() == "CERTIFICATE"),
+        "additional_trust_bundle must contain only certificates"
+    );
+
+    // After parsing, we still return the raw bundle, as OpenShift also preserves the original
+    // comments and whitespace in the user's additional trust bundle
+    Ok(bundle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_redact_config_file_raw_private_keys() {
+        let raw_config = r#"
+use_key_rules:
+- /path/to/key
+- |
+  -----BEGIN RSA PRIVATE KEY-----
+  MIIEpAIBAAKCAQEA
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("MIIEpAIBAAKCAQEA"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("MIIEpAIBAAKCAQEA"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    #[serial]
+    fn test_redact_config_file_raw_pull_secret() {
+        let raw_config = r#"
+pull_secret: |
+    {"auths": {"cloud.openshift.com": {"auth": "secretsecret", "email": "foo@bar.com"}}}
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("secretsecret"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("secretsecret"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    #[serial]
+    fn test_dont_redact_config_file_raw() {
+        let raw_config = r#"
+use_key_rules:
+- /path/to/key
+"#;
+
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.config_file_raw = Some(raw_config.to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("/path/to/key"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(serde_json::to_string(&config).unwrap().contains("/path/to/key"),);
+        REDACT_SECRETS.store(false, Relaxed);
+    }
+
+    #[test]
+    #[serial]
+    fn test_pull_secret_not_serialized() {
+        let mut config = RecertConfig::empty().unwrap();
+
+        config.cluster_customizations.pull_secret = Some("woiefjowiefjwioefj".to_string());
+
+        assert!(serde_json::to_string(&config).unwrap().contains("woiefjowiefjwioefj"),);
+        REDACT_SECRETS.store(true, Relaxed);
+        assert!(!serde_json::to_string(&config).unwrap().contains("woiefjowiefjwioefj"),);
+        REDACT_SECRETS.store(false, Relaxed);
     }
 }

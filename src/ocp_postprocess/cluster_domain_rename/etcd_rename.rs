@@ -8,6 +8,7 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use fn_error_context::context;
 use futures_util::future::join_all;
+use itertools::Itertools;
 use serde_json::Value;
 use std::{io::BufRead, sync::Arc};
 
@@ -733,7 +734,7 @@ pub(crate) async fn fix_dns_cluster_config(etcd_client: &Arc<InMemoryK8sEtcd>, c
     Ok(())
 }
 
-fn fix_dns(config: &mut Value, cluster_domain: &str) -> Result<(), anyhow::Error> {
+fn fix_dns(config: &mut Value, cluster_domain: &str) -> Result<()> {
     let spec = &mut config
         .pointer_mut("/spec")
         .context("no /spec")?
@@ -848,7 +849,7 @@ pub(crate) async fn fix_infrastructure_cluster_config(
     Ok(())
 }
 
-fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result<(), anyhow::Error> {
+fn fix_infra(config: &mut Value, infra_id: &str, cluster_domain: &str) -> Result<()> {
     let status = &mut config
         .pointer_mut("/status")
         .context("no /status")?
@@ -1091,7 +1092,6 @@ pub(crate) async fn fix_ovnkube_config(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                 line.to_string()
             }
         })
-        .collect::<Vec<_>>()
         .join("\n");
 
     if !found {
@@ -1154,13 +1154,6 @@ pub(crate) async fn fix_install_config(
         serde_json::Value::String(serde_yaml::to_string(&install_config_value).context("serializing install-config")?),
     )
     .context("could not find original install-config")?;
-
-    // TODO: We should probably keep the old one around but then it confuses scripts
-    // which scan for no leftover old cluster name in the manifests
-    // data.insert(
-    //     "install-config-proto-cluster".to_string(),
-    //     serde_json::Value::String(install_config_bytes.to_string()),
-    // );
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
 

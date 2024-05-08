@@ -67,69 +67,77 @@ sudo unshare --mount -- bash -c "mount --bind /dev/null .cargo/config.toml && su
 if [[ -n "$WITH_CONFIG" ]]; then
 	echo "Using config"
 	# shellcheck disable=2016
-	RECERT_CONFIG=<(echo '
-dry_run: false
-etcd_endpoint: localhost:2379
-static_dirs:
-- backup/etc/kubernetes
-- backup/var/lib/kubelet
-- backup/etc/machine-config-daemon
-static_files:
-- backup/etc/mcs-machine-config-content.json
-cn_san_replace_rules:
-- api-int.seed.redhat.com:api-int.new-name.foo.com
-- api.seed.redhat.com:api.new-name.foo.com
-- "*.apps.seed.redhat.com:*.apps.new-name.foo.com"
-- 192.168.126.10:192.168.127.11
-use_cert_rules:
-- |
-    -----BEGIN CERTIFICATE-----
-    MIICyzCCAbMCFAoie5EUqnUAHimqxbJBHV0MGVbwMA0GCSqGSIb3DQEBCwUAMCIx
-    IDAeBgNVBAMMF2FkbWluLWt1YmVjb25maWctc2lnbmVyMB4XDTI0MDEwOTEzMTky
-    NVoXDTI0MDIwODEzMTkyNVowIjEgMB4GA1UEAwwXYWRtaW4ta3ViZWNvbmZpZy1z
-    aWduZXIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC2fz96uc8fDoNV
-    RaBB9iQ+i5Y76IZf0XOdGID8WVaqPlqH+NgLUaFa39T+78FhZW3794Lbeyu/PnYT
-    ufMyKnJEulVO7W7gPHaqWyuN08/m6SH5ycTEgUAXK1q1yVR/vM6HnV/UPUCfbDaW
-    RFOrUgGNwNywhEjqyzyUxJFixxS6Rk7JmouROD2ciNhBn6wNFByVHN9j4nQUOhXC
-    A0JjuiPH7ybvcHjmg3mKDJusyVq4pl0faahOxn0doILfXaHHwRxyEnP3V3arpPer
-    FvwlHh2Cfat+ijFPSD9pN3KmoeAviOHZVLQ/jKzkQvzlvva3mhEpLE5Zje1lMpvq
-    fjDheW9bAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAC7oi/Ht0lidcx6XvOBz6W1m
-    LU02e2yHuDzw6E3WuNoqAdPpleFRV4mLDnv8mEavH5sje0L5veHtOq3Ny4pc06B+
-    ETB2aCW4GQ4mPvN9Jyi6sxLQQaVLpFrtPPB08NawNbbcYWUrAihO1uIXLhaCYZWw
-    H3aWlqRvGECazYZIPcFoV20jygrcwMhixSZjYyHhJN0LYO5sjiKcMnI8EkHuqE17
-    7CPogicZte+m49Mo+f7b8asmKBSafdTUSVAt9Q3Fc3PTJSMW5lxfx1vIR/og33WJ
-    BgIejfD1dYW2Fp02z5sF6Pw6vhobpfDYgsTAKNonh5P6NxMiD14eQxYrNJ6DAF0=
-    -----END CERTIFICATE-----
-cluster_rename: new-name:foo.com:some-random-infra-id
-hostname: test.hostname
-ip: 192.168.126.99
-kubeadmin_password_hash: "$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi"
-summary_file: summary.yaml
-summary_file_clean: summary_redacted.yaml
-extend_expiration: true
-force_expire: false
-pull_secret: "{\"auths\":{\"empty_registry\":{\"username\":\"empty\",\"password\":\"empty\",\"auth\":\"ZW1wdHk6ZW1wdHk=\",\"email\":\"\"}}}"
-threads: 1
-') cargo run --release
+	RECERT_CONFIG="$SCRIPT_DIR/hack/dummy_config.yaml" cargo run --release
 else
 	# shellcheck disable=2016
-	cargo run --release -- \
+	cargo run -- \
 		--etcd-endpoint localhost:2379 \
-		--static-dir backup/etc/kubernetes \
-		--static-dir backup/var/lib/kubelet \
-		--static-dir backup/etc/machine-config-daemon \
-		--static-file backup/etc/mcs-machine-config-content.json \
+        \
+		--crypto-dir backup/etc/kubernetes \
+		--crypto-dir backup/var/lib/kubelet \
+		--crypto-dir backup/etc/machine-config-daemon \
+		--crypto-file backup/etc/mcs-machine-config-content.json \
+        \
+		--cluster-customization-dir backup/etc/kubernetes \
+		--cluster-customization-dir backup/var/lib/kubelet \
+		--cluster-customization-dir backup/etc/machine-config-daemon \
+		--cluster-customization-dir backup/etc/pki/ca-trust \
+		--cluster-customization-file backup/etc/mcs-machine-config-content.json \
+        --cluster-customization-file backup/etc/mco/proxy.env \
+        \
 		--cn-san-replace api-int.seed.redhat.com:api-int.new-name.foo.com \
 		--cn-san-replace api.seed.redhat.com:api.new-name.foo.com \
 		--cn-san-replace *.apps.seed.redhat.com:*.apps.new-name.foo.com \
 		--cn-san-replace 192.168.126.10:192.168.127.11 \
+		--use-cert ./hack/dummy_use_cert.crt \
+        \
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
 		--ip 192.168.126.99 \
+		--proxy 'http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost,moreproxy' \
+		--install-config 'additionalTrustBundlePolicy: Proxyonly
+apiVersion: v1
+baseDomain: ibo0.redhat.com
+bootstrapInPlace:
+  installationDisk: /dev/disk/by-path/pci-0000:04:00.0
+compute:
+- architecture: amd64
+  hyperthreading: Enabled
+  name: worker
+  platform: {}
+  replicas: 0
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  platform: {}
+  replicas: 1
+metadata:
+  creationTimestamp: null
+  name: seed
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineNetwork:
+  - cidr: 192.168.126.0/24
+  networkType: OVNKubernetes
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  none: {}
+publish: External
+pullSecret: ""
+sshKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDThIOETj6iTvbCaNv15tZg121nWLcwtJuZofc1QS5iAdw8C8fN2R39cSW/ambikl2Fr6YNBBVR3znbtmattOyWyxAOFUfdY0aw0MqZb4LWLf04q6X0KsWIYWaV3ol0KxTzgvX38i/IU42XQfJwMYFE8dQ15TZ7l+FTKKi3SUPXLuy/9CXRfaCDZ2dKMcCkelkTr0KR1HdjiKQ86rMfk9JUbAf7D29aAQq4h1WNnHMM9vnbqN7MW9L8ebn/lCTJjGQ56r0UmurgyIEMt0P+CGp1e4AUNKYsPoYFB0GNwUkr/rB8LeuCOaZcoWdYXlUJaN45GjtCDon56+AoMA9V8tYkV6HqyFwGQjoGKI1cRCHXDJnGyAbMd9OK94TWJmNvtdHkbSURHyw2G7otZpAkRuEvMP0C7R+3JmuxrDA8yaUgWvgccqGcmFl1krClksW6KrAXNlwhZ4QOAMhDrXwwPfOOQoG82zPpg+g9gZQIhkro1Cje4bmWz5z5fiuDloTq1vc=
+  root@edge-01.edge.lab.eng.rdu2.redhat.com' \
+		--machine-network-cidr '192.168.127.0/24' \
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
+		--additional-trust-bundle ./hack/dummy_trust_bundle.pem \
+		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \
+        \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \
-		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \
+        \
 		--extend-expiration
 	# --regenerate-server-ssh-keys backup/etc/ssh/ \
 fi

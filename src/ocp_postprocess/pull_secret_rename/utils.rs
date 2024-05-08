@@ -15,7 +15,7 @@ pub(crate) fn override_machineconfig_source(machineconfig: &mut Value, new_sourc
         .as_array_mut()
         .context("files not an array")?
         .iter_mut()
-        .find_map(|file| (file.pointer("/path")? == &path).then_some(file));
+        .find_map(|file| (file.pointer("/path")? == path).then_some(file));
 
     if find_map.is_none() {
         // Not all machineconfigs have the file we're looking for and that's ok
@@ -31,7 +31,7 @@ pub(crate) fn override_machineconfig_source(machineconfig: &mut Value, new_sourc
 
     file_contents.insert(
         "source".to_string(),
-        serde_json::Value::String(file_utils::dataurl_encode(&new_source)),
+        serde_json::Value::String(file_utils::dataurl_encode(new_source)),
     );
 
     Ok(())
