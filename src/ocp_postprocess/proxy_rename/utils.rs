@@ -170,9 +170,9 @@ pub(crate) fn fix_containers(config: &mut Value, proxy: &Proxy, prefix: &str) ->
     Ok(())
 }
 
-// Remove all existing proxy env vars from the container's env and return the index of where the
-// first proxy env var should be inserted. Also removes the order in which the proxy env vars
-// appeared in the original env.
+/// Remove all existing proxy env vars from the container's env and return the index of where the
+/// first proxy env var should be inserted. Also returns the order in which the proxy env vars
+/// appeared in the original env.
 fn remove_existing_proxy_env_vars(container_env: &mut Vec<Value>, is_upper: bool) -> Result<Option<(usize, Vec<String>)>> {
     let original_proxy_envs = container_env
         .iter()
@@ -225,19 +225,19 @@ mod tests {
 
     #[test]
     fn test_fix_containers() {
-        let data = r#"{"apiVersion":"apps/v1","kind":"Deployment","spec":{"template":{"spec":{"containers":[{"env":[{"name":"DEFAULT_DESTINATION_CA_PATH","value":"/var/run/configmaps/service-ca/service-ca.crt"},{"name":"HTTP_PROXY","value":"http://squid.corp.redhat.com:3128"},{"name":"HTTPS_PROXY","value":"http://squid.corp.redhat.com:3128"},{"name":"NO_PROXY","value":".cluster.local,.seed.ibo0.redhat.com,.svc,10.128.0.0/14,127.0.0.1,172.30.0.0/16,192.168.126.0/24,api-int.seed.ibo0.redhat.com,api-int.seed.redhat.com,localhost"},{"name":"RELOAD_INTERVAL","value":"5s"},{"name":"STATS_USERNAME_FILE","value":"/var/lib/haproxy/conf/metrics-auth/statsUsername"},{"name":"http_proxy","value":"http://squid.corp.redhat.com:3128"},{"name":"https_proxy","value":"http://squid.corp.redhat.com:3128"},{"name":"no_proxy","value":".cluster.local,.seed.ibo0.redhat.com,.svc,10.128.0.0/14,127.0.0.1,172.30.0.0/16,192.168.126.0/24,api-int.seed.ibo0.redhat.com,api-int.seed.redhat.com,localhost"}],"name":"router"}]}}}}"#;
+        let data = r#"{"apiVersion":"apps/v1","kind":"Deployment","spec":{"template":{"spec":{"containers":[{"env":[{"name":"DEFAULT_DESTINATION_CA_PATH","value":"/var/run/configmaps/service-ca/service-ca.crt"},{"name":"HTTPS_PROXY","value":"http://squid.corp.redhats.com:3128"},{"name":"HTTP_PROXY","value":"http://squid.corp.redhat.com:3128"},{"name":"NO_PROXY","value":".cluster.local,.seed.ibo0.redhat.com,.svc,10.128.0.0/14,127.0.0.1,172.30.0.0/16,192.168.126.0/24,api-int.seed.ibo0.redhat.com,api-int.seed.redhat.com,localhost"},{"name":"RELOAD_INTERVAL","value":"5s"},{"name":"STATS_USERNAME_FILE","value":"/var/lib/haproxy/conf/metrics-auth/statsUsername"},{"name":"http_proxy","value":"http://squid.corp.redhat.com:3128"},{"name":"https_proxy","value":"http://squid.corp.redhats.com:3128"},{"name":"no_proxy","value":".cluster.local,.seed.ibo0.redhat.com,.svc,10.128.0.0/14,127.0.0.1,172.30.0.0/16,192.168.126.0/24,api-int.seed.ibo0.redhat.com,api-int.seed.redhat.com,localhost"}],"name":"router"}]}}}}"#;
 
         let mut config: Value = serde_json::from_str(data).unwrap();
 
         let proxy = Proxy {
             spec_proxy: ProxyConfig {
                 http_proxy: "http://proxy.example.com".to_string(),
-                https_proxy: "http://proxy.example.com".to_string(),
+                https_proxy: "http://proxy.examples.com".to_string(),
                 no_proxy: "localhost".to_string(),
             },
             status_proxy: ProxyConfig {
                 http_proxy: "http://proxy.example.com".to_string(),
-                https_proxy: "http://proxy.example.com".to_string(),
+                https_proxy: "http://proxy.examples.com".to_string(),
                 no_proxy: "localhost".to_string(),
             },
         };
@@ -245,6 +245,26 @@ mod tests {
         fix_containers(&mut config, &proxy, "/spec/template/spec").unwrap();
 
         assert!(!serde_json::to_string(&config).unwrap().contains("squid.corp.redhat.com"));
+
+        let env = config.pointer("/spec/template/spec/containers/0/env").unwrap().as_array().unwrap();
+
+        for (expected_name, expected_value) in [
+            ("HTTP_PROXY", "http://proxy.example.com"),
+            ("HTTPS_PROXY", "http://proxy.examples.com"),
+            ("NO_PROXY", "localhost"),
+            ("http_proxy", "http://proxy.example.com"),
+            ("https_proxy", "http://proxy.examples.com"),
+            ("no_proxy", "localhost"),
+        ] {
+            for env_var in dbg!(env).iter() {
+                let name = env_var.pointer("/name").unwrap().as_str().unwrap();
+                let value = env_var.pointer("/value").unwrap().as_str().unwrap();
+
+                if name == expected_name {
+                    assert_eq!(value, expected_value);
+                }
+            }
+        }
     }
 
     #[test]
@@ -252,7 +272,7 @@ mod tests {
         let mut env = vec![
             json!({"name": "SOME", "value": "value"}),
             json!({"name": "HTTP_PROXY", "value": "http://proxy.example.com"}),
-            json!({"name": "HTTPS_PROXY", "value": "http://proxy.example.com"}),
+            json!({"name": "HTTPS_PROXY", "value": "http://proxy.examples.com"}),
             json!({"name": "NO_PROXY", "value": "localhost"}),
             json!({"name": "OTHER", "value": "value"}),
         ];
@@ -275,7 +295,7 @@ mod tests {
 
         let mut env = vec![
             json!({"name": "HTTP_PROXY", "value": "http://proxy.example.com"}),
-            json!({"name": "HTTPS_PROXY", "value": "http://proxy.example.com"}),
+            json!({"name": "HTTPS_PROXY", "value": "http://proxy.examples.com"}),
             json!({"name": "NO_PROXY", "value": "localhost"}),
         ];
 
