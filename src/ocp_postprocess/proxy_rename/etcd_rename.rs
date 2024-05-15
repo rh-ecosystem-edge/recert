@@ -268,8 +268,8 @@ pub(crate) async fn fix_storages(etcd_client: &InMemoryK8sEtcd, proxy: &Proxy) -
 }
 
 fn generic_proxy_fix(spec: &mut serde_json::Map<String, Value>, proxy: &Proxy) {
-    spec.insert("HTTPS_PROXY".to_string(), Value::String(proxy.status_proxy.http_proxy.clone()));
-    spec.insert("HTTP_PROXY".to_string(), Value::String(proxy.status_proxy.https_proxy.clone()));
+    spec.insert("HTTP_PROXY".to_string(), Value::String(proxy.status_proxy.http_proxy.clone()));
+    spec.insert("HTTPS_PROXY".to_string(), Value::String(proxy.status_proxy.https_proxy.clone()));
     spec.insert("NO_PROXY".to_string(), Value::String(proxy.status_proxy.no_proxy.clone()));
 }
 
