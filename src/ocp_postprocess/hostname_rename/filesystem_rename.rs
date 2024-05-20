@@ -1,6 +1,6 @@
 use crate::{
     file_utils::{self, commit_file, read_file_to_string, DRY_RUN},
-    ocp_postprocess::cluster_domain_rename::rename_utils,
+    ocp_postprocess::rename_utils,
 };
 use anyhow::{self, Context, Result};
 use futures_util::future::join_all;

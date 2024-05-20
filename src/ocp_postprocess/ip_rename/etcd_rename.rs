@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
-    ocp_postprocess::cluster_domain_rename::rename_utils::{fix_api_server_arguments_ip, fix_etcd_pod_yaml_ip},
+    ocp_postprocess::rename_utils::{fix_api_server_arguments_ip, fix_etcd_pod_yaml_ip},
 };
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;

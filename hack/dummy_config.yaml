@@ -14,6 +14,7 @@ cluster_customization_dirs:
 cluster_customization_files:
 - backup/etc/mcs-machine-config-content.json
 - backup/etc/mco/proxy.env
+- backup/etc/chrony.conf
 cn_san_replace_rules:
 - api-int.seed.redhat.com:api-int.new-name.foo.com
 - api.seed.redhat.com:api.new-name.foo.com
@@ -129,6 +130,11 @@ additional_trust_bundle: |
     42TI0UzcqRV4CWDoARMSV8yMLajZ0g1eEreUprwmFcOy17V7KCeV6E8lKb21OU8M
     Ad9q3H0iXjct
     -----END CERTIFICATE-----
+chrony_config: |
+    pool 0.rhel.pool.ntp.org iburst
+    driftfile /var/lib/chrony/drift
+    server test iburst
+    
 summary_file: summary.yaml
 summary_file_clean: summary_redacted.yaml
 extend_expiration: true
