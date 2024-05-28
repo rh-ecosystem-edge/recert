@@ -1,12 +1,13 @@
 use self::params::ClusterNamesRename;
-use crate::{cluster_crypto::locations::K8sResourceLocation, config::path::ConfigPath, k8s_etcd::InMemoryK8sEtcd};
+use crate::{
+    cluster_crypto::locations::K8sResourceLocation, config::path::ConfigPath, k8s_etcd::InMemoryK8sEtcd, ocp_postprocess::rename_utils,
+};
 use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
 
 mod etcd_rename;
 mod filesystem_rename;
 pub(crate) mod params;
-pub(crate) mod rename_utils;
 
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,

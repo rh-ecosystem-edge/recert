@@ -77,6 +77,7 @@ else
 		--crypto-dir backup/var/lib/kubelet \
 		--crypto-dir backup/etc/machine-config-daemon \
 		--crypto-file backup/etc/mcs-machine-config-content.json \
+		--cluster-customization-file backup/etc/chrony.conf \
         \
 		--cluster-customization-dir backup/etc/kubernetes \
 		--cluster-customization-dir backup/var/lib/kubelet \
@@ -134,6 +135,10 @@ sshKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDThIOETj6iTvbCaNv15tZg121nWLcwtJuZ
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
 		--additional-trust-bundle ./hack/dummy_trust_bundle.pem \
 		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \
+		--chrony-config 'pool 0.rhel.pool.ntp.org iburst
+driftfile /var/lib/chrony/drift
+server test iburst
+' \
         \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \

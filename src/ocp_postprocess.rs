@@ -20,6 +20,7 @@ use std::{
 
 pub(crate) mod additional_trust_bundle;
 mod arguments;
+pub(crate) mod chrony_config;
 pub(crate) mod cluster_domain_rename;
 mod fnv;
 mod go_base32;
@@ -29,6 +30,7 @@ pub(crate) mod ip_rename;
 pub(crate) mod machine_config_cidr_rename;
 pub(crate) mod proxy_rename;
 pub(crate) mod pull_secret_rename;
+pub mod rename_utils;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 #[allow(clippy::too_many_arguments)]
@@ -145,6 +147,12 @@ async fn run_cluster_customizations(
             .await
             .context("fixing machine network CIDR")?;
     }
+
+    if let Some(chrony_config) = &cluster_customizations.chrony_config {
+        chrony_config_rename(in_memory_etcd_client, chrony_config, dirs, files)
+            .await
+            .context("overriding chrony config")?;
+    };
 
     Ok(())
 }
@@ -873,6 +881,21 @@ async fn fix_machine_network_cidr(
     let etcd_client = in_memory_etcd_client;
 
     machine_config_cidr_rename::rename_all(etcd_client, machine_network_cidr, static_dirs, static_files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn chrony_config_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    chrony_config: &str,
+    static_dirs: &[ConfigPath],
+    static_files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    chrony_config::rename_all(etcd_client, chrony_config, static_dirs, static_files)
         .await
         .context("renaming all")?;
 

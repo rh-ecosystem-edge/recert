@@ -45,6 +45,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) pull_secret: Option<String>,
     pub(crate) additional_trust_bundle: Option<String>,
     pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) chrony_config: Option<String>,
 }
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
@@ -144,6 +145,7 @@ impl RecertConfig {
                 proxy: None,
                 install_config: None,
                 machine_network_cidr: None,
+                chrony_config: None,
             },
             threads: None,
             regenerate_server_ssh_keys: None,
@@ -229,6 +231,11 @@ impl RecertConfig {
             Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
             None => None,
         };
+        let chrony_config = match value.remove("chrony_config") {
+            Some(value) => Some(value.as_str().context("chrony_config must be a string")?.to_string()),
+            None => None,
+        };
+
         let dry_run = value
             .remove("dry_run")
             .unwrap_or(Value::Bool(false))
@@ -283,6 +290,7 @@ impl RecertConfig {
             proxy,
             install_config,
             machine_network_cidr,
+            chrony_config,
         };
 
         let recert_config = Self {
@@ -358,6 +366,7 @@ impl RecertConfig {
                 pull_secret: cli.pull_secret,
                 additional_trust_bundle: cli.additional_trust_bundle,
                 machine_network_cidr: cli.machine_network_cidr,
+                chrony_config: cli.chrony_config,
             },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),

@@ -1,9 +1,16 @@
+use crate::{
+    cluster_crypto::locations::K8sResourceLocation,
+    k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
+};
 use anyhow::{bail, ensure, Context, Result};
+use futures_util::future::join_all;
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde_json::Value;
 use std::io::BufRead;
+use std::path::Path;
+use std::sync::Arc;
 
 use crate::file_utils;
 
@@ -843,4 +850,94 @@ pub(crate) fn fix_kapi_startup_monitor_pod_yaml(pod_yaml: &str, original_hostnam
     let pattern = format!(r"--node-name={}", original_hostname);
     let replacement = format!(r"--node-name={}", hostname);
     Ok(pod_yaml.replace(&pattern, &replacement))
+}
+
+pub(crate) fn override_machineconfig_source(machineconfig: &mut Value, new_source: &str, path: &str) -> Result<()> {
+    let pointer_mut = machineconfig.pointer_mut("/spec/config/storage/files");
+    if pointer_mut.is_none() {
+        // Not all machineconfigs have files to look at and that's ok
+        return Ok(());
+    };
+
+    let find_map = pointer_mut
+        .context("no /spec/config/storage/files")?
+        .as_array_mut()
+        .context("files not an array")?
+        .iter_mut()
+        .find_map(|file| (file.pointer("/path")? == path).then_some(file));
+
+    if find_map.is_none() {
+        // Not all machineconfigs have the file we're looking for and that's ok
+        return Ok(());
+    };
+
+    let file_contents = find_map
+        .context(format!("no {} file in machineconfig", &path))?
+        .pointer_mut("/contents")
+        .context("no .contents")?
+        .as_object_mut()
+        .context("annotations not an object")?;
+
+    file_contents.insert(
+        "source".to_string(),
+        serde_json::Value::String(file_utils::dataurl_encode(new_source)),
+    );
+
+    Ok(())
+}
+
+pub(crate) async fn fix_etcd_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, content: &str, file_path: &str) -> Result<()> {
+    join_all(
+        etcd_client
+            .list_keys("machineconfiguration.openshift.io/machineconfigs")
+            .await?
+            .into_iter()
+            .map(|key| async move {
+                let etcd_result = etcd_client
+                    .get(key.clone())
+                    .await
+                    .with_context(|| format!("getting key {:?}", key))?
+                    .context("key disappeared")?;
+                let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
+                    .with_context(|| format!("deserializing value of key {:?}", key,))?;
+                let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+                let mut machineconfig = get_etcd_json(etcd_client, &k8s_resource_location)
+                    .await?
+                    .context("no machineconfig")?;
+
+                override_machineconfig_source(&mut machineconfig, content, file_path).context("fixing machineconfig")?;
+
+                put_etcd_yaml(etcd_client, &k8s_resource_location, machineconfig).await?;
+
+                Ok(())
+            }),
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+pub(crate) async fn fix_filesystem_mcs_machine_config_content(new_content: &str, content_path: &str, mcc_file_path: &Path) -> Result<()> {
+    if let Some(file_name) = mcc_file_path.file_name() {
+        if let Some(file_name) = file_name.to_str() {
+            if file_name == "mcs-machine-config-content.json" {
+                let contents = file_utils::read_file_to_string(mcc_file_path)
+                    .await
+                    .context("reading machine config currentconfig")?;
+
+                let mut config: Value = serde_json::from_str(&contents).context("parsing currentconfig")?;
+
+                override_machineconfig_source(&mut config, new_content, content_path)?;
+
+                file_utils::commit_file(mcc_file_path, serde_json::to_string(&config).context("serializing currentconfig")?)
+                    .await
+                    .context("writing currentconfig to disk")?;
+            }
+        }
+    }
+
+    Ok(())
 }

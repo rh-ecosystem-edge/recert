@@ -113,6 +113,10 @@ pub(crate) struct Cli {
     #[clap(long)]
     pub(crate) machine_network_cidr: Option<String>,
 
+    /// If given, the cluster resources that include chrony.config be modified to have this value.
+    #[clap(long)]
+    pub(crate) chrony_config: Option<String>,
+
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
     /// instead. Must come in pairs of CN and private key file path, separated by a space. For
