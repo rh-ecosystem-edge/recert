@@ -11,6 +11,10 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
     let proxy_trusted_certs = vec![get_openshift_proxy_trusted_certs(&in_memory_etcd_client)
         .await
         .context("openshift trusted certs")?];
+
+    // MCO reads the user-ca-bundle from the openshift-config namespace directly regardless of whether
+    // the Proxy CR points at it or not, so we should consider the certs in that configmap to be
+    // external.
     let ocp_trusted_certs = match get_openshift_user_ca_bundle(&in_memory_etcd_client)
         .await
         .context("openshift trusted certs")?
@@ -105,9 +109,6 @@ pub(crate) async fn get_openshift_proxy_trusted_certs(in_memory_etcd_client: &Ar
         .to_string())
 }
 
-/// MCO reads the user-ca-bundle from the openshift-config namespace directly regardless of whether
-/// the Proxy CR points at it or not, so we should consider the certs in that configmap to be
-/// external.
 pub(crate) async fn get_openshift_user_ca_bundle(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Option<String>> {
     let trusted_ca_bundle_configmap = get_etcd_json(
         in_memory_etcd_client,

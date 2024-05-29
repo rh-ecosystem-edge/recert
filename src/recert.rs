@@ -18,13 +18,17 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
 
     let in_memory_etcd_client = get_etcd_endpoint(recert_config).await?;
 
-    let recertify_timing = recertify(
-        cluster_crypto,
-        Arc::clone(&in_memory_etcd_client),
-        &recert_config.crypto_customizations,
-    )
-    .await
-    .context("scanning and recertification")?;
+    let recertify_timing = if !recert_config.postprocess_only {
+        recertify(
+            cluster_crypto,
+            Arc::clone(&in_memory_etcd_client),
+            &recert_config.crypto_customizations,
+        )
+        .await
+        .context("scanning and recertification")?
+    } else {
+        RecertifyTiming::immediate()
+    };
 
     let finalize_timing = finalize(
         Arc::clone(&in_memory_etcd_client),
@@ -48,6 +52,9 @@ async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK
         ),
         None => None,
     }));
+
+    log::info!("Connected to etcd");
+
     Ok(in_memory_etcd_client)
 }
 
@@ -63,6 +70,8 @@ async fn recertify(
     } else {
         HashSet::new()
     };
+
+    log::info!("Discovered {} external certificates to ignore", external_certs.len());
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
@@ -93,8 +102,10 @@ async fn recertify(
 }
 
 async fn fill_keys() -> Result<(RunTime, rsa_key_pool::RsaKeyPool)> {
+    log::info!("Generating RSA keys");
     let start_time = std::time::Instant::now();
     let pool = rsa_key_pool::RsaKeyPool::fill(120, 10).await?;
+    log::info!("Generated {} RSA keys", pool.len());
     Ok((RunTime::since_start(start_time), pool))
 }
 
@@ -105,12 +116,16 @@ async fn finalize(
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
 ) -> Result<FinalizeTiming> {
+    log::info!("Committing cryptographic objects to etcd and disk");
+
     let start = std::time::Instant::now();
     cluster_crypto
         .commit_to_etcd_and_disk(&in_memory_etcd_client)
         .await
         .context("commiting the cryptographic objects back to memory etcd and to disk")?;
     let commit_to_etcd_and_disk_run_time = RunTime::since_start(start);
+
+    log::info!("Performing OCP post-processing and rename");
 
     let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
@@ -129,6 +144,8 @@ async fn finalize(
     }
 
     let start = std::time::Instant::now();
+
+    log::info!("Committing to actual etcd");
 
     // Since we're using an in-memory fake etcd, we need to also commit the changes to the real
     // etcd after we're done (unless we're doing a dry run)

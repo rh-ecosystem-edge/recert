@@ -15,7 +15,7 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use std::{
@@ -471,9 +471,28 @@ impl ClusterCryptoObjects {
         rsa_pool: RsaKeyPool,
     ) -> Result<()> {
         self.register_discovered_crypto_objects(discovered_crypto_objects);
+        log::info!(
+            "Found {} private keys, {} public keys, {} certificates, and {} JWTs",
+            self.distributed_private_keys.len(),
+            self.distributed_public_keys.len(),
+            self.distributed_certs.len(),
+            self.distributed_jwts.len(),
+        );
+
+        ensure!(
+            !self.distributed_private_keys.is_empty()
+                || !self.distributed_public_keys.is_empty()
+                || !self.distributed_certs.is_empty()
+                || !self.distributed_jwts.is_empty(),
+            "Unexpected count of crypto objects found"
+        );
+
         self.establish_relationships().context("establishing relationships")?;
+        log::info!("Established relationships between crypto objects");
+
         self.regenerate_crypto(rsa_pool, crypto_customizations)
             .context("regenerating crypto")?;
+        log::info!("Regenerated all crypto objects");
 
         Ok(())
     }

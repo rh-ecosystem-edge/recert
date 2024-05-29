@@ -26,7 +26,7 @@ mod use_key;
 fn main() -> Result<()> {
     logging::init().context("initializing logging")?;
 
-    let config = RecertConfig::new().context("recert config")?;
+    let config = RecertConfig::load().context("recert config")?;
 
     runtime::prepare_tokio_runtime(config.threads)?.block_on(async { main_internal(config).await })
 }
@@ -39,7 +39,10 @@ async fn main_internal(config: RecertConfig) -> Result<()> {
     let run_result = recert::run(&config, &mut cluster_crypto).await;
 
     let (maybe_error, run_times) = match &run_result {
-        Ok(run_times) => (None, Some(run_times.clone())),
+        Ok(run_times) => {
+            log::info!("All done");
+            (None, Some(run_times.clone()))
+        }
         Err(err) => (Some(err), None),
     };
 

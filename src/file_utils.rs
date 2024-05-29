@@ -77,7 +77,7 @@ pub(crate) fn recreate_yaml_at_location_with_new_pem(
             if let Value::String(value_at_json_pointer) = value_at_json_pointer {
                 *value_at_json_pointer = encoded.as_str().context("encoded value not string")?.to_string();
             } else if let Value::Array(value_at_json_pointer) = value_at_json_pointer {
-                *value_at_json_pointer = encoded.as_array().context("encoded value not array")?.clone();
+                value_at_json_pointer.clone_from(encoded.as_array().context("encoded value not array")?);
             } else {
                 bail!("value not string");
             }

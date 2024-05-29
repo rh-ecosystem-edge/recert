@@ -29,13 +29,19 @@ pub(crate) fn prepare_tokio_runtime(threads: Option<usize>) -> Result<tokio::run
     // maximum allowed by the kernel
     set_max_open_files_limit().context("Setting open file limits to max")?;
 
-    Ok(if let Some(threads) = threads {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(threads)
+    Ok(match threads {
+        Some(1) => {
+            log::warn!("Running with single-threaded tokio runtime");
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .context("building tokio runtime")?
+        }
+        Some(n) => tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(n)
             .enable_all()
             .build()
-            .context("building tokio runtime")?
-    } else {
-        tokio::runtime::Runtime::new()?
+            .context("building tokio runtime")?,
+        None => tokio::runtime::Runtime::new()?,
     })
 }

@@ -51,7 +51,6 @@ pub(crate) async fn fix_filesystem_pull_secret(pull_secret: &str, dir: &Path) ->
         return Ok(());
     }
     // TODO: add verification that config.json as actually pull_secret
-    log::info!("setting pull secret in config.json");
     join_all(file_utils::globvec(dir, "**/config.json")?.into_iter().map(|file_path| {
         let config_path = file_path.clone();
         let pull_secret = pull_secret.to_string();

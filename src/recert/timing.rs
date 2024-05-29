@@ -39,6 +39,16 @@ pub(crate) struct RecertifyTiming {
     pub(crate) processing_run_time: RunTime,
 }
 
+impl RecertifyTiming {
+    pub(crate) fn immediate() -> Self {
+        Self {
+            scan_run_time: RunTime::since_start(std::time::Instant::now()),
+            rsa_run_time: RunTime::since_start(std::time::Instant::now()),
+            processing_run_time: RunTime::since_start(std::time::Instant::now()),
+        }
+    }
+}
+
 pub(crate) struct FinalizeTiming {
     pub(crate) commit_to_etcd_and_disk_run_time: RunTime,
     pub(crate) ocp_postprocessing_run_time: RunTime,

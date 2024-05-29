@@ -12,8 +12,8 @@ pub(crate) mod params;
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterNamesRename,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
+    dirs: &Vec<ConfigPath>,
+    files: &Vec<ConfigPath>,
 ) -> Result<()> {
     let cluster_domain = cluster_rename.cluster_domain();
     let cluster_name = cluster_rename.cluster_name.clone();
@@ -27,15 +27,9 @@ pub(crate) async fn rename_all(
         .await
         .context("renaming etcd resources")?;
 
-    fix_filesystem_resources(
-        &cluster_name,
-        &cluster_domain,
-        static_dirs,
-        static_files,
-        generated_infra_id.clone(),
-    )
-    .await
-    .context("renaming filesystem resources")?;
+    fix_filesystem_resources(&cluster_name, &cluster_domain, dirs, files, generated_infra_id.clone())
+        .await
+        .context("renaming filesystem resources")?;
 
     Ok(())
 }
@@ -43,15 +37,15 @@ pub(crate) async fn rename_all(
 async fn fix_filesystem_resources(
     cluster_name: &str,
     cluster_domain: &str,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
+    dirs: &Vec<ConfigPath>,
+    files: &Vec<ConfigPath>,
     generated_infra_id: String,
 ) -> Result<()> {
-    for dir in static_dirs {
+    for dir in dirs {
         fix_dir_resources(cluster_name, cluster_domain, dir, &generated_infra_id).await?;
     }
 
-    for file in static_files {
+    for file in files {
         fix_file_resources(cluster_domain, file).await?;
     }
 
