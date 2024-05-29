@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
-    ocp_postprocess::rename_utils::{fix_api_server_arguments_ip, fix_etcd_pod_yaml_ip},
+    ocp_postprocess::rename_utils::{fix_api_server_arguments_ip, fix_ip},
 };
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
@@ -209,7 +209,7 @@ pub(crate) async fn fix_etcd_pod(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip
                     .context("pod.yaml not a string")?
                     .to_string();
 
-                let pod_yaml = fix_etcd_pod_yaml_ip(&pod_yaml, original_ip, ip).context("could not fix pod yaml")?;
+                let pod_yaml = fix_ip(&pod_yaml, original_ip, ip).context("could not fix pod yaml")?;
 
                 data.insert("pod.yaml".to_string(), serde_json::Value::String(pod_yaml));
 

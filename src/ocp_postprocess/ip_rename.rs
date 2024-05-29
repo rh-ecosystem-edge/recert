@@ -27,11 +27,10 @@ async fn fix_filesystem_resources(original_ip: &str, ip: &str, dirs: &[ConfigPat
     Ok(())
 }
 
-async fn fix_dir_resources(_original_ip: &str, _ip: &str, _dir: &Path) -> Result<()> {
-    // TODO: This is currently achieved using:
-    // https://github.com/openshift-kni/lifecycle-agent/blob/3f447f629cf73a25a350c1c2cc88d95bf2a31956/lca-cli/postpivot/postpivot.go#L232-L236
-    //
-    // But it should be done using recert instead at some point.
+async fn fix_dir_resources(original_ip: &str, ip: &str, dir: &Path) -> Result<()> {
+    filesystem_rename::fix_filesystem_ip(original_ip, ip, dir)
+        .await
+        .context(format!("fix filesystem ip in {:?}", dir))?;
     Ok(())
 }
 
