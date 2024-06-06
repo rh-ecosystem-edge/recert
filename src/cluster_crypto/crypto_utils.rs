@@ -271,5 +271,7 @@ pub(crate) fn ensure_openssl_version() -> Result<()> {
 
     ensure!(openssl_version[0] == "3", "incompatible openssl version, expected major 3");
 
+    log::info!("OpenSSL version is compatible");
+
     Ok(())
 }

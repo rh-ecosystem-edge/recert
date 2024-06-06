@@ -1,4 +1,7 @@
-use self::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy};
+use self::{
+    additional_trust_bundle::params::ProxyAdditionalTrustBundle, cluster_domain_rename::params::ClusterNamesRename,
+    proxy_rename::args::Proxy,
+};
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     config::{path::ConfigPath, ClusterCustomizations},
@@ -20,6 +23,7 @@ use std::{
 
 pub(crate) mod additional_trust_bundle;
 mod arguments;
+pub(crate) mod chrony_config;
 pub(crate) mod cluster_domain_rename;
 mod fnv;
 mod go_base32;
@@ -29,6 +33,7 @@ pub(crate) mod ip_rename;
 pub(crate) mod machine_config_cidr_rename;
 pub(crate) mod proxy_rename;
 pub(crate) mod pull_secret_rename;
+pub mod rename_utils;
 
 /// Perform some OCP-related post-processing to make some OCP operators happy
 #[allow(clippy::too_many_arguments)]
@@ -109,7 +114,6 @@ async fn run_cluster_customizations(
     }
 
     if let Some(kubeadmin_password_hash) = &cluster_customizations.kubeadmin_password_hash {
-        log::info!("setting kubeadmin password hash");
         set_kubeadmin_password_hash(in_memory_etcd_client, kubeadmin_password_hash)
             .await
             .context("setting kubeadmin password hash")?;
@@ -128,23 +132,32 @@ async fn run_cluster_customizations(
     }
 
     if let Some(pull_secret) = &cluster_customizations.pull_secret {
-        log::info!("setting new pull_secret");
         pull_secret_rename(in_memory_etcd_client, pull_secret, dirs, files)
             .await
             .context("renaming pull_secret")?;
     };
 
-    if let Some(additional_trust_bundle) = &cluster_customizations.additional_trust_bundle {
-        additional_trust_bundle_rename(in_memory_etcd_client, additional_trust_bundle, dirs, files)
-            .await
-            .context("renaming additional_trust_bundle")?;
-    }
+    additional_trust_bundle_rename(
+        in_memory_etcd_client,
+        &cluster_customizations.user_ca_bundle,
+        &cluster_customizations.proxy_trusted_ca_bundle,
+        dirs,
+        files,
+    )
+    .await
+    .context("renaming additional trust bundle")?;
 
     if let Some(machine_network_cidr) = &cluster_customizations.machine_network_cidr {
         fix_machine_network_cidr(in_memory_etcd_client, machine_network_cidr, dirs, files)
             .await
             .context("fixing machine network CIDR")?;
     }
+
+    if let Some(chrony_config) = &cluster_customizations.chrony_config {
+        chrony_config_rename(in_memory_etcd_client, chrony_config, dirs, files)
+            .await
+            .context("overriding chrony config")?;
+    };
 
     Ok(())
 }
@@ -163,7 +176,6 @@ async fn set_kubeadmin_password_hash(in_memory_etcd_client: &InMemoryK8sEtcd, ku
             Ok(())
         }
         false => {
-            log::info!("setting kubeadmin password hash");
             let mut secret = get_etcd_json(etcd_client, k8s_resource_location)
                 .await?
                 .context(format!("couldn't find {}", k8s_resource_location))?;
@@ -641,13 +653,13 @@ pub(crate) async fn delete_node_kubeconfigs(in_memory_etcd_client: &Arc<InMemory
 // it causes a kube-apiserver rollout. To speed things up, we'll just "reconcile" it ourselves by
 // copying the kubeConfig contents from the kubeConfig file on disk that we already processed with
 // recert.
-pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>, static_dirs: &[ConfigPath]) -> Result<()> {
+pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>, crypto_dirs: &[ConfigPath]) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
     let namespace = Some("openshift-kube-apiserver");
     let base_name = "webhook-authenticator";
 
-    let all_static_webhook_authenticator_kubeconfig_files = static_dirs
+    let all_webhook_authenticator_kubeconfig_files = crypto_dirs
         .iter()
         .map(|dir| file_utils::globvec(dir, &format!("**/{}/kubeConfig", base_name)))
         .collect::<Result<Vec<_>>>()?
@@ -657,7 +669,7 @@ pub(crate) async fn sync_webhook_authenticators(in_memory_etcd_client: &Arc<InMe
 
     // Get latest revision from kube-apiserver-pod-(\d+) in the file path
     let regex = regex::Regex::new(r"kube-apiserver-pod-(\d+)").context("compiling regex")?;
-    let captures = &all_static_webhook_authenticator_kubeconfig_files
+    let captures = &all_webhook_authenticator_kubeconfig_files
         .iter()
         .filter_map(|file_pathbuf| {
             let file_path = file_pathbuf.to_str()?;
@@ -733,8 +745,8 @@ pub(crate) async fn delete_all(etcd_client: &Arc<InMemoryK8sEtcd>, resource_etcd
 pub(crate) async fn cluster_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_rename: &ClusterNamesRename,
-    static_dirs: &Vec<ConfigPath>,
-    static_files: &Vec<ConfigPath>,
+    dirs: &Vec<ConfigPath>,
+    files: &Vec<ConfigPath>,
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
@@ -767,7 +779,7 @@ pub(crate) async fn cluster_rename(
             .context(format!("deleting {}", resource_key_prefix_to_delete))?;
     }
 
-    cluster_domain_rename::rename_all(etcd_client, cluster_rename, static_dirs, static_files)
+    cluster_domain_rename::rename_all(etcd_client, cluster_rename, dirs, files)
         .await
         .context("renaming all")?;
 
@@ -777,12 +789,12 @@ pub(crate) async fn cluster_rename(
 pub(crate) async fn hostname_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     hostname: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
-    hostname_rename::rename_all(etcd_client, hostname, static_dirs, static_files)
+    hostname_rename::rename_all(etcd_client, hostname, dirs, files)
         .await
         .context("renaming all")?;
 
@@ -792,12 +804,119 @@ pub(crate) async fn hostname_rename(
 pub(crate) async fn ip_rename(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     ip: &str,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    ip_rename::rename_all(etcd_client, ip, dirs, files).await.context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn pull_secret_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    pull_secret: &str,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    pull_secret_rename::rename_all(etcd_client, pull_secret, dirs, files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+async fn additional_trust_bundle_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    user_ca_bundle: &Option<String>,
+    proxy_trusted_ca_bundle: &Option<ProxyAdditionalTrustBundle>,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    let proxy_trusted_ca_bundle = match proxy_trusted_ca_bundle {
+        Some(proxy_trusted_ca_bundle) => match proxy_trusted_ca_bundle.configmap_name.as_str() {
+            "user-ca-bundle" => match proxy_trusted_ca_bundle.ca_bundle {
+                Some(_) => {
+                    bail!("user-ca-bundle configmap name requires ca-bundle to be empty");
+                }
+                None => match user_ca_bundle {
+                    Some(user_ca_bundle) => Some(proxy_trusted_ca_bundle.set_bundle(user_ca_bundle)),
+                    None => {
+                        bail!("proxy user-ca-bundle configmap name requires user-ca-bundle to be set");
+                    }
+                },
+            },
+            _ => Some(proxy_trusted_ca_bundle.try_into().context("converting to set bundle")?),
+        },
+        None => None,
+    };
+
+    additional_trust_bundle::rename_all(etcd_client, user_ca_bundle, &proxy_trusted_ca_bundle, dirs, files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn proxy_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    proxy: &Proxy,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    proxy_rename::rename_all(etcd_client, proxy, dirs, files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn install_config_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    install_config: &str,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    install_config_rename::rename_all(etcd_client, install_config, dirs, files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+async fn fix_machine_network_cidr(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    machine_network_cidr: &str,
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    machine_config_cidr_rename::rename_all(etcd_client, machine_network_cidr, dirs, files)
+        .await
+        .context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn chrony_config_rename(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    chrony_config: &str,
     static_dirs: &[ConfigPath],
     static_files: &[ConfigPath],
 ) -> Result<()> {
     let etcd_client = in_memory_etcd_client;
 
-    ip_rename::rename_all(etcd_client, ip, static_dirs, static_files)
+    chrony_config::rename_all(etcd_client, chrony_config, static_dirs, static_files)
         .await
         .context("renaming all")?;
 

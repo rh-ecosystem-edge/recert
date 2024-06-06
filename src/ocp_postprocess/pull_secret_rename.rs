@@ -9,25 +9,25 @@ mod utils;
 pub(crate) async fn rename_all(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     pull_secret: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
 ) -> Result<()> {
     fix_etcd_resources(etcd_client, pull_secret)
         .await
         .context("renaming etcd resources")?;
 
-    fix_filesystem_resources(pull_secret, static_dirs, static_files)
+    fix_filesystem_resources(pull_secret, dirs, files)
         .await
         .context("renaming filesystem resources")?;
 
     Ok(())
 }
 
-async fn fix_filesystem_resources(pull_secret: &str, static_dirs: &[ConfigPath], static_files: &[ConfigPath]) -> Result<()> {
-    for dir in static_dirs {
+async fn fix_filesystem_resources(pull_secret: &str, dirs: &[ConfigPath], files: &[ConfigPath]) -> Result<()> {
+    for dir in dirs {
         fix_dir_resources(pull_secret, dir).await?;
     }
-    for file in static_files {
+    for file in files {
         fix_file_resources(pull_secret, file).await?;
     }
 

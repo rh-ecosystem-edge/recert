@@ -2,7 +2,11 @@ use self::{cli::Cli, path::ConfigPath};
 use crate::{
     cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
-    ocp_postprocess::{cluster_domain_rename::params::ClusterNamesRename, proxy_rename::args::Proxy},
+    ocp_postprocess::{
+        additional_trust_bundle::params::{parse_additional_trust_bundle, ProxyAdditionalTrustBundle},
+        cluster_domain_rename::params::ClusterNamesRename,
+        proxy_rename::args::Proxy,
+    },
     use_cert::{UseCert, UseCertRules},
     use_key::{UseKey, UseKeyRules},
 };
@@ -11,7 +15,7 @@ use clap::Parser;
 use itertools::Itertools;
 use serde::Serialize;
 use serde_json::Value;
-use std::{env, path::PathBuf, sync::atomic::Ordering::Relaxed};
+use std::{env, sync::atomic::Ordering::Relaxed};
 
 #[cfg(test)]
 use serde_json::json;
@@ -43,14 +47,17 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) kubeadmin_password_hash: Option<String>,
     #[serde(serialize_with = "redact")]
     pub(crate) pull_secret: Option<String>,
-    pub(crate) additional_trust_bundle: Option<String>,
+    pub(crate) user_ca_bundle: Option<String>,
+    pub(crate) proxy_trusted_ca_bundle: Option<ProxyAdditionalTrustBundle>,
     pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) chrony_config: Option<String>,
 }
 
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 #[derive(serde::Serialize)]
 pub(crate) struct RecertConfig {
     pub(crate) dry_run: bool,
+    pub(crate) postprocess_only: bool,
     pub(crate) etcd_endpoint: Option<String>,
     pub(crate) crypto_customizations: CryptoCustomizations,
     pub(crate) cluster_customizations: ClusterCustomizations,
@@ -140,10 +147,12 @@ impl RecertConfig {
                 ip: None,
                 kubeadmin_password_hash: None,
                 pull_secret: None,
-                additional_trust_bundle: None,
                 proxy: None,
                 install_config: None,
                 machine_network_cidr: None,
+                user_ca_bundle: None,
+                proxy_trusted_ca_bundle: None,
+                chrony_config: None,
             },
             threads: None,
             regenerate_server_ssh_keys: None,
@@ -151,6 +160,7 @@ impl RecertConfig {
             summary_file_clean: None,
             config_file_raw: None,
             cli_raw: None,
+            postprocess_only: false,
         })
     }
 
@@ -219,16 +229,30 @@ impl RecertConfig {
             Some(value) => Some(value.as_str().context("set_kubeadmin_password_hash must be a string")?.to_string()),
             None => None,
         };
-        let additional_trust_bundle = match value.remove("additional_trust_bundle") {
+        let user_ca_bundle = match value.remove("user_ca_bundle") {
             Some(value) => Some(parse_additional_trust_bundle(
                 value.as_str().context("additional_trust_bundle must be a string")?,
             )?),
+            None => None,
+        };
+        let proxy_trusted_ca_bundle = match value.remove("proxy_trusted_ca_bundle") {
+            Some(value) => Some(
+                ProxyAdditionalTrustBundle::parse(value.as_str().context("proxy_trusted_ca_bundle must be a string")?).context(format!(
+                    "proxy_trusted_ca_bundle {}",
+                    value.as_str().context("proxy_trusted_ca_bundle must be a string")?
+                ))?,
+            ),
             None => None,
         };
         let machine_network_cidr = match value.remove("machine_network_cidr") {
             Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
             None => None,
         };
+        let chrony_config = match value.remove("chrony_config") {
+            Some(value) => Some(value.as_str().context("chrony_config must be a string")?.to_string()),
+            None => None,
+        };
+
         let dry_run = value
             .remove("dry_run")
             .unwrap_or(Value::Bool(false))
@@ -254,6 +278,11 @@ impl RecertConfig {
             Some(value) => parse_summary_file_clean(value)?,
             None => None,
         };
+        let postprocess_only = value
+            .remove("postprocess_only")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("postprocess_only must be a boolean")?;
 
         ensure!(
             value.is_empty(),
@@ -279,10 +308,12 @@ impl RecertConfig {
             ip,
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             pull_secret,
-            additional_trust_bundle,
+            user_ca_bundle,
+            proxy_trusted_ca_bundle,
             proxy,
             install_config,
             machine_network_cidr,
+            chrony_config,
         };
 
         let recert_config = Self {
@@ -294,9 +325,9 @@ impl RecertConfig {
             regenerate_server_ssh_keys,
             summary_file,
             summary_file_clean,
-
             cli_raw: None,
             config_file_raw: Some(String::from_utf8_lossy(config_bytes).to_string()),
+            postprocess_only,
         };
 
         ensure!(
@@ -320,6 +351,7 @@ impl RecertConfig {
     pub(crate) fn parse_from_cli(cli: Cli) -> Result<Self> {
         Ok(Self {
             dry_run: cli.dry_run,
+            postprocess_only: cli.postprocess_only,
             etcd_endpoint: cli.etcd_endpoint,
             crypto_customizations: CryptoCustomizations {
                 dirs: if cli.static_dir.is_empty() {
@@ -356,8 +388,10 @@ impl RecertConfig {
                 install_config: cli.install_config,
                 kubeadmin_password_hash: cli.kubeadmin_password_hash,
                 pull_secret: cli.pull_secret,
-                additional_trust_bundle: cli.additional_trust_bundle,
+                user_ca_bundle: cli.user_ca_bundle,
+                proxy_trusted_ca_bundle: cli.proxy_trusted_ca_bundle,
                 machine_network_cidr: cli.machine_network_cidr,
+                chrony_config: cli.chrony_config,
             },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),
@@ -369,22 +403,27 @@ impl RecertConfig {
         })
     }
 
-    pub(crate) fn new() -> Result<RecertConfig> {
+    pub(crate) fn load() -> Result<Self> {
         Ok(match std::env::var("RECERT_CONFIG") {
             Ok(var) => {
-                let num_args = std::env::args().len();
-
-                ensure!(
-                    num_args == 1,
-                    "RECERT_CONFIG is set, but there are {num_args} CLI arguments. RECERT_CONFIG is meant to be used with no arguments."
-                );
-
+                ensure_no_cli_args()?;
                 RecertConfig::parse_from_config_file(&std::fs::read(&var).context(format!("reading RECERT_CONFIG file {}", var))?)
                     .context(format!("parsing RECERT_CONFIG file {}", var))?
             }
             Err(_) => RecertConfig::parse_from_cli(Cli::parse()).context("CLI parsing")?,
         })
     }
+}
+
+fn ensure_no_cli_args() -> Result<()> {
+    let num_args = std::env::args().len();
+
+    ensure!(
+        num_args == 1,
+        "RECERT_CONFIG is set, but there are {num_args} CLI arguments. RECERT_CONFIG is meant to be used with no arguments."
+    );
+
+    Ok(())
 }
 
 fn parse_summary_file_clean(value: Value) -> Result<Option<ConfigPath>> {
@@ -652,33 +691,6 @@ fn parse_dir_file_config(
         static_files
     };
     Ok((crypto_dirs, crypto_files, cluster_customization_dirs, cluster_customization_files))
-}
-
-pub(crate) fn parse_additional_trust_bundle(value: &str) -> Result<String> {
-    let bundle = if !value.contains('\n') {
-        let path = PathBuf::from(&value);
-
-        ensure!(path.try_exists()?, "additional_trust_bundle must exist");
-        ensure!(path.is_file(), "additional_trust_bundle must be a file");
-
-        String::from_utf8(std::fs::read(&path).context("failed to read additional_trust_bundle")?)
-            .context("additional_trust_bundle must be valid UTF-8")?
-    } else {
-        value.to_string()
-    };
-
-    let pems = pem::parse_many(bundle.as_bytes()).context("additional_trust_bundle must be valid PEM")?;
-
-    ensure!(!pems.is_empty(), "additional_trust_bundle must contain at least one certificate");
-
-    ensure!(
-        pems.iter().all(|pem| pem.tag() == "CERTIFICATE"),
-        "additional_trust_bundle must contain only certificates"
-    );
-
-    // After parsing, we still return the raw bundle, as OpenShift also preserves the original
-    // comments and whitespace in the user's additional trust bundle
-    Ok(bundle)
 }
 
 #[cfg(test)]

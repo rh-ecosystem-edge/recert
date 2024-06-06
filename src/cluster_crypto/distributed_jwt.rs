@@ -69,10 +69,11 @@ impl DistributedJwt {
                         .context("encoded value not string")?
                         .to_string();
                 } else if let Value::Array(value_at_json_pointer) = value_at_json_pointer {
-                    *value_at_json_pointer = encode_resource_data_entry(&k8slocation.yaml_location, &jwt_regenerated.clone().str)
-                        .as_array()
-                        .context("encoded value not array")?
-                        .clone();
+                    value_at_json_pointer.clone_from(
+                        encode_resource_data_entry(&k8slocation.yaml_location, &jwt_regenerated.clone().str)
+                            .as_array()
+                            .context("encoded value not array")?,
+                    );
                 } else {
                     bail!("non-string value at json pointer")
                 }

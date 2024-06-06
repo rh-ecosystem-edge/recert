@@ -2,13 +2,13 @@
 
 set -ex
 
-RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
-BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
-AUTH_FILE=${AUTH_FILE:-~/seed-pull-secret}
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 cd "$SCRIPT_DIR"
+
+RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.13.0-x86_64
+BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
+AUTH_FILE=${AUTH_FILE:-~/seed-pull-secret}
 
 if [[ ! -f ouger/go.mod ]] || [[ ! -f etcddump/Cargo.toml ]]; then
 	echo "ouger or etcddump not found, please run git submodule update --init"
@@ -77,11 +77,12 @@ else
 		--crypto-dir backup/var/lib/kubelet \
 		--crypto-dir backup/etc/machine-config-daemon \
 		--crypto-file backup/etc/mcs-machine-config-content.json \
+		--cluster-customization-file backup/etc/chrony.conf \
         \
 		--cluster-customization-dir backup/etc/kubernetes \
 		--cluster-customization-dir backup/var/lib/kubelet \
 		--cluster-customization-dir backup/etc/machine-config-daemon \
-		--cluster-customization-dir backup/etc/pki/ca-trust \
+		--cluster-customization-dir backup/etc/pki/ \
 		--cluster-customization-file backup/etc/mcs-machine-config-content.json \
         --cluster-customization-file backup/etc/mco/proxy.env \
         \
@@ -94,7 +95,6 @@ else
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
 		--ip 192.168.126.99 \
-		--proxy 'http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost,moreproxy' \
 		--install-config 'additionalTrustBundlePolicy: Proxyonly
 apiVersion: v1
 baseDomain: ibo0.redhat.com
@@ -132,13 +132,19 @@ sshKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDThIOETj6iTvbCaNv15tZg121nWLcwtJuZ
   root@edge-01.edge.lab.eng.rdu2.redhat.com' \
 		--machine-network-cidr '192.168.127.0/24' \
 		--kubeadmin-password-hash '$2a$10$20Q4iRLy7cWZkjn/D07bF.RZQZonKwstyRGH0qiYbYRkx5Pe4Ztyi' \
-		--additional-trust-bundle ./hack/dummy_trust_bundle.pem \
 		--pull-secret '{"auths":{"empty_registry":{"username":"empty","password":"empty","auth":"ZW1wdHk6ZW1wdHk=","email":""}}}' \
+		--chrony-config 'pool 0.rhel.pool.ntp.org iburst
+driftfile /var/lib/chrony/drift
+server test iburst
+' \
         \
 		--summary-file summary.yaml \
 		--summary-file-clean summary_redacted.yaml \
         \
 		--extend-expiration
+    # --proxy 'http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3128|http://registry.kni-qe-0.lab.eng.rdu2.redhat.com:3130|.cluster.local,.kni-qe-2.lab.eng.rdu2.redhat.com,.svc,127.0.0.1,2620:52:0:11c::/64,2620:52:0:11c::1,2620:52:0:11c::10,2620:52:0:11c::11,2620:52:0:199::/64,api-int.kni-qe-2.lab.eng.rdu2.redhat.com,fd01::/48,fd02::/112,localhost,moreproxy' \
+    # --user-ca-bundle ./hack/dummy_trust_bundle.pem \
+    # --proxy-trusted-ca-bundle user-ca-bundle: \
 	# --regenerate-server-ssh-keys backup/etc/ssh/ \
 fi
 

@@ -1,9 +1,10 @@
-use super::rename_utils::{
-    self, fix_api_server_arguments_domain, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_oauth_metadata, fix_pod_container_env,
-};
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
+    ocp_postprocess::rename_utils::{
+        fix_api_server_arguments_domain, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_mcd_pod_container_args,
+        fix_oauth_metadata, fix_pod_container_env,
+    },
 };
 use anyhow::{bail, ensure, Context, Result};
 use fn_error_context::context;
@@ -1422,7 +1423,7 @@ pub(crate) async fn fix_mcs_daemonset(etcd_client: &InMemoryK8sEtcd, cluster_dom
 
     let pod = &mut daemonset.pointer_mut("/spec/template").context("no /spec/template")?;
 
-    rename_utils::fix_mcd_pod_container_args(pod, cluster_domain, "machine-config-server").context("fixing pod")?;
+    fix_mcd_pod_container_args(pod, cluster_domain, "machine-config-server").context("fixing pod")?;
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, daemonset).await?;
 

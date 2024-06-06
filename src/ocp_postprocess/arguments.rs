@@ -69,7 +69,7 @@ mod tests {
 
         let expected = r#"--cors-allowed-origins='//127\\.0\\.0\\.1(:|$)'  \\\n --cors-allowed-origins='//localhost(:|$)'  \\\n --etcd-servers=https://192.168.126.10:2379  \\\n --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256  \\\n --tls-min-version=VersionTLS12"#;
 
-        assert!(encode_with_delimeter(serde_json::from_str(args)?, r"  \\\n ").is_ok_and(|x| x == String::from(expected)));
+        assert!(encode_with_delimeter(serde_json::from_str(args)?, r"  \\\n ").is_ok_and(|x| x == *expected));
 
         Ok(())
     }

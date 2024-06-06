@@ -5,27 +5,22 @@ use std::{path::Path, sync::Arc};
 mod etcd_rename;
 mod filesystem_rename;
 
-pub(crate) async fn rename_all(
-    etcd_client: &Arc<InMemoryK8sEtcd>,
-    ip: &str,
-    static_dirs: &[ConfigPath],
-    static_files: &[ConfigPath],
-) -> Result<()> {
+pub(crate) async fn rename_all(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str, dirs: &[ConfigPath], files: &[ConfigPath]) -> Result<()> {
     let original_ip = fix_etcd_resources(etcd_client, ip).await.context("renaming etcd resources")?;
 
-    fix_filesystem_resources(&original_ip, ip, static_dirs, static_files)
+    fix_filesystem_resources(&original_ip, ip, dirs, files)
         .await
         .context("renaming filesystem resources")?;
 
     Ok(())
 }
 
-async fn fix_filesystem_resources(original_ip: &str, ip: &str, static_dirs: &[ConfigPath], static_files: &[ConfigPath]) -> Result<()> {
-    for dir in static_dirs {
+async fn fix_filesystem_resources(original_ip: &str, ip: &str, dirs: &[ConfigPath], files: &[ConfigPath]) -> Result<()> {
+    for dir in dirs {
         fix_dir_resources(original_ip, ip, dir).await?;
     }
 
-    for file in static_files {
+    for file in files {
         fix_file_resources(original_ip, ip, file).await?;
     }
 

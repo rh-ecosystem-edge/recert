@@ -1,4 +1,4 @@
-use super::utils::fix_machineconfig;
+use super::{params::ProxyAdditionalTrustBundleSet, utils::fix_machineconfig};
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
@@ -6,10 +6,59 @@ use crate::{
     ocp_postprocess::go_base32::base32_encode as go_base32_encode,
 };
 use anyhow::{ensure, Context, Result};
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use futures_util::future::join_all;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::Arc;
+
+pub(crate) async fn fix_controllerconfigs(etcd_client: &InMemoryK8sEtcd, additional_trust_bundle: &str) -> Result<()> {
+    join_all(
+        etcd_client
+            .list_keys("machineconfiguration.openshift.io/controllerconfigs/machine-config-controller")
+            .await?
+            .into_iter()
+            .map(|key| async move {
+                let etcd_result = etcd_client
+                    .get(key.clone())
+                    .await
+                    .with_context(|| format!("getting key {:?}", key))?
+                    .context("key disappeared")?;
+
+                let value: Value = serde_yaml::from_slice(etcd_result.value.as_slice())
+                    .with_context(|| format!("deserializing value of key {:?}", key,))?;
+
+                let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+                let mut controllerconfig = get_etcd_json(etcd_client, &k8s_resource_location)
+                    .await?
+                    .context("no controllerconfig")?;
+
+                let spec = controllerconfig
+                    .pointer_mut("/spec")
+                    .context("no /spec in controllerconfig")?
+                    .as_object_mut()
+                    .context("/spec not an object")?;
+
+                spec.insert(
+                    "additionalTrustBundle".to_string(),
+                    serde_json::Value::String(base64_standard.encode(additional_trust_bundle.as_bytes())),
+                )
+                .context("no additionalTrustBundle in controllerconfig")?;
+
+                put_etcd_yaml(etcd_client, &k8s_resource_location, controllerconfig)
+                    .await
+                    .context("putting controllerconfig")?;
+
+                Ok(())
+            }),
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
 
 pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, additional_trust_bundle: &str) -> Result<()> {
     join_all(
@@ -45,9 +94,30 @@ pub(crate) async fn fix_machineconfigs(etcd_client: &Arc<InMemoryK8sEtcd>, addit
     Ok(())
 }
 
-// There's an OCP operator that injects the trusted CA bundle into configmaps which have this
-// label. We simply emulate that behavior here, should be a bit more robust than hardcoding a list
-// of configmaps
+pub(crate) async fn fix_user_ca_bundle(etcd_client: &Arc<InMemoryK8sEtcd>, additional_trust_bundle: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-config"), "ConfigMap", "user-ca-bundle", "v1");
+
+    let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("no configmap")?;
+
+    let data = configmap
+        .pointer_mut("/data")
+        .context("no /data in configmap")?
+        .as_object_mut()
+        .context("/data not an object")?;
+
+    data.insert(
+        "ca-bundle.crt".to_string(),
+        serde_json::Value::String(additional_trust_bundle.to_string()),
+    );
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+
+    Ok(())
+}
+
+/// There's an OCP operator that injects the trusted CA bundle into configmaps which have this
+/// label. We simply emulate that behavior here, should be a bit more robust than hardcoding a list
+/// of configmaps
 pub(crate) async fn fix_labeled_configmaps(etcd_client: &InMemoryK8sEtcd, full_merged_bundle: &str) -> Result<()> {
     join_all(etcd_client.list_keys("configmaps/").await?.into_iter().map(|key| async move {
         let etcd_result = etcd_client
@@ -109,10 +179,10 @@ pub(crate) async fn fix_labeled_configmaps(etcd_client: &InMemoryK8sEtcd, full_m
     Ok(())
 }
 
-pub(crate) async fn fix_original_additional_trust_bundle(
+pub(crate) async fn replace_and_get_proxy_trust_bundle(
     etcd_client: &InMemoryK8sEtcd,
-    additional_trust_bundle: &str,
-) -> Result<Option<String>> {
+    proxy_trusted_ca_bundle: &ProxyAdditionalTrustBundleSet,
+) -> Result<String> {
     let proxy_config_k8s_resource_location = K8sResourceLocation::new(None, "Proxy", "cluster", "config.openshift.io");
 
     let config = get_etcd_json(etcd_client, &proxy_config_k8s_resource_location)
@@ -125,9 +195,18 @@ pub(crate) async fn fix_original_additional_trust_bundle(
         .as_str()
         .context("trustedCA not a string")?;
 
-    if trusted_ca_configmap_name.is_empty() {
-        return Ok(None);
-    }
+    ensure!(
+        !trusted_ca_configmap_name.is_empty(),
+        "cannot set proxy CA trusted bundle on a cluster without a proxy trusted CA bundle"
+    );
+
+    ensure!(
+        trusted_ca_configmap_name == proxy_trusted_ca_bundle.configmap_name,
+        format!(
+            "trustedCA in proxy cluster config does not match the expected value: {} != {}",
+            trusted_ca_configmap_name, proxy_trusted_ca_bundle.configmap_name
+        )
+    );
 
     let ca_configmap_k8s_resource_location =
         K8sResourceLocation::new(Some("openshift-config"), "ConfigMap", trusted_ca_configmap_name, "v1");
@@ -142,20 +221,24 @@ pub(crate) async fn fix_original_additional_trust_bundle(
         .as_object_mut()
         .context("/data not an object")?;
 
-    let original_additional_trust_bundle = data.insert(
-        "ca-bundle.crt".to_string(),
-        serde_json::Value::String(additional_trust_bundle.to_string()),
+    let original_additional_trust_bundle = data
+        .insert(
+            "ca-bundle.crt".to_string(),
+            serde_json::Value::String(proxy_trusted_ca_bundle.ca_bundle.to_owned()),
+        )
+        .context("no ca-bundle.crt in trustedCA configmap")?
+        .as_str()
+        .context("ca-bundle.crt not a string")?
+        .to_string();
+
+    ensure!(
+        !original_additional_trust_bundle.is_empty(),
+        "empty ca-bundle.crt in trustedCA configmap"
     );
 
     put_etcd_yaml(etcd_client, &ca_configmap_k8s_resource_location, configmap).await?;
 
-    Ok(Some(
-        original_additional_trust_bundle
-            .context("no ca-bundle.crt in trustedCA configmap")?
-            .as_str()
-            .context("ca-bundle.crt not a string")?
-            .to_string(),
-    ))
+    Ok(original_additional_trust_bundle)
 }
 
 pub(crate) async fn fix_monitoring_configmaps(etcd_client: &InMemoryK8sEtcd, new_merged_bundle: &str) -> Result<()> {
@@ -234,10 +317,19 @@ pub(crate) async fn fix_monitoring_configmaps(etcd_client: &InMemoryK8sEtcd, new
                     serde_json::Value::String(new_merged_bundle.to_string()),
                 );
 
+                let new_name = &format!("{component}-trusted-ca-bundle-{new_hash}");
+
+                configmap
+                    .pointer_mut("/metadata")
+                    .context("no /metadata in configmap")?
+                    .as_object_mut()
+                    .context("/metadata not an object")?
+                    .insert("name".to_string(), serde_json::Value::String(new_name.to_string()));
+
                 let new_resource_location = K8sResourceLocation::new(
                     k8s_resource_location.namespace.as_deref(),
                     &k8s_resource_location.kind,
-                    &format!("{component}-trusted-ca-bundle-{new_hash}"),
+                    new_name,
                     &k8s_resource_location.apiversion,
                 );
 
