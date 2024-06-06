@@ -24,6 +24,6 @@ RUN cargo build --release --bin recert
 FROM docker.io/library/debian:bookworm AS runtime
 WORKDIR app
 RUN apt-get update
-RUN apt-get install -y openssl
+RUN apt-get install -y openssl openssh-client
 COPY --from=builder /app/target/release/recert /usr/local/bin
 ENTRYPOINT ["/usr/local/bin/recert"]
