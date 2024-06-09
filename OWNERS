@@ -3,9 +3,11 @@ filters:
     reviewers:
     - omertuc
     - mresvanis
+    - tsorya
     approvers:
     - omertuc
     - mresvanis
+    - tsorya
   ^Dockerfile:
     reviewers:
     - rauhersu
