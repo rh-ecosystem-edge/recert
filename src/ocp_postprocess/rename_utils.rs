@@ -471,7 +471,7 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
     Ok(pod_yaml)
 }
 
-pub(crate) fn fix_etcd_pod_yaml_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
+pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
     let mut pod_yaml = pod_yaml.to_string();
 
     let original_ip = if original_ip.contains(':') {
@@ -481,21 +481,7 @@ pub(crate) fn fix_etcd_pod_yaml_ip(pod_yaml: &str, original_ip: &str, ip: &str) 
     };
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-
-    let patterns = [
-        (r#"value: "https://{original_ip}:2379""#, r#"value: "https://{ip}:2379""#),
-        (r#"value: "{original_ip}""#, r#"value: "{ip}""#),
-    ];
-
-    for (pattern, replacement) in patterns {
-        pod_yaml = pod_yaml
-            .replace(
-                &pattern.replace("{original_ip}", original_ip.as_str()),
-                &replacement.replace("{ip}", ip.as_str()),
-            )
-            .to_string();
-    }
-
+    pod_yaml = pod_yaml.replace(original_ip.as_str(), ip.as_str()).to_string();
     Ok(pod_yaml)
 }
 
