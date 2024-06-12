@@ -59,7 +59,19 @@ impl InMemoryK8sEtcd {
                     let key = key.clone();
                     let etcd_client = Arc::clone(etcd_client);
                     tokio::spawn(async move {
-                        etcd_client.kv_client().delete(key.as_bytes(), None).await?;
+                        loop {
+                            let delete_response = etcd_client.kv_client().delete(key.as_bytes(), None).await;
+
+                            if is_too_many_requests_error(&delete_response) {
+                                continue;
+                            }
+
+                            match delete_response {
+                                Ok(_) => break,
+                                Err(_) => delete_response.context(format!("during etcd delete {}", key))?,
+                            };
+                        }
+
                         anyhow::Ok(())
                     })
                 })
@@ -163,6 +175,16 @@ impl InMemoryK8sEtcd {
         self.etcd_keyvalue_hashmap.lock().await.remove(key);
         self.deleted_keys.lock().await.insert(key.to_string());
         Ok(())
+    }
+}
+
+fn is_too_many_requests_error(delete_response: &std::prelude::v1::Result<etcd_client::DeleteResponse, etcd_client::Error>) -> bool {
+    match delete_response {
+        Ok(_) => false,
+        Err(err) => match err {
+            etcd_client::Error::GRpcStatus(status) => status.message() == "etcdserver: too many requests",
+            _ => false,
+        },
     }
 }
 
