@@ -1,5 +1,7 @@
 //! Parse parts of an ISO 8601-formatted value.
 
+use num_conv::prelude::*;
+
 use crate::convert::*;
 use crate::error;
 use crate::error::ParseFromDescription::{InvalidComponent, InvalidLiteral};
@@ -19,7 +21,6 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
     // Basic: [year]["W"][week][dayk]
     // Extended: [year]["-"]["W"][week]["-"][dayk]
     /// Parse a date in the basic or extended format. Reduced precision is permitted.
-    #[allow(clippy::needless_pass_by_ref_mut)] // rust-lang/rust-clippy#11620
     pub(crate) fn parse_date<'a>(
         parsed: &'a mut Parsed,
         extended_kind: &'a mut ExtendedKind,
@@ -35,7 +36,7 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                 None => ExtendedKind::Basic, // no separator before mandatory month/ordinal/week
             };
 
-            let mut ret_error = match (|| {
+            let parsed_month_day = (|| {
                 let ParsedItem(mut input, month) = month(input).ok_or(InvalidComponent("month"))?;
                 if extended_kind.is_extended() {
                     input = ascii_char::<b'-'>(input)
@@ -44,7 +45,8 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                 }
                 let ParsedItem(input, day) = day(input).ok_or(InvalidComponent("day"))?;
                 Ok(ParsedItem(input, (month, day)))
-            })() {
+            })();
+            let mut ret_error = match parsed_month_day {
                 Ok(ParsedItem(input, (month, day))) => {
                     *parsed = parsed
                         .with_year(year)
@@ -68,7 +70,7 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                 return Ok(input);
             }
 
-            match (|| {
+            let parsed_week_weekday = (|| {
                 let input = ascii_char::<b'W'>(input)
                     .ok_or((false, InvalidLiteral))?
                     .into_inner();
@@ -82,7 +84,8 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                 let ParsedItem(input, weekday) =
                     dayk(input).ok_or((true, InvalidComponent("weekday")))?;
                 Ok(ParsedItem(input, (week, weekday)))
-            })() {
+            })();
+            match parsed_week_weekday {
                 Ok(ParsedItem(input, (week, weekday))) => {
                     *parsed = parsed
                         .with_iso_year(year)
@@ -255,9 +258,9 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                 .and_then(|parsed_item| {
                     parsed_item.consume_value(|hour| {
                         parsed.set_offset_hour(if sign == b'-' {
-                            -(hour as i8)
+                            -hour.cast_signed()
                         } else {
-                            hour as _
+                            hour.cast_signed()
                         })
                     })
                 })
@@ -277,9 +280,9 @@ impl<const CONFIG: EncodedConfig> Iso8601<CONFIG> {
                     input = new_input;
                     parsed
                         .set_offset_minute_signed(if sign == b'-' {
-                            -(min as i8)
+                            -min.cast_signed()
                         } else {
-                            min as _
+                            min.cast_signed()
                         })
                         .ok_or(InvalidComponent("offset minute"))?;
                 }

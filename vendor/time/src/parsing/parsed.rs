@@ -6,15 +6,15 @@ use deranged::{
     OptionRangedI128, OptionRangedI32, OptionRangedI8, OptionRangedU16, OptionRangedU32,
     OptionRangedU8, RangedI128, RangedI32, RangedI8, RangedU16, RangedU32, RangedU8,
 };
+use num_conv::prelude::*;
 
 use crate::convert::{Day, Hour, Minute, Nanosecond, Second};
 use crate::date::{MAX_YEAR, MIN_YEAR};
-use crate::date_time::{maybe_offset_from_offset, offset_kind, DateTime, MaybeOffset};
 use crate::error::TryFromParsed::InsufficientInformation;
 #[cfg(feature = "alloc")]
 use crate::format_description::OwnedFormatItem;
-use crate::format_description::{modifier, Component, FormatItem};
-use crate::internal_macros::const_try_opt;
+use crate::format_description::{modifier, BorrowedFormatItem, Component};
+use crate::internal_macros::{bug, const_try_opt};
 use crate::parsing::component::{
     parse_day, parse_end, parse_hour, parse_ignore, parse_minute, parse_month, parse_offset_hour,
     parse_offset_minute, parse_offset_second, parse_ordinal, parse_period, parse_second,
@@ -38,7 +38,7 @@ mod sealed {
     }
 }
 
-impl sealed::AnyFormatItem for FormatItem<'_> {
+impl sealed::AnyFormatItem for BorrowedFormatItem<'_> {
     fn parse_item<'a>(
         &self,
         parsed: &mut Parsed,
@@ -159,13 +159,13 @@ pub struct Parsed {
     offset_second:
         OptionRangedI8<{ -((Second::per(Minute) - 1) as i8) }, { (Second::per(Minute) - 1) as _ }>,
     /// The Unix timestamp in nanoseconds.
-    // unix_timestamp_nanos: MaybeUninit<i128>,
     unix_timestamp_nanos: OptionRangedI128<
-        { Date::MIN.midnight().assume_utc().unix_timestamp_nanos() },
         {
-            Date::MAX
-                .with_time(Time::MAX)
-                .assume_utc()
+            OffsetDateTime::new_in_offset(Date::MIN, Time::MIDNIGHT, UtcOffset::UTC)
+                .unix_timestamp_nanos()
+        },
+        {
+            OffsetDateTime::new_in_offset(Date::MAX, Time::MAX, UtcOffset::UTC)
                 .unix_timestamp_nanos()
         },
     >,
@@ -175,6 +175,12 @@ pub struct Parsed {
     /// Indicates whether a leap second is permitted to be parsed. This is required by some
     /// well-known formats.
     pub(super) leap_second_allowed: bool,
+}
+
+impl Default for Parsed {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Parsed {
@@ -207,11 +213,11 @@ impl Parsed {
         }
     }
 
-    /// Parse a single [`FormatItem`] or [`OwnedFormatItem`], mutating the struct. The remaining
-    /// input is returned as the `Ok` value.
+    /// Parse a single [`BorrowedFormatItem`] or [`OwnedFormatItem`], mutating the struct. The
+    /// remaining input is returned as the `Ok` value.
     ///
-    /// If a [`FormatItem::Optional`] or [`OwnedFormatItem::Optional`] is passed, parsing will not
-    /// fail; the input will be returned as-is if the expected format is not present.
+    /// If a [`BorrowedFormatItem::Optional`] or [`OwnedFormatItem::Optional`] is passed, parsing
+    /// will not fail; the input will be returned as-is if the expected format is not present.
     pub fn parse_item<'a>(
         &mut self,
         input: &'a [u8],
@@ -220,11 +226,11 @@ impl Parsed {
         item.parse_item(self, input)
     }
 
-    /// Parse a sequence of [`FormatItem`]s or [`OwnedFormatItem`]s, mutating the struct. The
-    /// remaining input is returned as the `Ok` value.
+    /// Parse a sequence of [`BorrowedFormatItem`]s or [`OwnedFormatItem`]s, mutating the struct.
+    /// The remaining input is returned as the `Ok` value.
     ///
-    /// This method will fail if any of the contained [`FormatItem`]s or [`OwnedFormatItem`]s fail
-    /// to parse. `self` will not be mutated in this instance.
+    /// This method will fail if any of the contained [`BorrowedFormatItem`]s or
+    /// [`OwnedFormatItem`]s fail to parse. `self` will not be mutated in this instance.
     pub fn parse_items<'a>(
         &mut self,
         mut input: &'a [u8],
@@ -290,9 +296,13 @@ impl Parsed {
                     parse_year(input, modifiers).ok_or(InvalidComponent("year"))?;
                 match (modifiers.iso_week_based, modifiers.repr) {
                     (false, modifier::YearRepr::Full) => self.set_year(value),
-                    (false, modifier::YearRepr::LastTwo) => self.set_year_last_two(value as _),
+                    (false, modifier::YearRepr::LastTwo) => {
+                        self.set_year_last_two(value.cast_unsigned().truncate())
+                    }
                     (true, modifier::YearRepr::Full) => self.set_iso_year(value),
-                    (true, modifier::YearRepr::LastTwo) => self.set_iso_year_last_two(value as _),
+                    (true, modifier::YearRepr::LastTwo) => {
+                        self.set_iso_year_last_two(value.cast_unsigned().truncate())
+                    }
                 }
                 .ok_or(InvalidComponent("year"))?;
                 Ok(remaining)
@@ -533,10 +543,10 @@ impl Parsed {
         note = "use `parsed.set_offset_minute_signed()` instead"
     )]
     pub fn set_offset_minute(&mut self, value: u8) -> Option<()> {
-        if value > i8::MAX as u8 {
+        if value > i8::MAX.cast_unsigned() {
             None
         } else {
-            self.set_offset_minute_signed(value as _)
+            self.set_offset_minute_signed(value.cast_signed())
         }
     }
 
@@ -547,10 +557,10 @@ impl Parsed {
         note = "use `parsed.set_offset_second_signed()` instead"
     )]
     pub fn set_offset_second(&mut self, value: u8) -> Option<()> {
-        if value > i8::MAX as u8 {
+        if value > i8::MAX.cast_unsigned() {
             None
         } else {
-            self.set_offset_second_signed(value as _)
+            self.set_offset_second_signed(value.cast_signed())
         }
     }
 }
@@ -761,15 +771,17 @@ impl TryFrom<Parsed> for Date {
             )?),
             (year, sunday_week_number, weekday) => Ok(Self::from_ordinal_date(
                 year,
-                (sunday_week_number as i16 * 7 + weekday.number_days_from_sunday() as i16
+                (sunday_week_number.cast_signed().extend::<i16>() * 7
+                    + weekday.number_days_from_sunday().cast_signed().extend::<i16>()
                     - adjustment(year)
-                    + 1) as u16,
+                    + 1).cast_unsigned(),
             )?),
             (year, monday_week_number, weekday) => Ok(Self::from_ordinal_date(
                 year,
-                (monday_week_number as i16 * 7 + weekday.number_days_from_monday() as i16
+                (monday_week_number.cast_signed().extend::<i16>() * 7
+                    + weekday.number_days_from_monday().cast_signed().extend::<i16>()
                     - adjustment(year)
-                    + 1) as u16,
+                    + 1).cast_unsigned(),
             )?),
             _ => Err(InsufficientInformation),
         }
@@ -835,61 +847,45 @@ impl TryFrom<Parsed> for UtcOffset {
 }
 
 impl TryFrom<Parsed> for PrimitiveDateTime {
-    type Error = <DateTime<offset_kind::None> as TryFrom<Parsed>>::Error;
+    type Error = error::TryFromParsed;
 
     fn try_from(parsed: Parsed) -> Result<Self, Self::Error> {
-        parsed.try_into().map(Self)
+        Ok(Self::new(parsed.try_into()?, parsed.try_into()?))
     }
 }
 
 impl TryFrom<Parsed> for OffsetDateTime {
-    type Error = <DateTime<offset_kind::Fixed> as TryFrom<Parsed>>::Error;
-
-    fn try_from(parsed: Parsed) -> Result<Self, Self::Error> {
-        parsed.try_into().map(Self)
-    }
-}
-
-impl<O: MaybeOffset> TryFrom<Parsed> for DateTime<O> {
     type Error = error::TryFromParsed;
 
-    #[allow(clippy::unwrap_in_result)] // We know the values are valid.
     fn try_from(mut parsed: Parsed) -> Result<Self, Self::Error> {
-        if O::HAS_LOGICAL_OFFSET {
-            if let Some(timestamp) = parsed.unix_timestamp_nanos() {
-                let DateTime { date, time, offset } =
-                    DateTime::<offset_kind::Fixed>::from_unix_timestamp_nanos(timestamp)?;
-
-                let mut value = Self {
-                    date,
-                    time,
-                    offset: maybe_offset_from_offset::<O>(offset),
-                };
-                if let Some(subsecond) = parsed.subsecond() {
-                    value = value.replace_nanosecond(subsecond)?;
-                }
-                return Ok(value);
+        if let Some(timestamp) = parsed.unix_timestamp_nanos() {
+            let mut value = Self::from_unix_timestamp_nanos(timestamp)?;
+            if let Some(subsecond) = parsed.subsecond() {
+                value = value.replace_nanosecond(subsecond)?;
             }
+            return Ok(value);
         }
 
         // Some well-known formats explicitly allow leap seconds. We don't currently support them,
         // so treat it as the nearest preceding moment that can be represented. Because leap seconds
         // always fall at the end of a month UTC, reject any that are at other times.
         let leap_second_input = if parsed.leap_second_allowed && parsed.second() == Some(60) {
-            parsed.set_second(59).expect("59 is a valid second");
-            parsed
-                .set_subsecond(999_999_999)
-                .expect("999_999_999 is a valid subsecond");
+            if parsed.set_second(59).is_none() {
+                bug!("59 is a valid second");
+            }
+            if parsed.set_subsecond(999_999_999).is_none() {
+                bug!("999_999_999 is a valid subsecond");
+            }
             true
         } else {
             false
         };
 
-        let dt = Self {
-            date: Date::try_from(parsed)?,
-            time: Time::try_from(parsed)?,
-            offset: O::try_from_parsed(parsed)?,
-        };
+        let dt = Self::new_in_offset(
+            Date::try_from(parsed)?,
+            Time::try_from(parsed)?,
+            UtcOffset::try_from(parsed)?,
+        );
 
         if leap_second_input && !dt.is_valid_leap_second_stand_in() {
             return Err(error::TryFromParsed::ComponentRange(
