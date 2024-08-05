@@ -19,6 +19,7 @@ lazy_static! {
         "alertmanager.yaml.gz",
         "entitlement.pem",
         "entitlement-key.pem",
+        "encryption.apiserver.operator.openshift.io-key",
     ]
         .into_iter()
         .map(str::to_string)
