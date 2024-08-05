@@ -1536,6 +1536,7 @@ dependencies = [
  "fn-error-context",
  "futures-util",
  "glob",
+ "hex",
  "hmac",
  "itertools 0.12.1",
  "lazy-regex",
