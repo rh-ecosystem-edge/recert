@@ -59,6 +59,15 @@ func apiServerDeploymentJSON() {
 	required.Spec.Template.ObjectMeta.Labels["revision"] = "${REVISION}"
 	required.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].LabelSelector.MatchLabels["openshift-apiserver-anti-affinity"] = "true"
 
+	proxyEnvVars := []v1.EnvVar{
+		{Name: "HTTPS_PROXY", Value: "${HTTPS_PROXY}"},
+		{Name: "HTTP_PROXY", Value:"${HTTP_PROXY}"},
+		{Name: "NO_PROXY", Value:"${NO_PROXY}"},
+	}
+	for i, container := range required.Spec.Template.Spec.Containers {
+			required.Spec.Template.Spec.Containers[i].Env = append(container.Env, proxyEnvVars...)
+	}
+
 	jsonBytes, err := json.Marshal(required.Spec)
 	check(err)
 
