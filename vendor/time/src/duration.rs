@@ -7,6 +7,7 @@ use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 use core::time::Duration as StdDuration;
 
 use deranged::RangedI32;
+use num_conv::prelude::*;
 
 use crate::convert::*;
 use crate::error;
@@ -14,6 +15,7 @@ use crate::internal_macros::{
     const_try_opt, expect_opt, impl_add_assign, impl_div_assign, impl_mul_assign, impl_sub_assign,
 };
 #[cfg(feature = "std")]
+#[allow(deprecated)]
 use crate::Instant;
 
 /// By explicitly inserting this enum where padding is expected, the compiler is able to better
@@ -380,6 +382,10 @@ impl Duration {
     /// assert_eq!(Duration::new(-1, 0), (-1).seconds());
     /// assert_eq!(Duration::new(1, 2_000_000_000), 3.seconds());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     pub const fn new(mut seconds: i64, mut nanoseconds: i32) -> Self {
         seconds = expect_opt!(
             seconds.checked_add(nanoseconds as i64 / Nanosecond::per(Second) as i64),
@@ -431,6 +437,10 @@ impl Duration {
     /// # use time::{Duration, ext::NumericalDuration};
     /// assert_eq!(Duration::weeks(1), 604_800.seconds());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     pub const fn weeks(weeks: i64) -> Self {
         Self::seconds(expect_opt!(
             weeks.checked_mul(Second::per(Week) as _),
@@ -445,6 +455,10 @@ impl Duration {
     /// # use time::{Duration, ext::NumericalDuration};
     /// assert_eq!(Duration::days(1), 86_400.seconds());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     pub const fn days(days: i64) -> Self {
         Self::seconds(expect_opt!(
             days.checked_mul(Second::per(Day) as _),
@@ -459,6 +473,10 @@ impl Duration {
     /// # use time::{Duration, ext::NumericalDuration};
     /// assert_eq!(Duration::hours(1), 3_600.seconds());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     pub const fn hours(hours: i64) -> Self {
         Self::seconds(expect_opt!(
             hours.checked_mul(Second::per(Hour) as _),
@@ -473,6 +491,10 @@ impl Duration {
     /// # use time::{Duration, ext::NumericalDuration};
     /// assert_eq!(Duration::minutes(1), 60.seconds());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     pub const fn minutes(minutes: i64) -> Self {
         Self::seconds(expect_opt!(
             minutes.checked_mul(Second::per(Minute) as _),
@@ -836,7 +858,7 @@ impl Duration {
 
     /// Get the number of milliseconds past the number of whole seconds.
     ///
-    /// Always in the range `-1_000..1_000`.
+    /// Always in the range `-999..=999`.
     ///
     /// ```rust
     /// # use time::ext::NumericalDuration;
@@ -864,7 +886,7 @@ impl Duration {
 
     /// Get the number of microseconds past the number of whole seconds.
     ///
-    /// Always in the range `-1_000_000..1_000_000`.
+    /// Always in the range `-999_999..=999_999`.
     ///
     /// ```rust
     /// # use time::ext::NumericalDuration;
@@ -890,7 +912,7 @@ impl Duration {
 
     /// Get the number of nanoseconds past the number of whole seconds.
     ///
-    /// The returned value will always be in the range `-1_000_000_000..1_000_000_000`.
+    /// The returned value will always be in the range `-999_999_999..=999_999_999`.
     ///
     /// ```rust
     /// # use time::ext::NumericalDuration;
@@ -1001,6 +1023,25 @@ impl Duration {
 
         // Safety: `nanoseconds` is in range.
         unsafe { Some(Self::new_unchecked(secs, nanos)) }
+    }
+
+    /// Computes `-self`, returning `None` if the result would overflow.
+    ///
+    /// ```rust
+    /// # use time::ext::NumericalDuration;
+    /// # use time::Duration;
+    /// assert_eq!(5.seconds().checked_neg(), Some((-5).seconds()));
+    /// assert_eq!(Duration::MIN.checked_neg(), None);
+    /// ```
+    pub const fn checked_neg(self) -> Option<Self> {
+        if self.seconds == i64::MIN {
+            None
+        } else {
+            Some(Self::new_ranged_unchecked(
+                -self.seconds,
+                self.nanoseconds.neg(),
+            ))
+        }
     }
     // endregion checked arithmetic
 
@@ -1127,6 +1168,11 @@ impl Duration {
     /// Runs a closure, returning the duration of time it took to run. The return value of the
     /// closure is provided in the second part of the tuple.
     #[cfg(feature = "std")]
+    #[deprecated(
+        since = "0.3.32",
+        note = "extremely limited use case, not intended for benchmarking"
+    )]
+    #[allow(deprecated)]
     pub fn time_fn<T>(f: impl FnOnce() -> T) -> (Self, T) {
         let start = Instant::now();
         let return_value = f();
@@ -1205,23 +1251,26 @@ impl fmt::Display for Duration {
             let seconds = self.seconds.unsigned_abs();
             let nanoseconds = self.nanoseconds.get().unsigned_abs();
 
-            item!("d", seconds / Second::per(Day) as u64)?;
+            item!("d", seconds / Second::per(Day).extend::<u64>())?;
             item!(
                 "h",
-                seconds / Second::per(Hour) as u64 % Hour::per(Day) as u64
+                seconds / Second::per(Hour).extend::<u64>() % Hour::per(Day).extend::<u64>()
             )?;
             item!(
                 "m",
-                seconds / Second::per(Minute) as u64 % Minute::per(Hour) as u64
+                seconds / Second::per(Minute).extend::<u64>() % Minute::per(Hour).extend::<u64>()
             )?;
-            item!("s", seconds % Second::per(Minute) as u64)?;
+            item!("s", seconds % Second::per(Minute).extend::<u64>())?;
             item!("ms", nanoseconds / Nanosecond::per(Millisecond))?;
             item!(
                 "µs",
-                nanoseconds / Nanosecond::per(Microsecond) as u32
-                    % Microsecond::per(Millisecond) as u32
+                nanoseconds / Nanosecond::per(Microsecond).extend::<u32>()
+                    % Microsecond::per(Millisecond).extend::<u32>()
             )?;
-            item!("ns", nanoseconds % Nanosecond::per(Microsecond) as u32)?;
+            item!(
+                "ns",
+                nanoseconds % Nanosecond::per(Microsecond).extend::<u32>()
+            )?;
         }
 
         Ok(())
@@ -1237,7 +1286,7 @@ impl TryFrom<StdDuration> for Duration {
                 .as_secs()
                 .try_into()
                 .map_err(|_| error::ConversionRange)?,
-            original.subsec_nanos() as _,
+            original.subsec_nanos().cast_signed(),
         ))
     }
 }
@@ -1263,6 +1312,9 @@ impl TryFrom<Duration> for StdDuration {
 impl Add for Duration {
     type Output = Self;
 
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     fn add(self, rhs: Self) -> Self::Output {
         self.checked_add(rhs)
             .expect("overflow when adding durations")
@@ -1272,6 +1324,9 @@ impl Add for Duration {
 impl Add<StdDuration> for Duration {
     type Output = Self;
 
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     fn add(self, std_duration: StdDuration) -> Self::Output {
         self + Self::try_from(std_duration)
             .expect("overflow converting `std::time::Duration` to `time::Duration`")
@@ -1289,6 +1344,9 @@ impl Add<Duration> for StdDuration {
 impl_add_assign!(Duration: Self, StdDuration);
 
 impl AddAssign<Duration> for StdDuration {
+    /// # Panics
+    ///
+    /// This may panic if the resulting addition cannot be represented.
     fn add_assign(&mut self, rhs: Duration) {
         *self = (*self + rhs).try_into().expect(
             "Cannot represent a resulting duration in std. Try `let x = x + rhs;`, which will \
@@ -1301,13 +1359,16 @@ impl Neg for Duration {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        Self::new_ranged_unchecked(-self.seconds, self.nanoseconds.neg())
+        self.checked_neg().expect("overflow when negating duration")
     }
 }
 
 impl Sub for Duration {
     type Output = Self;
 
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     fn sub(self, rhs: Self) -> Self::Output {
         self.checked_sub(rhs)
             .expect("overflow when subtracting durations")
@@ -1317,6 +1378,9 @@ impl Sub for Duration {
 impl Sub<StdDuration> for Duration {
     type Output = Self;
 
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     fn sub(self, rhs: StdDuration) -> Self::Output {
         self - Self::try_from(rhs)
             .expect("overflow converting `std::time::Duration` to `time::Duration`")
@@ -1326,6 +1390,9 @@ impl Sub<StdDuration> for Duration {
 impl Sub<Duration> for StdDuration {
     type Output = Duration;
 
+    /// # Panics
+    ///
+    /// This may panic if an overflow occurs.
     fn sub(self, rhs: Duration) -> Self::Output {
         Duration::try_from(self)
             .expect("overflow converting `std::time::Duration` to `time::Duration`")
@@ -1336,6 +1403,9 @@ impl Sub<Duration> for StdDuration {
 impl_sub_assign!(Duration: Self, StdDuration);
 
 impl SubAssign<Duration> for StdDuration {
+    /// # Panics
+    ///
+    /// This may panic if the resulting subtraction can not be represented.
     fn sub_assign(&mut self, rhs: Duration) {
         *self = (*self - rhs).try_into().expect(
             "Cannot represent a resulting duration in std. Try `let x = x - rhs;`, which will \
@@ -1353,7 +1423,7 @@ macro_rules! duration_mul_div_int {
             fn mul(self, rhs: $type) -> Self::Output {
                 Self::nanoseconds_i128(
                     self.whole_nanoseconds()
-                        .checked_mul(rhs as _)
+                        .checked_mul(rhs.cast_signed().extend::<i128>())
                         .expect("overflow when multiplying duration")
                 )
             }
@@ -1371,7 +1441,9 @@ macro_rules! duration_mul_div_int {
             type Output = Self;
 
             fn div(self, rhs: $type) -> Self::Output {
-                Self::nanoseconds_i128(self.whole_nanoseconds() / rhs as i128)
+                Self::nanoseconds_i128(
+                    self.whole_nanoseconds() / rhs.cast_signed().extend::<i128>()
+                )
             }
         }
     )+};
@@ -1468,14 +1540,18 @@ impl PartialEq<Duration> for StdDuration {
 
 impl PartialOrd<StdDuration> for Duration {
     fn partial_cmp(&self, rhs: &StdDuration) -> Option<Ordering> {
-        if rhs.as_secs() > i64::MAX as _ {
+        if rhs.as_secs() > i64::MAX.cast_unsigned() {
             return Some(Ordering::Less);
         }
 
         Some(
             self.seconds
-                .cmp(&(rhs.as_secs() as _))
-                .then_with(|| self.nanoseconds.get().cmp(&(rhs.subsec_nanos() as _))),
+                .cmp(&rhs.as_secs().cast_signed())
+                .then_with(|| {
+                    self.nanoseconds
+                        .get()
+                        .cmp(&rhs.subsec_nanos().cast_signed())
+                }),
         )
     }
 }
