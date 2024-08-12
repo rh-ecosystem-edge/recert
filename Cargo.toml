@@ -49,6 +49,7 @@ log = "0.4.20"
 itertools = "0.12.1"
 serial_test = "3.0.0"
 aes-gcm = "0.10.3"
+dyn-clone = "1.0.17"
 
 [build-dependencies]
 prost-build = "0.12.1"
