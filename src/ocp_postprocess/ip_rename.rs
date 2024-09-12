@@ -83,5 +83,7 @@ async fn fix_etcd_resources(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Res
         .await
         .context("fixing oauth apiserver deployment")?;
 
+    etcd_rename::fix_etcd_member(etcd_client, ip).await.context("fixing etcd member")?;
+
     Ok(original_ip)
 }
