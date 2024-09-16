@@ -59,6 +59,16 @@ pub(crate) async fn ocp_postprocess(
 
     run_cluster_customizations(cluster_customizations, in_memory_etcd_client).await?;
 
+    // When OpenShift pods/containers start, CVO is still stuck on its last known status and it
+    // takes a couple of minutes for it to update its status to the current cluster conditions. When
+    // its last known status is set to Available=True, it incorrectly shows that OpenShift is
+    // stabilized while it's not. Since we want to watch the CVO status to signal the cluster
+    // installation/update completion, this flapping CVO status makes it difficult. By setting CVO's
+    // Available status condition to False here, it allows us to monitor CVO's status to signal the
+    // cluster installation/update completion, as it will set it to True only once OpenShift is
+    // stabilized.
+    set_cluster_version_available_false(in_memory_etcd_client).await?;
+
     fix_deployment_dep_annotations(
         in_memory_etcd_client,
         K8sResourceLocation::new(Some("openshift-apiserver"), "Deployment", "apiserver", "v1"),
@@ -86,6 +96,44 @@ pub(crate) async fn ocp_postprocess(
     )
     .await
     .context("fixing spec-hash annotation for openshift-oauth-apiserver")?;
+
+    Ok(())
+}
+
+async fn set_cluster_version_available_false(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(None, "ClusterVersion", "version", "config.openshift.io/v1");
+    let mut version = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context("getting config.openshift.io/clusterversion/version")?;
+
+    let conditions = &mut version
+        .pointer_mut("/status/conditions")
+        .context("no /status/conditions")?
+        .as_array_mut()
+        .context("/status/conditions not an array")?;
+
+    conditions
+        .iter_mut()
+        .map(|condition: &mut serde_json::Value| {
+            let condition = &mut condition.as_object_mut().context("condition not an object")?;
+            let condition_type = condition
+                .get("type")
+                .context("type not found")?
+                .as_str()
+                .context("type not a string")?;
+            if condition_type == "Available" {
+                condition.insert("status".to_string(), serde_json::Value::String("False".to_string()));
+                condition.insert(
+                    "message".to_string(),
+                    serde_json::Value::String("Cluster version status unknown".to_string()),
+                );
+            }
+
+            Ok(())
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, version).await?;
 
     Ok(())
 }
