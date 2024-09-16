@@ -1,6 +1,6 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
 use crate::etcd_encoding;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -174,6 +174,36 @@ impl InMemoryK8sEtcd {
     pub(crate) async fn delete(&self, key: &str) -> Result<()> {
         self.etcd_keyvalue_hashmap.lock().await.remove(key);
         self.deleted_keys.lock().await.insert(key.to_string());
+        Ok(())
+    }
+
+    pub(crate) async fn update_member(&self, value: String) -> Result<()> {
+        let etcd_client = self.etcd_client.as_ref().context("etcd client not configured")?;
+
+        let members_list = etcd_client
+            .cluster_client()
+            .member_list()
+            .await
+            .context("listing etcd members list")?;
+
+        let members = members_list.members();
+
+        ensure!(
+            members.len() == 1,
+            "single-node must have exactly one etcd member, found {}",
+            members.len()
+        );
+
+        ensure!(
+            !etcd_client
+                .cluster_client()
+                .member_update(members[0].id(), vec![value.clone()])
+                .await
+                .context("updating etcd member")?
+                .members()
+                .is_empty(),
+            "no members in update response"
+        );
         Ok(())
     }
 }

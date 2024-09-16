@@ -6,6 +6,7 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
+use std::net::Ipv6Addr;
 use std::sync::Arc;
 
 pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<String> {
@@ -445,6 +446,16 @@ pub(crate) async fn fix_networks_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, ip:
         }
     }
 
+    Ok(())
+}
+
+pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<()> {
+    let mut update = format!("https://{}:2380", ip).to_string();
+    if ip.parse::<Ipv6Addr>().is_ok() {
+        update = format!("https://[{}]:2380", ip).to_string();
+    }
+
+    etcd_client.update_member(update).await.context("failed to update etcd member")?;
     Ok(())
 }
 
