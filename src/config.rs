@@ -65,6 +65,7 @@ pub(crate) struct RecertConfig {
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
     pub(crate) summary_file: Option<ConfigPath>,
     pub(crate) summary_file_clean: Option<ConfigPath>,
+    pub(crate) etcd_defrag: bool,
 
     #[serde(serialize_with = "config_file_raw_optionally_redacted")]
     pub(crate) config_file_raw: Option<String>,
@@ -130,6 +131,7 @@ impl RecertConfig {
         Ok(RecertConfig {
             dry_run: true,
             etcd_endpoint: None,
+            etcd_defrag: false,
             crypto_customizations: CryptoCustomizations {
                 dirs: vec![],
                 files: vec![],
@@ -258,6 +260,11 @@ impl RecertConfig {
             .unwrap_or(Value::Bool(false))
             .as_bool()
             .context("dry_run must be a boolean")?;
+        let etcd_defrag = value
+            .remove("etcd_defrag")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("etcd_defrag must be a boolean")?;
         let etcd_endpoint = match value.remove("etcd_endpoint") {
             Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
             None => None,
@@ -328,6 +335,7 @@ impl RecertConfig {
             cli_raw: None,
             config_file_raw: Some(String::from_utf8_lossy(config_bytes).to_string()),
             postprocess_only,
+            etcd_defrag,
         };
 
         ensure!(
@@ -344,6 +352,10 @@ impl RecertConfig {
             !(recert_config.dry_run && recert_config.crypto_customizations.extend_expiration),
             "dry_run and extend_expiration are mutually exclusive"
         );
+        ensure!(
+            !(recert_config.dry_run && recert_config.etcd_defrag),
+            "dry_run and etcd_defrag are mutually exclusive"
+        );
 
         Ok(recert_config)
     }
@@ -351,6 +363,7 @@ impl RecertConfig {
     pub(crate) fn parse_from_cli(cli: Cli) -> Result<Self> {
         Ok(Self {
             dry_run: cli.dry_run,
+            etcd_defrag: cli.etcd_defrag,
             postprocess_only: cli.postprocess_only,
             etcd_endpoint: cli.etcd_endpoint,
             crypto_customizations: CryptoCustomizations {
