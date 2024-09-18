@@ -206,6 +206,12 @@ impl InMemoryK8sEtcd {
         );
         Ok(())
     }
+
+    pub(crate) async fn defragment(&self) -> Result<()> {
+        let etcd_client = self.etcd_client.as_ref().context("etcd client not configured")?;
+        etcd_client.maintenance_client().defragment().await.context("defragment etcd")?;
+        Ok(())
+    }
 }
 
 fn is_too_many_requests_error(delete_response: &std::prelude::v1::Result<etcd_client::DeleteResponse, etcd_client::Error>) -> bool {

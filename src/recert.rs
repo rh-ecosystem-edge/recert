@@ -36,6 +36,7 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
         &recert_config.cluster_customizations,
         recert_config.regenerate_server_ssh_keys.as_deref(),
         recert_config.dry_run,
+        recert_config.etcd_defrag,
     )
     .await
     .context("finalizing")?;
@@ -115,6 +116,7 @@ async fn finalize(
     cluster_customizations: &ClusterCustomizations,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
+    etcd_defrag: bool,
 ) -> Result<FinalizeTiming> {
     log::info!("Committing cryptographic objects to etcd and disk");
 
@@ -154,6 +156,12 @@ async fn finalize(
             .commit_to_actual_etcd()
             .await
             .context("commiting etcd cache to actual etcd")?;
+    }
+
+    // in case etcd maintenance flag was set we gonna run it after finishing all etcd work
+    if etcd_defrag {
+        log::info!("Defragmenting etcd");
+        in_memory_etcd_client.defragment().await.context("defragmenting etcd")?;
     }
 
     let commit_to_actual_etcd_run_time = RunTime::since_start(start);
