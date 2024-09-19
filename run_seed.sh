@@ -95,6 +95,7 @@ else
 		--cluster-rename new-name:foo.com:some-random-infra-id \
 		--hostname test.hostname \
 		--ip 192.168.126.99 \
+		--etcd-defrag \
 		--install-config 'additionalTrustBundlePolicy: Proxyonly
 apiVersion: v1
 baseDomain: ibo0.redhat.com

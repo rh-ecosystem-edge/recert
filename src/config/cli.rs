@@ -192,4 +192,8 @@ pub(crate) struct Cli {
     /// those intentionally expired dates.
     #[clap(long, groups = &["dry", "expiration"])]
     pub(crate) force_expire: bool,
+
+    /// Run etcd defragment command after recertification
+    #[clap(long, group = "dry")]
+    pub(crate) etcd_defrag: bool,
 }
