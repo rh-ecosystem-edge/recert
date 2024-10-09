@@ -870,6 +870,8 @@ pub(crate) async fn cluster_rename(
         "replicasets/",
         // Delete ovnkube-node daemonset as it has cluster name in bash script
         "daemonsets/openshift-ovn-kubernetes/ovnkube-node",
+        // Delete encryption-keys for openshift-{kube,oauth,}-apiserver
+        "secrets/openshift-config-managed/encryption-key-openshift-",
     ]
     .iter()
     {
