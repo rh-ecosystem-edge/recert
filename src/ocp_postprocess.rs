@@ -25,6 +25,7 @@ pub(crate) mod additional_trust_bundle;
 mod arguments;
 pub(crate) mod chrony_config;
 pub(crate) mod cluster_domain_rename;
+pub(crate) mod encryption_config;
 mod fnv;
 mod go_base32;
 pub(crate) mod hostname_rename;
@@ -869,6 +870,8 @@ pub(crate) async fn cluster_rename(
         "replicasets/",
         // Delete ovnkube-node daemonset as it has cluster name in bash script
         "daemonsets/openshift-ovn-kubernetes/ovnkube-node",
+        // Delete encryption-keys for openshift-{kube,oauth,}-apiserver
+        "secrets/openshift-config-managed/encryption-key-openshift-",
     ]
     .iter()
     {
