@@ -159,10 +159,18 @@ impl InMemoryK8sEtcd {
             None => return Ok(vec![]),
         };
 
+        let kubernetes_keys = self.get_keys_with_prefix(etcd_client, "/kubernetes.io", resource_kind).await?;
+        let openshift_keys = self.get_keys_with_prefix(etcd_client, "/openshift.io", resource_kind).await?;
+        let keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys.into_iter()).collect();
+
+        Ok(keys)
+    }
+
+    async fn get_keys_with_prefix(&self, etcd_client: &Arc<EtcdClient>, prefix: &str, resource_kind: &str) -> Result<Vec<String>> {
         let etcd_get_options = GetOptions::new().with_prefix().with_limit(0).with_keys_only();
         let keys = etcd_client
             .kv_client()
-            .get(format!("/kubernetes.io/{}", resource_kind), Some(etcd_get_options.clone()))
+            .get(format!("{}/{}", prefix, resource_kind), Some(etcd_get_options.clone()))
             .await?;
 
         keys.kvs()
