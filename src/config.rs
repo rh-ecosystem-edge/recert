@@ -2,6 +2,7 @@ use self::{cli::Cli, path::ConfigPath};
 use crate::{
     cluster_crypto::REDACT_SECRETS,
     cnsanreplace::{CnSanReplace, CnSanReplaceRules},
+    encrypt_config::EncryptionConfig,
     ocp_postprocess::{
         additional_trust_bundle::params::{parse_additional_trust_bundle, ProxyAdditionalTrustBundle},
         cluster_domain_rename::params::ClusterNamesRename,
@@ -53,6 +54,13 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) chrony_config: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct EncryptionCustomizations {
+    pub(crate) kube_encryption_config: Option<EncryptionConfig>,
+    pub(crate) openshift_encryption_config: Option<EncryptionConfig>,
+    pub(crate) oauth_encryption_config: Option<EncryptionConfig>,
+}
+
 /// All parsed CLI arguments, coalesced into a single struct for convenience
 #[derive(serde::Serialize)]
 pub(crate) struct RecertConfig {
@@ -61,6 +69,7 @@ pub(crate) struct RecertConfig {
     pub(crate) etcd_endpoint: Option<String>,
     pub(crate) crypto_customizations: CryptoCustomizations,
     pub(crate) cluster_customizations: ClusterCustomizations,
+    pub(crate) encryption_customizations: EncryptionCustomizations,
     pub(crate) threads: Option<usize>,
     pub(crate) regenerate_server_ssh_keys: Option<ConfigPath>,
     pub(crate) summary_file: Option<ConfigPath>,
@@ -155,6 +164,11 @@ impl RecertConfig {
                 user_ca_bundle: None,
                 proxy_trusted_ca_bundle: None,
                 chrony_config: None,
+            },
+            encryption_customizations: EncryptionCustomizations {
+                kube_encryption_config: None,
+                openshift_encryption_config: None,
+                oauth_encryption_config: None,
             },
             threads: None,
             regenerate_server_ssh_keys: None,
@@ -269,6 +283,18 @@ impl RecertConfig {
             Some(value) => Some(value.as_str().context("etcd_endpoint must be a string")?.to_string()),
             None => None,
         };
+        let kube_encryption_config = match value.remove("kube_encryption_config") {
+            Some(value) => parse_encryption_config(value)?,
+            None => None,
+        };
+        let openshift_encryption_config = match value.remove("openshift_encryption_config") {
+            Some(value) => parse_encryption_config(value)?,
+            None => None,
+        };
+        let oauth_encryption_config = match value.remove("oauth_encryption_config") {
+            Some(value) => parse_encryption_config(value)?,
+            None => None,
+        };
         let threads = match value.remove("threads") {
             Some(value) => parse_threads(value)?,
             None => None,
@@ -323,11 +349,18 @@ impl RecertConfig {
             chrony_config,
         };
 
+        let encryption_customizations = EncryptionCustomizations {
+            kube_encryption_config,
+            openshift_encryption_config,
+            oauth_encryption_config,
+        };
+
         let recert_config = Self {
             dry_run,
             etcd_endpoint,
             crypto_customizations,
             cluster_customizations,
+            encryption_customizations,
             threads,
             regenerate_server_ssh_keys,
             summary_file,
@@ -406,6 +439,11 @@ impl RecertConfig {
                 machine_network_cidr: cli.machine_network_cidr,
                 chrony_config: cli.chrony_config,
             },
+            encryption_customizations: EncryptionCustomizations {
+                kube_encryption_config: cli.kube_encryption_config,
+                openshift_encryption_config: cli.openshift_encryption_config,
+                oauth_encryption_config: cli.oauth_encryption_config,
+            },
             threads: cli.threads,
             regenerate_server_ssh_keys: cli.regenerate_server_ssh_keys.map(ConfigPath::from),
             summary_file: cli.summary_file.map(ConfigPath::from),
@@ -472,6 +510,15 @@ fn parse_threads(value: Value) -> Result<Option<usize>> {
             .context("threads must be an integer")?
             .try_into()
             .context("threads must be an integer")?,
+    ))
+}
+
+fn parse_encryption_config(value: Value) -> Result<Option<EncryptionConfig>> {
+    Ok(Some(
+        EncryptionConfig::parse(value.as_str().context("encryption_config must be a string")?).context(format!(
+            "encryption_config {}",
+            value.as_str().context("encryption_config must be a string")?
+        ))?,
     ))
 }
 
