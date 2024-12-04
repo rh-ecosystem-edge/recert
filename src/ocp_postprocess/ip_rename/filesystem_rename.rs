@@ -11,13 +11,9 @@ pub(crate) async fn fix_filesystem_ip(original_ip: &str, ip: &str, dir: &Path) -
         file_utils::globvec(dir, "**/etcd-pod.yaml")?
             .into_iter()
             .chain(file_utils::globvec(dir, "**/*etcd-pod/pod.yaml")?)
-            .into_iter()
             .chain(file_utils::globvec(dir, "**/etcd-scripts/etcd.env")?)
-            .into_iter()
             .chain(file_utils::globvec(dir, "**/etcd-endpoints/*")?)
-            .into_iter()
             .chain(file_utils::globvec(dir, "**/kube-apiserver-pod-*/configmaps/config/config.yaml")?)
-            .into_iter()
             .map(|file_path| {
                 let path = file_path.clone();
                 let original_ip = original_ip.to_string();
