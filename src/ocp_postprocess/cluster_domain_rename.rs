@@ -217,7 +217,7 @@ async fn fix_etcd_resources(
         .context("fixing routes")?;
     etcd_rename::fix_controller_config(etcd_client, &generated_infra_id, cluster_domain)
         .await
-        .context("fixing routes")?;
+        .context("fixing controller config")?;
     etcd_rename::delete_resources(etcd_client).await.context("fixing kcm pods")?;
     etcd_rename::fix_oauth_client(
         etcd_client,
