@@ -1,8 +1,13 @@
 use crate::{
     cluster_crypto::{crypto_utils::ensure_openssl_version, scanning, ClusterCryptoObjects},
-    config::{ClusterCustomizations, CryptoCustomizations, RecertConfig},
+    config::{ClusterCustomizations, CryptoCustomizations, EncryptionCustomizations, RecertConfig},
+    encrypt::ResourceTransformers,
     k8s_etcd::InMemoryK8sEtcd,
-    ocp_postprocess::ocp_postprocess,
+    ocp_postprocess::{encryption_config, ocp_postprocess},
+    recert::encrypt_utils::{
+        build_decryption_transformers, build_encryption_customizations, build_encryption_transformers, get_apiserver_encryption_type,
+        is_encryption_enabled,
+    },
     rsa_key_pool, server_ssh_keys,
 };
 use anyhow::{Context, Result};
@@ -13,10 +18,12 @@ use self::timing::{combine_timings, FinalizeTiming, RecertifyTiming, RunTime, Ru
 
 pub(crate) mod timing;
 
+mod encrypt_utils;
+
 pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut ClusterCryptoObjects) -> Result<RunTimes> {
     ensure_openssl_version().context("checking openssl version compatibility")?;
 
-    let in_memory_etcd_client = get_etcd_endpoint(recert_config).await?;
+    let (in_memory_etcd_client, encryption_customizations) = setup_etcd_client(recert_config).await?;
 
     let recertify_timing = if !recert_config.postprocess_only {
         recertify(
@@ -34,6 +41,7 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
         Arc::clone(&in_memory_etcd_client),
         cluster_crypto,
         &recert_config.cluster_customizations,
+        encryption_customizations,
         recert_config.regenerate_server_ssh_keys.as_deref(),
         recert_config.dry_run,
     )
@@ -43,17 +51,52 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
     Ok(combine_timings(recertify_timing, finalize_timing))
 }
 
-async fn get_etcd_endpoint(recert_config: &RecertConfig) -> Result<Arc<InMemoryK8sEtcd>> {
-    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(match &recert_config.etcd_endpoint {
-        Some(etcd_endpoint) => Some(
-            EtcdClient::connect([etcd_endpoint.as_str()], None)
-                .await
-                .context("connecting to etcd")?,
-        ),
-        None => None,
-    }));
+async fn setup_etcd_client(recert_config: &RecertConfig) -> Result<(Arc<InMemoryK8sEtcd>, Option<EncryptionCustomizations>)> {
+    let mut in_memory_etcd_client = get_etcd_endpoint(recert_config, None, None).await?;
+
+    let mut encryption_customizations: Option<EncryptionCustomizations> = None;
+
+    if is_encryption_enabled(&in_memory_etcd_client).await? {
+        let decrypt_resource_transformers = build_decryption_transformers(recert_config, &mut in_memory_etcd_client).await?;
+
+        let encryption_type = get_apiserver_encryption_type(&in_memory_etcd_client).await?;
+
+        log::info!("OpenShift etcd encryption type {} detected", encryption_type);
+
+        let customizations = build_encryption_customizations(recert_config, encryption_type).await?;
+        let encrypt_resource_transformers = build_encryption_transformers(&customizations).await?;
+
+        encryption_customizations = Some(customizations);
+        in_memory_etcd_client = get_etcd_endpoint(
+            recert_config,
+            Some(decrypt_resource_transformers.clone()),
+            Some(encrypt_resource_transformers.clone()),
+        )
+        .await?;
+    }
 
     log::info!("Connected to etcd");
+
+    Ok((in_memory_etcd_client, encryption_customizations))
+}
+
+async fn get_etcd_endpoint(
+    recert_config: &RecertConfig,
+    decrypt_resource_transformers: Option<ResourceTransformers>,
+    encrypt_resource_transformers: Option<ResourceTransformers>,
+) -> Result<Arc<InMemoryK8sEtcd>> {
+    let in_memory_etcd_client = Arc::new(InMemoryK8sEtcd::new(
+        match &recert_config.etcd_endpoint {
+            Some(etcd_endpoint) => Some(
+                EtcdClient::connect([etcd_endpoint.as_str()], None)
+                    .await
+                    .context("connecting to etcd")?,
+            ),
+            None => None,
+        },
+        decrypt_resource_transformers,
+        encrypt_resource_transformers,
+    ));
 
     Ok(in_memory_etcd_client)
 }
@@ -113,6 +156,7 @@ async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     cluster_customizations: &ClusterCustomizations,
+    encryption_customizations: Option<EncryptionCustomizations>,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
 ) -> Result<FinalizeTiming> {
@@ -132,6 +176,22 @@ async fn finalize(
         ocp_postprocess(&in_memory_etcd_client, cluster_customizations)
             .await
             .context("performing ocp specific post-processing")?;
+
+        if let Some(encryption_customizations) = encryption_customizations {
+            encryption_config::rename_all(
+                &in_memory_etcd_client,
+                &encryption_customizations,
+                &cluster_customizations.dirs,
+                &cluster_customizations.files,
+            )
+            .await
+            .context("renaming all")?;
+
+            in_memory_etcd_client
+                .reencrypt_resources()
+                .await
+                .context("re-encrypting resources")?;
+        }
     }
     let ocp_postprocessing_run_time = RunTime::since_start(start);
 
