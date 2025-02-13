@@ -8,6 +8,8 @@ filters:
     - omertuc
     - mresvanis
     - tsorya
+    - fontivan
+    - rauhersu
   ^Dockerfile:
     reviewers:
     - rauhersu
