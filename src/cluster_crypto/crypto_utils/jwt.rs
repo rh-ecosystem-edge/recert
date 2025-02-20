@@ -1,7 +1,4 @@
-use crate::cluster_crypto::{
-    crypto_utils::{self, SigningKey},
-    keys::PublicKey,
-};
+use crate::cluster_crypto::{crypto_utils::SigningKey, keys::PublicKey};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as base64_url, Engine as _};
 use std::{io::Write, process::Command};
@@ -83,15 +80,15 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
         bail!("unsupported alg {}", alg);
     }
 
-    let (kid, pem_bytes) = match &private_key.in_memory_signing_key_pair {
+    let (jwt_key_id, private_pem_bytes) = match &private_key.in_memory_signing_key_pair {
         InMemorySigningKeyPair::Ecdsa(_, _, _) => {
             bail!("ecdsa unsupported");
         }
         InMemorySigningKeyPair::Ed25519(_) => {
             bail!("ed unsupported");
         }
-        InMemorySigningKeyPair::Rsa(_rsa_key_pair, bytes) => (
-            base64_url.encode(crypto_utils::sha256(bytes).context("calculating kid")?),
+        InMemorySigningKeyPair::Rsa(_rsa_key_pair, _bytes) => (
+            private_key.jwt_key_id().context("calculating key id")?,
             private_key.pkcs8_pem.clone(),
         ),
     };
@@ -99,7 +96,7 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
     header_json
         .as_object_mut()
         .context("headern not objecT")?
-        .insert("kid".to_string(), serde_json::Value::String(kid));
+        .insert("kid".to_string(), serde_json::Value::String(jwt_key_id));
 
     let header_json = serde_json::to_string(&header_json)?;
 
@@ -110,7 +107,7 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
     header_payload_file.flush()?;
 
     let mut pem_file = tempfile::NamedTempFile::new()?;
-    pem_file.write_all(pem_bytes.as_slice())?;
+    pem_file.write_all(private_pem_bytes.as_slice())?;
 
     let output = Command::new("openssl")
         .arg("dgst")
