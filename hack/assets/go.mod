@@ -4,8 +4,8 @@ go 1.22.1
 
 require (
 	github.com/openshift/library-go v0.0.0-20240305144041-18ee8279b4e3
-	k8s.io/api v0.29.0
-	k8s.io/apimachinery v0.29.0
+	k8s.io/api v0.32.3
+	k8s.io/apimachinery v0.32.3
 )
 
 require (
