@@ -8,8 +8,6 @@ packages:
   # build stage
   - rust-toolset
   - protobuf-compiler
-  # runtime stage
-  - openssh-clients
 
 arches:
   - x86_64
@@ -17,4 +15,4 @@ arches:
 context:
     containerfile:
       file: ./Dockerfile
-      imagePattern: registry.redhat.io/rhel9-4-els/rhel
+      stageName: build-image
