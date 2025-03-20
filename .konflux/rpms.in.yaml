@@ -1,0 +1,20 @@
+contentOrigin:
+  repofiles:
+     # Choosing a rhel9 rpm from from the build stage image we are currently using.
+     # See also the 'imagePattern' matching that below.
+     - ./redhat.repo
+
+packages:
+  # build stage
+  - rust-toolset
+  - protobuf-compiler
+  # runtime stage
+  - openssh-clients
+
+arches:
+  - x86_64
+
+context:
+    containerfile:
+      file: ./Dockerfile
+      imagePattern: registry.redhat.io/rhel9-4-els/rhel
