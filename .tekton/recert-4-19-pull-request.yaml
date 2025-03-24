@@ -32,7 +32,7 @@ spec:
   - name: hermetic
     value: "true"
   - name: prefetch-input
-    value: '{"type": "rpm", "path": ".konflux"}'
+    value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path": ".konflux/lock-runtime"}]'
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while reducing network traffic.

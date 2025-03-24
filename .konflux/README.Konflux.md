@@ -11,6 +11,8 @@ More information about the hermetic builds in the [Konflux Hermetic Builds FAQ](
 
 We will be using a generator named `rpm-lock-file-prototype` according to the directions provided by that project in the [rpm-lockfile-prototype README](https://github.com/konflux-ci/rpm-lockfile-prototype?tab=readme-ov-file#installation) to generate the `rpms.lock.yaml`.
 
+The recert image has a build stage and final runtime stage which requires different rpms to be installed.To that end, we have encapsulated the `rpms.in.yaml` and the resolved `rpms.lock.yaml` under two specific dirs which correspond to the specific stage: `lock-build` and `lock-runtime`.
+
 The `rpms.lock.yaml` has been generated from the input provided by `rpms.in.yaml`: this file must be manually created from scratch by Konflux developers with the following fields:
 
 1. `repofiles`: the .repo file extracted from the runtime base image for recert (a `redhat.repo` file from rhel9 so far)
@@ -31,10 +33,10 @@ The push/pull tekton yaml files in `.tekton` have been configured to setup a her
    - name: hermetic
      value: "true"
 ```
-2. Enable rpm pre-fetch
+2. Enable rpm pre-fetch per stage, configuring two directories 
 ```yaml
    - name: prefetch-input
-     value: '{"type": "rpm", "path": ".konflux"}'
+     value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path": ".konflux/lock-runtime"}]'
 ```
 
 3. Enable dev package managers
