@@ -23,7 +23,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.29.0 // indirect
 	k8s.io/client-go v0.29.0 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
-	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
+	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
