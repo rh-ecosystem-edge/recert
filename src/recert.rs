@@ -1,5 +1,9 @@
 use crate::{
-    cluster_crypto::{crypto_utils::ensure_openssl_version, scanning, ClusterCryptoObjects},
+    cluster_crypto::{
+        crypto_utils::ensure_openssl_version,
+        scanning::{self, ExternalCerts},
+        ClusterCryptoObjects,
+    },
     config::{ClusterCustomizations, CryptoCustomizations, EncryptionCustomizations, RecertConfig},
     encrypt::ResourceTransformers,
     k8s_etcd::InMemoryK8sEtcd,
@@ -12,7 +16,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use etcd_client::Client as EtcdClient;
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use self::timing::{combine_timings, FinalizeTiming, RecertifyTiming, RunTime, RunTimes};
 
@@ -112,7 +116,7 @@ async fn recertify(
             .await
             .context("discovering external certs to ignore")?
     } else {
-        HashSet::new()
+        ExternalCerts::empty()
     };
 
     log::info!("Discovered {} external certificates to ignore", external_certs.len());

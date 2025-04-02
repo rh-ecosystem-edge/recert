@@ -1,6 +1,6 @@
 use self::crypto_objects::DiscoveredCryptoObect;
 use super::{
-    crypto_objects,
+    certificate, crypto_objects, crypto_utils,
     locations::{FileContentLocation, FileLocation, K8sResourceLocation, Location, LocationValueType},
 };
 use crate::{
@@ -23,11 +23,35 @@ use tokio::task::JoinHandle;
 
 pub(crate) mod external_certs;
 
+pub(crate) type ExternalCertsName = String;
+pub(crate) type ExternalCertsHash = String;
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExternalCerts(HashSet<(ExternalCertsName, ExternalCertsHash)>);
+
+impl ExternalCerts {
+    pub(crate) fn has_cert(&self, hashable_cert: &certificate::Certificate) -> Result<bool> {
+        let der_bytes = hashable_cert.cert.constructed_data();
+        let sha256bytes = crypto_utils::sha256(der_bytes).context("sha256")?;
+        let sha256hex = hex::encode(sha256bytes);
+
+        Ok(self.0.contains(&(hashable_cert.subject.to_string(), sha256hex)))
+    }
+
+    pub(crate) fn empty() -> Self {
+        Self(HashSet::new())
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 pub(crate) async fn crypto_scan(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     crypto_dirs: Vec<ConfigPath>,
     crypto_files: Vec<ConfigPath>,
-    external_certs: HashSet<String>,
+    external_certs: ExternalCerts,
 ) -> Result<(RunTime, Vec<DiscoveredCryptoObect>)> {
     log::info!("Scanning for cryptographic objects...");
 
@@ -74,10 +98,7 @@ pub(crate) async fn crypto_scan(
     Ok((RunTime::since_start(start_time), all_discovered_objects))
 }
 
-fn scan_crypto_dirs(
-    crypto_dirs: Vec<ConfigPath>,
-    external_certs: &HashSet<String>,
-) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
+fn scan_crypto_dirs(crypto_dirs: Vec<ConfigPath>, external_certs: &ExternalCerts) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
     let external_certs = external_certs.clone();
     tokio::spawn(async move {
         anyhow::Ok(
@@ -109,7 +130,7 @@ fn scan_crypto_dirs(
 
 fn scan_crypto_files(
     crypto_files: Vec<ConfigPath>,
-    external_certs: &HashSet<String>,
+    external_certs: &ExternalCerts,
 ) -> JoinHandle<Result<Vec<DiscoveredCryptoObect>, Error>> {
     let external_certs = external_certs.clone();
     tokio::spawn(async move {
@@ -144,7 +165,7 @@ fn scan_crypto_files(
 /// in the appropriate data structures.
 pub(crate) async fn scan_etcd_resources(
     etcd_client: Arc<InMemoryK8sEtcd>,
-    external_certs: &HashSet<String>,
+    external_certs: &ExternalCerts,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     let key_lists = {
         let etcd_client = &etcd_client;
@@ -248,7 +269,7 @@ pub(crate) async fn scan_etcd_resources(
 
 /// Recursively scans a directoy for files which exclusively contain a PEM bundle (as opposed
 /// to being embedded in a YAML file) and records them in the appropriate data structures.
-pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: ExternalCerts) -> Result<Vec<DiscoveredCryptoObect>> {
     let external_certs = external_certs.clone();
     Ok(join_all(
         file_utils::globvec(dir, "**/*.pem")?
@@ -285,7 +306,7 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: HashSe
     .collect::<Vec<_>>())
 }
 
-async fn scan_filesystem_file(file_path: PathBuf, external_certs: HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
+async fn scan_filesystem_file(file_path: PathBuf, external_certs: ExternalCerts) -> Result<Vec<DiscoveredCryptoObect>> {
     log::trace!("Reading file {:?}", file_path);
 
     let contents = read_file_to_string(&file_path).await?;
@@ -316,7 +337,7 @@ async fn scan_filesystem_file(file_path: PathBuf, external_certs: HashSet<String
 pub(crate) fn process_static_resource_yaml(
     contents: String,
     yaml_path: &Path,
-    external_certs: &HashSet<String>,
+    external_certs: &ExternalCerts,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     Ok(json_crawl::crawl_json((serde_yaml::from_str::<Value>(contents.as_str())?).clone())?
         .iter()
