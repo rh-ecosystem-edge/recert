@@ -1,6 +1,8 @@
 module github.com/rh-ecosystem-edge/recert/assets/sync
 
-go 1.22.1
+go 1.23.0
+
+toolchain go1.23.8
 
 require (
 	github.com/openshift/library-go v0.0.0-20240305144041-18ee8279b4e3
@@ -16,8 +18,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/openshift/api v0.0.0-20231218131639-7a5aa77cc72d // indirect
-	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/apiextensions-apiserver v0.29.0 // indirect
