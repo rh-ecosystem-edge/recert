@@ -2,7 +2,9 @@
 
 # build stage
 FROM registry.redhat.io/rhel9-4-els/rhel:9.4-1044 AS build-image
-WORKDIR app
+
+WORKDIR /app
+
 COPY . .
 
 RUN PKGS="rust-toolset protobuf-compiler" \
@@ -18,6 +20,8 @@ RUN PKGS="openssh-clients" \
     && microdnf install -y $PKGS \
     && microdnf clean all
 
-WORKDIR app
+WORKDIR /app
+
 COPY --from=build-image /app/target/release/recert /usr/local/bin
+
 ENTRYPOINT ["/usr/local/bin/recert"]
