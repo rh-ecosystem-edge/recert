@@ -35,6 +35,8 @@ spec:
       value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path": ".konflux/lock-runtime"}]'
     - name: dev-package-managers
       value: true
+    - name: build-source-image
+      value: "true"
   pipelineRef:
     name: build-pipeline
   taskRunTemplate: {}
