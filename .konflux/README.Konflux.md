@@ -1,7 +1,7 @@
 # RPM lock files in Konflux
 
 ## Overview
-When installing external software via RPMs in Konflux builds, we need to integrate a RPM lock file management in our workflow: the primary goal is to ensure that hermetic builds ,required by Konflux Conforma, can pre-fetch RPM dependencies before building the Docker image. A hermetic build without lock files, relying on dynamic downloads exclusively, would fail due to no internet access otherwise.
+When installing external software via RPMs in Konflux builds, we need to integrate a RPM lock file management in our workflow: the primary goal is to ensure that hermetic builds, required by Konflux Conforma, can pre-fetch RPM dependencies before building the Docker image. A hermetic build without lock files, relying on dynamic downloads exclusively, would fail due to no internet access otherwise.
 
 More information about the hermetic builds in the [Konflux Hermetic Builds FAQ](https://konflux.pages.redhat.com/docs/users/faq/hermetic.html)
 
