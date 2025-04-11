@@ -153,6 +153,26 @@ spec:
       workspaces:
         - name: basic-auth
           workspace: git-auth
+    - name: generate-labels
+      params:
+        - name: label-templates
+          value:
+            - build-date=$SOURCE_DATE
+            - short-commit=$(tasks.clone-repository.results.short-commit)
+            - version=v4.19-$SOURCE_DATE_EPOCH
+        - name: source-date-epoch
+          value: $(tasks.clone-repository.results.commit-timestamp)
+      runAfter:
+        - clone-repository
+      taskRef:
+        params:
+          - name: name
+            value: generate-labels
+          - name: bundle
+            value: quay.io/konflux-ci/tekton-catalog/task-generate-labels:0.1@sha256:f6a21b9b81739ea856f0e27eb0b0eeae3b975f674b8f5c447c3bf03966f753fe
+          - name: kind
+            value: task
+        resolver: bundles
     - name: prefetch-dependencies
       params:
         - name: input
@@ -215,6 +235,21 @@ spec:
           value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
         - name: IMAGE_APPEND_PLATFORM
           value: "true"
+        - name: LABELS
+          value:
+            - $(tasks.generate-labels.results.labels[*])
+            - com.redhat.component=recert
+            - description=recert
+            - distribution-scope=public
+            - io.k8s.description=recert
+            - name=openshift4/recert-rhel9
+            - release=4.19
+            - url=https://github.com/rh-ecosystem-edge/recert
+            - vendor=Red Hat, Inc.
+            - io.k8s.display-name=recert
+            - io.openshift.tags=operator
+            - summary=recert
+            - maintainer=rauherna@redhat.com,sskeard@redhat.com
       runAfter:
         - prefetch-dependencies
       taskRef:
