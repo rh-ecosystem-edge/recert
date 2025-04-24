@@ -159,7 +159,7 @@ spec:
           value:
             - build-date=$SOURCE_DATE
             - short-commit=$(tasks.clone-repository.results.short-commit)
-            - version=v4.19-$SOURCE_DATE_EPOCH
+            - version=v4.20-$SOURCE_DATE_EPOCH
         - name: source-date-epoch
           value: $(tasks.clone-repository.results.commit-timestamp)
       runAfter:
@@ -243,7 +243,7 @@ spec:
             - distribution-scope=public
             - io.k8s.description=recert
             - name=openshift4/recert-rhel9
-            - release=4.19
+            - release=4.20
             - url=https://github.com/rh-ecosystem-edge/recert
             - vendor=Red Hat, Inc.
             - io.k8s.display-name=recert
