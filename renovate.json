@@ -1,27 +1,34 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "automergeStrategy": "rebase",
+    "automergeType": "pr",
     "docker": {
+        "autoApprove": true,
+        "automerge": true,
+        "enabled": true,
         "fileMatch": [
-            "\\.*Dockerfile$"
+            "\\.*Dockerfile\\.*"
         ],
+        "ignoreTests": false,
         "includePaths": [
             ".konflux/"
-        ]
+        ],
+        "platformAutomerge": true
     },
-    "extends": [
-        "https://github.com/konflux-ci/mintmaker/blob/main/config/renovate/renovate.json?raw=true"
-    ],
+    "prConcurrentLimit": 0,
     "pruneBranchAfterAutomerge": true,
-    "pruneStaleBranches": true,
-    "branchPrefix": "konflux/mintmaker/",
-    "additionalBranchPrefix": "{{baseBranch}}/",
     "tekton": {
+        "autoApprove": true,
         "automerge": true,
-        "automergeStrategy": "rebase",
-        "automergeType": "pr",
         "enabled": true,
+        "fileMatch": [
+            "\\.yaml$",
+            "\\.yml$"
+        ],
         "ignoreTests": false,
-        "platformAutomerge": true,
-        "schedule": ["at any time"]
+        "includePaths": [
+            ".tekton/**"
+        ],
+        "platformAutomerge": true
     }
 }
