@@ -14,7 +14,7 @@ RUN PKGS="rust-toolset protobuf-compiler" \
 RUN cargo build --release --bin recert
 
 # runtime stage
-FROM registry.redhat.io/rhel9-4-els/rhel-minimal:9.4@sha256:b2d72af9d23afa4bea51685a41d3ad3dbecdc2149cfadd2745436b7878c665e2 AS runtime-image
+FROM registry.redhat.io/rhel9-4-els/rhel-minimal:9.4@sha256:65e57c845402711c5515af0989a2c3c69bf4066396008efd8002be0790fee6c3 AS runtime-image
 
 RUN PKGS="openssh-clients" \
     && microdnf install -y $PKGS \
