@@ -16,7 +16,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/openshift/api v0.0.0-20231218131639-7a5aa77cc72d // indirect
-	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
