@@ -3,7 +3,7 @@ module github.com/rh-ecosystem-edge/recert/assets/sync
 go 1.22.1
 
 require (
-	github.com/openshift/library-go v0.0.0-20240305144041-18ee8279b4e3
+	github.com/openshift/library-go ac3ba9eb16a2
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 )
