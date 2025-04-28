@@ -2,19 +2,39 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "automergeStrategy": "rebase",
     "automergeType": "pr",
-    "docker": {
-        "autoApprove": true,
-        "automerge": true,
-        "enabled": true,
-        "fileMatch": [
-            "\\.*Dockerfile\\.*"
-        ],
-        "ignoreTests": false,
-        "includePaths": [
-            ".konflux/"
-        ],
-        "platformAutomerge": true
+    "customManagers": [
+        {
+            "customType": "regex",
+            "datasourceTemplate": "docker",
+            "fileMatch": [
+                "\\.conf$",
+                "\\.yaml$",
+                "\\.yml$"
+            ],
+            "matchStrings": [
+                "(?<depName>[\\w\\-\\.\\/]+):?(?<currentValue>[\\w\\-\\.]+)?@(?<currentDigest>sha256:[a-f0-9]+)"
+            ],
+            "versioningTemplate": "docker"
+        }
+    ],
+    "gomod": {
+        "enabled": false
     },
+    "packageRules": [
+        {
+            "autoApprove": true,
+            "automerge": true,
+            "enabled": true,
+            "ignoreTests": false,
+            "matchManagers": [
+                "custom.regex"
+            ],
+            "includePaths": [
+                ".konflux/**"
+            ],
+            "platformAutomerge": true
+        }
+    ],
     "prConcurrentLimit": 0,
     "pruneBranchAfterAutomerge": true,
     "tekton": {
