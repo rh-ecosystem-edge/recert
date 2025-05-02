@@ -102,6 +102,13 @@ arches:
     name: openssl
     evr: 1:3.0.7-28.el9_4
     sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/o/openssl-libs-3.0.7-28.el9_4.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 1986963
+    checksum: sha256:9f5939d641e236dae1c75ba05395f3fa644dddc3ba74a58a729e3c2384c86c1b
+    name: openssl-libs
+    evr: 1:3.0.7-28.el9_4
+    sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/p/pam-1.5.1-19.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-baseos-rpms
     size: 646595
