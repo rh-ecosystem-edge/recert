@@ -169,7 +169,7 @@ spec:
           - name: name
             value: generate-labels
           - name: bundle
-            value: quay.io/konflux-ci/tekton-catalog/task-generate-labels:0.1@sha256:f6a21b9b81739ea856f0e27eb0b0eeae3b975f674b8f5c447c3bf03966f753fe
+            value: quay.io/konflux-ci/tekton-catalog/task-generate-labels:0.1@sha256:9eee1af1686908b55e13f10bcd91c646cd8f54d8bd3700a5e2028e9f579545fc
           - name: kind
             value: task
         resolver: bundles
