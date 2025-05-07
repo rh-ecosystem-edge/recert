@@ -8,7 +8,28 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch == 'release-4.19'
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "pull_request" && 
+      target_branch == "release-4.19" && 
+      (
+        '.tekton/build-pipeline.yaml'.pathChanged() ||
+        'etcddump/***'.pathChanged() ||
+        'hack/***'.pathChanged() ||
+        'ouger/***'.pathChanged() ||
+        'src/***'.pathChanged() ||
+        'vendor/***'.pathChanged() ||
+        'build.rs'.pathChanged() ||
+        'Cargo.lock'.pathChanged() ||
+        'Cargo.toml'.pathChanged() ||
+        'ownership.sh'.pathChanged() ||
+        'reproto'.pathChanged() ||
+        'run_seed'.pathChanged() ||
+        'vendor.sh'.pathChanged() ||
+        '.tekton/recert-4-19-pull-request.yaml'.pathChanged() ||
+        '.konflux/Dockerfile'.pathChanged() || 
+        '.konflux/lock-build/***'.pathChanged() ||
+        '.konflux/lock-runtime/***'.pathChanged()
+      )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: lifecycle-agent-4-19
