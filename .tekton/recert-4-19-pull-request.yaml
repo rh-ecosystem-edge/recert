@@ -8,28 +8,14 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "pull_request" && 
-      target_branch == "release-4.19" && 
-      (
-        '.tekton/build-pipeline.yaml'.pathChanged() ||
-        'etcddump/***'.pathChanged() ||
-        'hack/***'.pathChanged() ||
-        'ouger/***'.pathChanged() ||
-        'src/***'.pathChanged() ||
-        'vendor/***'.pathChanged() ||
-        'build.rs'.pathChanged() ||
-        'Cargo.lock'.pathChanged() ||
-        'Cargo.toml'.pathChanged() ||
-        'ownership.sh'.pathChanged() ||
-        'reproto'.pathChanged() ||
-        'run_seed'.pathChanged() ||
-        'vendor.sh'.pathChanged() ||
-        '.tekton/recert-4-19-pull-request.yaml'.pathChanged() ||
-        '.konflux/Dockerfile'.pathChanged() || 
-        '.konflux/lock-build/***'.pathChanged() ||
-        '.konflux/lock-runtime/***'.pathChanged()
-      )
+    pipelinesascode.tekton.dev/on-cel-expression: "event == \"pull_request\" && \ntarget_branch
+      == \"release-4.19\" && \n(\n  '.tekton/build-pipeline.yaml'.pathChanged() ||\n
+      \ 'etcddump/***'.pathChanged() ||\n  'hack/***'.pathChanged() ||\n  'ouger/***'.pathChanged()
+      ||\n  'src/***'.pathChanged() ||\n  'vendor/***'.pathChanged() ||\n  'build.rs'.pathChanged()
+      ||\n  'Cargo.lock'.pathChanged() ||\n  'Cargo.toml'.pathChanged() ||\n  'ownership.sh'.pathChanged()
+      ||\n  'reproto'.pathChanged() ||\n  'run_seed'.pathChanged() ||\n  'vendor.sh'.pathChanged()
+      ||\n  '.tekton/recert-4-19-pull-request.yaml'.pathChanged() ||\n  '.konflux/Dockerfile'.pathChanged()
+      || \n  '.konflux/lock-build/***'.pathChanged() ||\n  '.konflux/lock-runtime/***'.pathChanged()\n)\n"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: lifecycle-agent-4-19
@@ -39,32 +25,34 @@ metadata:
   namespace: telco-5g-tenant
 spec:
   params:
-    - name: git-url
-      value: '{{source_url}}'
-    - name: revision
-      value: '{{revision}}'
-    - name: output-image
-      value: quay.io/redhat-user-workloads/telco-5g-tenant/recert-4-19:on-pr-{{revision}}
-    - name: image-expires-after
-      value: 5d
-    - name: build-platforms
-      value:
-        - linux/x86_64
-    - name: dockerfile
-      value: .konflux/Dockerfile
-    - name: hermetic
-      value: "true"
-    - name: prefetch-input
-      value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path": ".konflux/lock-runtime"}]'
-    - name: dev-package-managers
-      value: true
-    - name: build-source-image
-      value: "true"
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/redhat-user-workloads/telco-5g-tenant/recert-4-19:on-pr-{{revision}}
+  - name: image-expires-after
+    value: 5d
+  - name: build-platforms
+    value:
+    - linux/x86_64
+  - name: dockerfile
+    value: .konflux/Dockerfile
+  - name: hermetic
+    value: "true"
+  - name: prefetch-input
+    value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path":
+      ".konflux/lock-runtime"}]'
+  - name: dev-package-managers
+    value: "true"
+  - name: build-source-image
+    value: "true"
   pipelineRef:
     name: build-pipeline
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-recert-4-19
   workspaces:
-    - name: git-auth
-      secret:
-        secretName: '{{ git_auth_secret }}'
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
 status: {}
