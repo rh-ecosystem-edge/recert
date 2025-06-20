@@ -1,4 +1,5 @@
-FROM rust:1 AS chef
+# The rust version is pinned to prevent unexpected breakages due to rust changes.
+FROM rust:1.87 AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
 
