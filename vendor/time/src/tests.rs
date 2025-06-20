@@ -25,6 +25,7 @@
 //! This module should only be used when it is not possible to test the implementation in a
 //! reasonable manner externally.
 
+use std::format;
 use std::num::NonZeroU8;
 
 use crate::ext::DigitCount;
@@ -96,10 +97,8 @@ fn clone() {
 
 #[test]
 fn parsing_internals() {
-    assert!(
-        parsing::ParsedItem(b"", ())
-            .flat_map(|_| None::<()>)
-            .is_none()
-    );
+    assert!(parsing::ParsedItem(b"", ())
+        .flat_map(|_| None::<()>)
+        .is_none());
     assert!(<NonZeroU8 as Integer>::parse_bytes(b"256").is_none());
 }

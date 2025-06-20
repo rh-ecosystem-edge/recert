@@ -1,5 +1,6 @@
 use std::iter::Peekable;
 
+use num_conv::Truncate;
 use proc_macro::{token_stream, TokenTree};
 use time_core::util::{days_in_year, weeks_in_year};
 
@@ -80,7 +81,6 @@ pub(crate) fn parse(chars: &mut Peekable<token_stream::IntoIter>) -> Result<Date
         consume_number::<u16>("month or ordinal", chars)?;
 
     // year-month-day
-    #[allow(clippy::branches_sharing_code)] // clarity
     if consume_punct('-', chars).is_ok() {
         let (month_span, month) = (month_or_ordinal_span, month_or_ordinal);
         let (day_span, day) = consume_number::<u8>("day", chars)?;
@@ -93,7 +93,7 @@ pub(crate) fn parse(chars: &mut Peekable<token_stream::IntoIter>) -> Result<Date
                 span_end: Some(month_span),
             });
         }
-        let month = month as _;
+        let month = month.truncate();
         if day == 0 || day > days_in_year_month(year, month) {
             return Err(Error::InvalidComponent {
                 name: "day",

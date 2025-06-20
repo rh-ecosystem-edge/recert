@@ -102,7 +102,7 @@ impl Item<'_> {
     }
 }
 
-impl<'a> TryFrom<Item<'a>> for crate::format_description::FormatItem<'a> {
+impl<'a> TryFrom<Item<'a>> for crate::format_description::BorrowedFormatItem<'a> {
     type Error = Error;
 
     fn try_from(item: Item<'a>) -> Result<Self, Self::Error> {
@@ -116,7 +116,7 @@ impl<'a> TryFrom<Item<'a>> for crate::format_description::FormatItem<'a> {
                 public: crate::error::InvalidFormatDescription::NotSupported {
                     what: "optional item",
                     context: "runtime-parsed format descriptions",
-                    index: span.start.byte as _,
+                    index: span.start.byte as usize,
                 },
             }),
             Item::First { value: _, span } => Err(Error {
@@ -126,7 +126,7 @@ impl<'a> TryFrom<Item<'a>> for crate::format_description::FormatItem<'a> {
                 public: crate::error::InvalidFormatDescription::NotSupported {
                     what: "'first' item",
                     context: "runtime-parsed format descriptions",
-                    index: span.start.byte as _,
+                    index: span.start.byte as usize,
                 },
             }),
         }
@@ -149,14 +149,9 @@ impl From<Item<'_>> for crate::format_description::OwnedFormatItem {
 impl<'a> From<Box<[Item<'a>]>> for crate::format_description::OwnedFormatItem {
     fn from(items: Box<[Item<'a>]>) -> Self {
         let items = items.into_vec();
-        if items.len() == 1 {
-            if let Ok([item]) = <[_; 1]>::try_from(items) {
-                item.into()
-            } else {
-                bug!("the length was just checked to be 1")
-            }
-        } else {
-            Self::Compound(items.into_iter().map(Self::from).collect())
+        match <[_; 1]>::try_from(items) {
+            Ok([item]) => item.into(),
+            Err(vec) => Self::Compound(vec.into_iter().map(Into::into).collect()),
         }
     }
 }
@@ -212,7 +207,7 @@ macro_rules! component_definition {
                         _inner: unused(modifier.key.span.error("invalid modifier key")),
                         public: crate::error::InvalidFormatDescription::InvalidModifier {
                             value: String::from_utf8_lossy(*modifier.key).into_owned(),
-                            index: modifier.key.span.start.byte as _,
+                            index: modifier.key.span.start.byte as usize,
                         }
                     });
                 }
@@ -224,7 +219,7 @@ macro_rules! component_definition {
                             public:
                                 crate::error::InvalidFormatDescription::MissingRequiredModifier {
                                     name: $parse_field,
-                                    index: _component_span.start.byte as _,
+                                    index: _component_span.start.byte as usize,
                                 }
                         });
                     }
@@ -264,13 +259,13 @@ macro_rules! component_definition {
         ) -> Result<Component, Error> {
             $(#[allow(clippy::string_lit_as_bytes)]
             if name.eq_ignore_ascii_case($parse_variant.as_bytes()) {
-                return Ok(Component::$variant($variant::with_modifiers(&modifiers, name.span)?,));
+                return Ok(Component::$variant($variant::with_modifiers(&modifiers, name.span)?));
             })*
             Err(Error {
                 _inner: unused(name.span.error("invalid component")),
                 public: crate::error::InvalidFormatDescription::InvalidComponentName {
                     name: String::from_utf8_lossy(name).into_owned(),
-                    index: name.span.start.byte as _,
+                    index: name.span.start.byte as usize,
                 },
             })
         }
@@ -339,6 +334,7 @@ component_definition! {
         Year = "year" {
             padding = "padding": Option<Padding> => padding,
             repr = "repr": Option<YearRepr> => repr,
+            range = "range": Option<YearRange> => range,
             base = "base": Option<YearBase> => iso_week_based,
             sign_behavior = "sign": Option<SignBehavior> => sign_is_mandatory,
         },
@@ -406,7 +402,7 @@ macro_rules! modifier {
                     _inner: unused(value.span.error("invalid modifier value")),
                     public: crate::error::InvalidFormatDescription::InvalidModifier {
                         value: String::from_utf8_lossy(value).into_owned(),
-                        index: value.span.start.byte as _,
+                        index: value.span.start.byte as usize,
                     },
                 })
             }
@@ -526,7 +522,14 @@ modifier! {
     enum YearRepr {
         #[default]
         Full = b"full",
+        Century = b"century",
         LastTwo = b"last_two",
+    }
+
+    enum YearRange {
+        Standard = b"standard",
+        #[default]
+        Extended = b"extended",
     }
 }
 
@@ -540,7 +543,7 @@ fn parse_from_modifier_value<T: FromStr>(value: &Spanned<&[u8]>) -> Result<Optio
             _inner: unused(value.span.error("invalid modifier value")),
             public: crate::error::InvalidFormatDescription::InvalidModifier {
                 value: String::from_utf8_lossy(value).into_owned(),
-                index: value.span.start.byte as _,
+                index: value.span.start.byte as usize,
             },
         })
 }

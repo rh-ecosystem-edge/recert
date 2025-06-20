@@ -1,52 +1,19 @@
-#![cfg_attr(docs_rs, feature(doc_auto_cfg))]
-#![cfg_attr(not(feature = "std"), no_std)]
-#![deny(
-    anonymous_parameters,
-    clippy::all,
-    clippy::missing_safety_doc,
-    clippy::missing_safety_doc,
-    clippy::undocumented_unsafe_blocks,
-    illegal_floating_point_literal_pattern,
-    late_bound_lifetime_arguments,
-    patterns_in_fns_without_body,
-    rust_2018_idioms,
-    trivial_casts,
-    trivial_numeric_casts,
-    unreachable_pub,
-    unsafe_op_in_unsafe_fn,
-    unused_extern_crates
-)]
-#![warn(
-    clippy::dbg_macro,
-    clippy::decimal_literal_representation,
-    clippy::get_unwrap,
-    clippy::nursery,
-    clippy::pedantic,
-    clippy::todo,
-    clippy::unimplemented,
-    clippy::unwrap_used,
-    clippy::use_debug,
-    missing_copy_implementations,
-    missing_debug_implementations,
-    unused_qualifications,
-    variant_size_differences
-)]
-#![allow(
-    path_statements, // used for static assertions
-    clippy::inline_always,
-    clippy::missing_errors_doc,
-    clippy::must_use_candidate,
-    clippy::redundant_pub_crate,
-)]
+//! `deranged` is a proof-of-concept implementation of ranged integers.
+
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![no_std]
 #![doc(test(attr(deny(warnings))))]
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(all(feature = "alloc", any(feature = "serde", feature = "quickcheck")))]
+extern crate alloc;
 
 #[cfg(test)]
 mod tests;
 mod traits;
-
-#[cfg(feature = "alloc")]
-#[allow(unused_extern_crates)]
-extern crate alloc;
+mod unsafe_wrapper;
 
 use core::borrow::Borrow;
 use core::cmp::Ordering;
@@ -56,9 +23,60 @@ use core::str::FromStr;
 #[cfg(feature = "std")]
 use std::error::Error;
 
+/// A macro to define a ranged integer with an automatically computed inner type.
+///
+/// The minimum and maximum values are provided as integer literals, and the macro will compute an
+/// appropriate inner type to represent the range. This will be the smallest integer type that can
+/// store both the minimum and maximum values, with a preference for unsigned types if both are
+/// possible. To specifically request a signed or unsigned type, you can append a `i` or `u` suffix
+/// to either or both of the minimum and maximum values, respectively.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// int!(0, 100);  // RangedU8<0, 100>
+/// int!(0i, 100); // RangedI8<0, 100>
+/// int!(-5, 5);   // RangedI8<-5, 5>
+/// int!(-5u, 5);  // compile error (-5 cannot be unsigned)
+/// ```
+#[cfg(all(docsrs, feature = "macros"))]
+#[macro_export]
+macro_rules! int {
+    ($min:literal, $max:literal) => {};
+}
+
+/// A macro to define an optional ranged integer with an automatically computed inner type.
+///
+/// The minimum and maximum values are provided as integer literals, and the macro will compute an
+/// appropriate inner type to represent the range. This will be the smallest integer type that can
+/// store both the minimum and maximum values, with a preference for unsigned types if both are
+/// possible. To specifically request a signed or unsigned type, you can append a `i` or `u` suffix
+/// to either or both of the minimum and maximum values, respectively.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// opt_int!(0, 100);  // OptionRangedU8<0, 100>
+/// opt_int!(0i, 100); // OptionRangedI8<0, 100>
+/// opt_int!(-5, 5);   // OptionRangedI8<-5, 5>
+/// opt_int!(-5u, 5);  // compile error (-5 cannot be unsigned)
+/// ```
+#[cfg(all(docsrs, feature = "macros"))]
+#[macro_export]
+macro_rules! opt_int {
+    ($min:literal, $max:literal) => {};
+}
+
+#[cfg(all(not(docsrs), feature = "macros"))]
+pub use deranged_macros::int;
+#[cfg(all(not(docsrs), feature = "macros"))]
+pub use deranged_macros::opt_int;
 #[cfg(feature = "powerfmt")]
 use powerfmt::smart_display;
 
+use crate::unsafe_wrapper::Unsafe;
+
+/// The error type returned when a checked integral type conversion fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TryFromIntError;
 
@@ -71,8 +89,28 @@ impl fmt::Display for TryFromIntError {
 #[cfg(feature = "std")]
 impl Error for TryFromIntError {}
 
+/// An error which can be returned when parsing an integer.
+///
+/// This error is used as the error type for the `from_str_radix()` functions on ranged integer
+/// types, such as [`RangedI8::from_str_radix`].
+///
+/// # Potential causes
+///
+/// Among other causes, `ParseIntError` can be thrown because of leading or trailing whitespace
+/// in the string e.g., when it is obtained from the standard input.
+/// Using the [`str::trim()`] method ensures that no whitespace remains before parsing.
+///
+/// # Example
+///
+/// ```rust
+/// # use deranged::RangedI32;
+/// if let Err(e) = RangedI32::<0, 10>::from_str_radix("a12", 10) {
+///     println!("Failed conversion to RangedI32: {e}");
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseIntError {
+    #[allow(clippy::missing_docs_in_private_items)]
     kind: IntErrorKind,
 }
 
@@ -87,6 +125,7 @@ impl ParseIntError {
 }
 
 impl fmt::Display for ParseIntError {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             IntErrorKind::Empty => "cannot parse integer from empty string",
@@ -103,6 +142,7 @@ impl fmt::Display for ParseIntError {
 #[cfg(feature = "std")]
 impl Error for ParseIntError {}
 
+/// `?` for `Option` types, usable in `const` contexts.
 macro_rules! const_try_opt {
     ($e:expr) => {
         match $e {
@@ -112,11 +152,19 @@ macro_rules! const_try_opt {
     };
 }
 
+/// Output the given tokens if the type is signed, otherwise output nothing.
 macro_rules! if_signed {
     (true $($x:tt)*) => { $($x)*};
     (false $($x:tt)*) => {};
 }
 
+/// Output the given tokens if the type is unsigned, otherwise output nothing.
+macro_rules! if_unsigned {
+    (true $($x:tt)*) => {};
+    (false $($x:tt)*) => { $($x)* };
+}
+
+/// `"A"` if `true`, `"An"` if `false`.
 macro_rules! article {
     (true) => {
         "An"
@@ -126,6 +174,7 @@ macro_rules! article {
     };
 }
 
+/// `Option::unwrap_unchecked`, but usable in `const` contexts.
 macro_rules! unsafe_unwrap_unchecked {
     ($e:expr) => {{
         let opt = $e;
@@ -143,8 +192,9 @@ macro_rules! unsafe_unwrap_unchecked {
 /// # Safety
 ///
 /// `b` must be `true`.
+// TODO remove in favor of `core::hint::assert_unchecked` when MSRV is ≥1.81
 #[inline]
-const unsafe fn assume(b: bool) {
+const unsafe fn assert_unchecked(b: bool) {
     debug_assert!(b);
     if !b {
         // Safety: The caller must ensure that `b` is true.
@@ -152,6 +202,19 @@ const unsafe fn assume(b: bool) {
     }
 }
 
+/// Output the provided code if and only if the list does not include `rand_09`.
+#[allow(unused_macro_rules)]
+macro_rules! if_not_manual_rand_09 {
+    ([rand_09 $($rest:ident)*] $($output:tt)*) => {};
+    ([] $($output:tt)*) => {
+        $($output)*
+    };
+    ([$first:ident $($rest:ident)*] $($output:tt)*) => {
+        if_not_manual_rand_09!([$($rest)*] $($output)*);
+    };
+}
+
+/// Implement a ranged integer type.
 macro_rules! impl_ranged {
     ($(
         $type:ident {
@@ -160,164 +223,138 @@ macro_rules! impl_ranged {
             signed: $is_signed:ident
             unsigned: $unsigned_type:ident
             optional: $optional_type:ident
+            $(manual: [$($skips:ident)+])?
         }
     )*) => {$(
-        pub use $mod_name::{$type, $optional_type};
+        #[doc = concat!(
+            article!($is_signed),
+            " `",
+            stringify!($internal),
+            "` that is known to be in the range `MIN..=MAX`.",
+        )]
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Eq, Ord, Hash)]
+        pub struct $type<const MIN: $internal, const MAX: $internal>(
+            Unsafe<$internal>,
+        );
 
-        // Introduce the type in a module. This ensures that all accesses and mutations of the field
-        // have the necessary checks.
-        mod $mod_name {
-            #[doc = concat!(
-                article!($is_signed),
-                " `",
-                stringify!($internal),
-                "` that is known to be in the range `MIN..=MAX`.",
-            )]
-            #[repr(transparent)]
-            #[derive(Clone, Copy, Eq, Ord, Hash)]
-            pub struct $type<const MIN: $internal, const MAX: $internal>(
-                $internal,
-            );
+        #[doc = concat!(
+            "An optional `",
+            stringify!($type),
+            "`; similar to `Option<",
+            stringify!($type),
+            ">` with better optimization.",
+        )]
+        ///
+        #[doc = concat!(
+            "If `MIN` is [`",
+            stringify!($internal),
+            "::MIN`] _and_ `MAX` is [`",
+            stringify!($internal)
+            ,"::MAX`] then compilation will fail. This is because there is no way to represent \
+            the niche value.",
+        )]
+        ///
+        /// This type is useful when you need to store an optional ranged value in a struct, but
+        /// do not want the overhead of an `Option` type. This reduces the size of the struct
+        /// overall, and is particularly useful when you have a large number of optional fields.
+        /// Note that most operations must still be performed on the [`Option`] type, which is
+        #[doc = concat!("obtained with [`", stringify!($optional_type), "::get`].")]
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Eq, Hash)]
+        pub struct $optional_type<const MIN: $internal, const MAX: $internal>(
+            $internal,
+        );
 
-            #[doc = concat!(
-                "A `",
-                stringify!($type),
-                "` that is optional. Equivalent to [`Option<",
-                stringify!($type),
-                ">`] with niche value optimization.",
-            )]
-            ///
-            #[doc = concat!(
-                "If `MIN` is [`",
-                stringify!($internal),
-                "::MIN`] _and_ `MAX` is [`",
-                stringify!($internal)
-                ,"::MAX`] then compilation will fail. This is because there is no way to represent \
-                the niche value.",
-            )]
-            ///
-            /// This type is useful when you need to store an optional ranged value in a struct, but
-            /// do not want the overhead of an `Option` type. This reduces the size of the struct
-            /// overall, and is particularly useful when you have a large number of optional fields.
-            /// Note that most operations must still be performed on the [`Option`] type, which is
-            #[doc = concat!("obtained with [`", stringify!($optional_type), "::get`].")]
-            #[repr(transparent)]
-            #[derive(Clone, Copy, Eq, Hash)]
-            pub struct $optional_type<const MIN: $internal, const MAX: $internal>(
-                $internal,
-            );
-
-            impl<const MIN: $internal, const MAX: $internal> $type<MIN, MAX> {
-                /// Creates a ranged integer without checking the value.
-                ///
-                /// # Safety
-                ///
-                /// The value must be within the range `MIN..=MAX`.
-                #[inline(always)]
-                pub const unsafe fn new_unchecked(value: $internal) -> Self {
-                    <Self as $crate::traits::RangeIsValid>::ASSERT;
-                    // Safety: The caller must ensure that the value is in range.
-                    unsafe { $crate::assume(MIN <= value && value <= MAX) };
-                    Self(value)
-                }
-
-                /// Creates a ranged integer if the given value is in the range
-                /// `MIN..=MAX`.
-                #[inline(always)]
-                pub const fn new(value: $internal) -> Option<Self> {
-                    <Self as $crate::traits::RangeIsValid>::ASSERT;
-                    if value < MIN || value > MAX {
-                        None
-                    } else {
-                        Some(Self(value))
-                    }
-                }
-
-                /// Returns the value as a primitive type.
-                #[inline(always)]
-                pub const fn get(self) -> $internal {
-                    <Self as $crate::traits::RangeIsValid>::ASSERT;
-                    // Safety: A stored value is always in range.
-                    unsafe { $crate::assume(MIN <= self.0 && self.0 <= MAX) };
-                    self.0
-                }
-
-                #[inline(always)]
-                pub(crate) const fn get_ref(&self) -> &$internal {
-                    <Self as $crate::traits::RangeIsValid>::ASSERT;
-                    // Safety: A stored value is always in range.
-                    unsafe { $crate::assume(MIN <= self.0 && self.0 <= MAX) };
-                    &self.0
-                }
-            }
-
-            impl<const MIN: $internal, const MAX: $internal> $optional_type<MIN, MAX> {
-                /// The value used as the niche. Must not be in the range `MIN..=MAX`.
-                const NICHE: $internal = match (MIN, MAX) {
-                    ($internal::MIN, $internal::MAX) => panic!("type has no niche"),
-                    ($internal::MIN, _) => $internal::MAX,
-                    (_, _) => $internal::MIN,
-                };
-
-                /// An optional ranged value that is not present.
-                #[allow(non_upper_case_globals)]
-                pub const None: Self = Self(Self::NICHE);
-
-                /// Creates an optional ranged value that is present.
-                #[allow(non_snake_case)]
-                #[inline(always)]
-                pub const fn Some(value: $type<MIN, MAX>) -> Self {
-                    <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
-                    Self(value.get())
-                }
-
-                /// Returns the value as the standard library's [`Option`] type.
-                #[inline(always)]
-                pub const fn get(self) -> Option<$type<MIN, MAX>> {
-                    <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
-                    if self.0 == Self::NICHE {
-                        None
-                    } else {
-                        // Safety: A stored value that is not the niche is always in range.
-                        Some(unsafe { $type::new_unchecked(self.0) })
-                    }
-                }
-
-                /// Creates an optional ranged integer without checking the value.
-                ///
-                /// # Safety
-                ///
-                /// The value must be within the range `MIN..=MAX`. As the value used for niche
-                /// value optimization is unspecified, the provided value must not be the niche
-                /// value.
-                #[inline(always)]
-                pub const unsafe fn some_unchecked(value: $internal) -> Self {
-                    <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
-                    // Safety: The caller must ensure that the value is in range.
-                    unsafe { $crate::assume(MIN <= value && value <= MAX) };
-                    Self(value)
-                }
-
-                /// Obtain the inner value of the struct. This is useful for comparisons.
-                #[inline(always)]
-                pub(crate) const fn inner(self) -> $internal {
-                    <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
-                    self.0
-                }
+        impl $type<0, 0> {
+            #[doc = concat!("A ", stringify!($type), " that is always `VALUE`.")]
+            #[inline(always)]
+            pub const fn exact<const VALUE: $internal>() -> $type<VALUE, VALUE> {
+                // Safety: The value is the only one in range.
+                unsafe { $type::new_unchecked(VALUE) }
             }
         }
 
         impl<const MIN: $internal, const MAX: $internal> $type<MIN, MAX> {
             /// The smallest value that can be represented by this type.
             // Safety: `MIN` is in range by definition.
-            pub const MIN: Self = unsafe { Self::new_unchecked(MIN) };
+            pub const MIN: Self = Self::new_static::<MIN>();
 
             /// The largest value that can be represented by this type.
             // Safety: `MAX` is in range by definition.
-            pub const MAX: Self = unsafe { Self::new_unchecked(MAX) };
+            pub const MAX: Self = Self::new_static::<MAX>();
+
+            /// Creates a ranged integer without checking the value.
+            ///
+            /// # Safety
+            ///
+            /// The value must be within the range `MIN..=MAX`.
+            #[inline(always)]
+            pub const unsafe fn new_unchecked(value: $internal) -> Self {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                // Safety: The caller must ensure that the value is in range.
+                unsafe {
+                    $crate::assert_unchecked(MIN <= value && value <= MAX);
+                    Self(Unsafe::new(value))
+                }
+            }
+
+            /// Returns the value as a primitive type.
+            #[inline(always)]
+            pub const fn get(self) -> $internal {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                // Safety: A stored value is always in range.
+                unsafe { $crate::assert_unchecked(MIN <= *self.0.get() && *self.0.get() <= MAX) };
+                *self.0.get()
+            }
+
+            #[inline(always)]
+            pub(crate) const fn get_ref(&self) -> &$internal {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                let value = self.0.get();
+                // Safety: A stored value is always in range.
+                unsafe { $crate::assert_unchecked(MIN <= *value && *value <= MAX) };
+                value
+            }
+
+            /// Creates a ranged integer if the given value is in the range `MIN..=MAX`.
+            #[inline(always)]
+            pub const fn new(value: $internal) -> Option<Self> {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                if value < MIN || value > MAX {
+                    None
+                } else {
+                    // Safety: The value is in range.
+                    Some(unsafe { Self::new_unchecked(value) })
+                }
+            }
+
+            /// Creates a ranged integer with a statically known value. **Fails to compile** if the
+            /// value is not in range.
+            #[inline(always)]
+            pub const fn new_static<const VALUE: $internal>() -> Self {
+                <($type<MIN, VALUE>, $type<VALUE, MAX>) as $crate::traits::StaticIsValid>::ASSERT;
+                // Safety: The value is in range.
+                unsafe { Self::new_unchecked(VALUE) }
+            }
+
+            /// Creates a ranged integer with the given value, saturating if it is out of range.
+            #[inline]
+            pub const fn new_saturating(value: $internal) -> Self {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                if value < MIN {
+                    Self::MIN
+                } else if value > MAX {
+                    Self::MAX
+                } else {
+                    // Safety: The value is in range.
+                    unsafe { Self::new_unchecked(value) }
+                }
+            }
 
             /// Expand the range that the value may be in. **Fails to compile** if the new range is
             /// not a superset of the current range.
+            #[inline(always)]
             pub const fn expand<const NEW_MIN: $internal, const NEW_MAX: $internal>(
                 self,
             ) -> $type<NEW_MIN, NEW_MAX> {
@@ -332,6 +369,7 @@ macro_rules! impl_ranged {
             /// Attempt to narrow the range that the value may be in. Returns `None` if the value
             /// is outside the new range. **Fails to compile** if the new range is not a subset of
             /// the current range.
+            #[inline(always)]
             pub const fn narrow<
                 const NEW_MIN: $internal,
                 const NEW_MAX: $internal,
@@ -342,32 +380,6 @@ macro_rules! impl_ranged {
                     ::ASSERT;
                 $type::<NEW_MIN, NEW_MAX>::new(self.get())
             }
-
-
-            /// Creates a ranged integer with a statically known value. **Fails to compile** if the
-            /// value is not in range.
-            #[inline(always)]
-            pub const fn new_static<const VALUE: $internal>() -> Self {
-                <($type<MIN, VALUE>, $type<VALUE, MAX>) as $crate::traits::StaticIsValid>::ASSERT;
-                // Safety: The value is in range.
-                unsafe { Self::new_unchecked(VALUE) }
-            }
-
-            #[inline]
-            const fn new_saturating(value: $internal) -> Self {
-                <Self as $crate::traits::RangeIsValid>::ASSERT;
-                // Safety: The value is clamped to the range.
-                unsafe {
-                    Self::new_unchecked(if value < MIN {
-                        MIN
-                    } else if value > MAX {
-                        MAX
-                    } else {
-                        value
-                    })
-                }
-            }
-
 
             /// Converts a string slice in a given base to an integer.
             ///
@@ -545,6 +557,21 @@ macro_rules! impl_ranged {
                 }
             }
 
+            if_unsigned!($is_signed
+            /// Remainder. Computes `self % rhs`, statically guaranteeing that the returned value
+            /// is in range.
+            #[must_use = "this returns the result of the operation, without modifying the original"]
+            #[inline]
+            pub const fn rem<const RHS_VALUE: $internal>(
+                self,
+                rhs: $type<RHS_VALUE, RHS_VALUE>,
+            ) -> $type<0, RHS_VALUE> {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                // Safety: The result is guaranteed to be in range due to the nature of remainder on
+                // unsigned integers.
+                unsafe { $type::new_unchecked(self.get() % rhs.get()) }
+            });
+
             /// Checked integer remainder. Computes `self % rhs`, returning `None` if `rhs == 0` or
             /// if the resulting value is out of range.
             #[must_use = "this returns the result of the operation, without modifying the original"]
@@ -623,7 +650,7 @@ macro_rules! impl_ranged {
                 unsafe { Self::new_unchecked(unsafe_unwrap_unchecked!(self.get().checked_neg())) }
             }
 
-            /// Absolute value. Computes `self.neg()`, **failing to compile** if the result is not
+            /// Negation. Computes `self.neg()`, **failing to compile** if the result is not
             /// guaranteed to be in range.
             #[must_use = "this returns the result of the operation, without modifying the original"]
             #[inline(always)]
@@ -797,26 +824,18 @@ macro_rules! impl_ranged {
                 Self::new_saturating(self.get().saturating_pow(exp))
             }
 
-            /// Wrapping integer addition. Computes `self + rhs`, wrapping around the numeric
-            /// bounds.
+            /// Compute the `rem_euclid` of this type with its unsigned type equivalent
+            // Not public because it doesn't match stdlib's "method_unsigned implemented only for signed type" tradition.
+            // Also because this isn't implemented for normal types in std.
             #[must_use = "this returns the result of the operation, without modifying the original"]
             #[inline]
-            #[allow(trivial_casts, trivial_numeric_casts)] // needed since some casts have to send unsigned -> unsigned to handle signed -> unsigned
-            pub const fn wrapping_add(self, rhs: $internal) -> Self {
-                <Self as $crate::traits::RangeIsValid>::ASSERT;
-                // Forward to internal type's impl if same as type.
-                if MIN == $internal::MIN && MAX == $internal::MAX {
-                    // Safety: std's wrapping methods match ranged arithmetic when the range is the internal datatype's range.
-                    return unsafe { Self::new_unchecked(self.get().wrapping_add(rhs)) }
-                }
-
-                let inner = self.get();
-                // Won't overflow because of std impl forwarding.
-                let range_len = MAX.abs_diff(MIN) + 1;
-                // Calculate the offset with proper handling for negative rhs
+            #[allow(trivial_numeric_casts)] // needed since some casts have to send unsigned -> unsigned to handle signed -> unsigned
+            const fn rem_euclid_unsigned(
+                rhs: $internal,
+                range_len: $unsigned_type
+            ) -> $unsigned_type {
                 #[allow(unused_comparisons)]
-                // equivalent to `rem_euclid_unsigned()` if that method existed
-                let offset = if rhs >= 0 {
+                if rhs >= 0 {
                     (rhs as $unsigned_type) % range_len
                 } else {
                     // Let ux refer to an n bit unsigned and ix refer to an n bit signed integer.
@@ -830,7 +849,29 @@ macro_rules! impl_ranged {
                     // ux::MAX / 2 + 1 = 2^(n-1) so this subtraction will always be a >= 0 after subtraction
                     // Thus converting rhs signed negative to equivalent positive value in mod range_len arithmetic
                     ((($unsigned_type::MAX / range_len) * range_len) - (rhs_abs)) % range_len
-                };
+                }
+            }
+
+            /// Wrapping integer addition. Computes `self + rhs`, wrapping around the numeric
+            /// bounds.
+            #[must_use = "this returns the result of the operation, without modifying the original"]
+            #[inline]
+            #[allow(trivial_numeric_casts)] // needed since some casts have to send unsigned -> unsigned to handle signed -> unsigned
+            pub const fn wrapping_add(self, rhs: $internal) -> Self {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                // Forward to internal type's impl if same as type.
+                if MIN == $internal::MIN && MAX == $internal::MAX {
+                    // Safety: std's wrapping methods match ranged arithmetic when the range is the internal datatype's range.
+                    return unsafe { Self::new_unchecked(self.get().wrapping_add(rhs)) }
+                }
+
+                let inner = self.get();
+
+                // Won't overflow because of std impl forwarding.
+                let range_len = MAX.abs_diff(MIN) + 1;
+
+                // Calculate the offset with proper handling for negative rhs
+                let offset = Self::rem_euclid_unsigned(rhs, range_len);
 
                 let greater_vals = MAX.abs_diff(inner);
                 // No wrap
@@ -840,7 +881,7 @@ macro_rules! impl_ranged {
                     // if inner < 0: Same as >=0 with caveat:
                     // `(signed as unsigned).wrapping_add(unsigned) as signed` is the same as
                     // `signed::checked_add_unsigned(unsigned).unwrap()` or `wrapping_add_unsigned`
-                    // (the difference doesn't matter since it won't overflow the signed type),
+                    // (the difference doesn't matter since it won't overflow),
                     // but unsigned integers don't have either method so it won't compile that way.
                     unsafe { Self::new_unchecked(
                         ((inner as $unsigned_type).wrapping_add(offset)) as $internal
@@ -850,12 +891,62 @@ macro_rules! impl_ranged {
                 else {
                     // Safety:
                     // - offset < range_len by rem_euclid (MIN + ... safe)
-                    // - offset > greater_values from if statement (offset - (greater_values + 1) safe)
+                    // - offset > greater_vals from if statement (offset - (greater_vals + 1) safe)
                     //
                     // again using `(signed as unsigned).wrapping_add(unsigned) as signed` = `checked_add_unsigned` trick
                     unsafe { Self::new_unchecked(
                         ((MIN as $unsigned_type).wrapping_add(
-                            offset - ((greater_vals + 1))
+                            offset - (greater_vals + 1)
+                        )) as $internal
+                    ) }
+                }
+            }
+
+            /// Wrapping integer subtraction. Computes `self - rhs`, wrapping around the numeric
+            /// bounds.
+            #[must_use = "this returns the result of the operation, without modifying the original"]
+            #[inline]
+            #[allow(trivial_numeric_casts)] // needed since some casts have to send unsigned -> unsigned to handle signed -> unsigned
+            pub const fn wrapping_sub(self, rhs: $internal) -> Self {
+                <Self as $crate::traits::RangeIsValid>::ASSERT;
+                // Forward to internal type's impl if same as type.
+                if MIN == $internal::MIN && MAX == $internal::MAX {
+                    // Safety: std's wrapping methods match ranged arithmetic when the range is the internal datatype's range.
+                    return unsafe { Self::new_unchecked(self.get().wrapping_sub(rhs)) }
+                }
+
+                let inner = self.get();
+
+                // Won't overflow because of std impl forwarding.
+                let range_len = MAX.abs_diff(MIN) + 1;
+
+                // Calculate the offset with proper handling for negative rhs
+                let offset = Self::rem_euclid_unsigned(rhs, range_len);
+
+                let lesser_vals = MIN.abs_diff(inner);
+                // No wrap
+                if offset <= lesser_vals {
+                    // Safety:
+                    // if inner >= 0 -> No overflow beyond range (offset <= greater_vals)
+                    // if inner < 0: Same as >=0 with caveat:
+                    // `(signed as unsigned).wrapping_sub(unsigned) as signed` is the same as
+                    // `signed::checked_sub_unsigned(unsigned).unwrap()` or `wrapping_sub_unsigned`
+                    // (the difference doesn't matter since it won't overflow below 0),
+                    // but unsigned integers don't have either method so it won't compile that way.
+                    unsafe { Self::new_unchecked(
+                        ((inner as $unsigned_type).wrapping_sub(offset)) as $internal
+                    ) }
+                }
+                // Wrap
+                else {
+                    // Safety:
+                    // - offset < range_len by rem_euclid (MAX - ... safe)
+                    // - offset > lesser_vals from if statement (offset - (lesser_vals + 1) safe)
+                    //
+                    // again using `(signed as unsigned).wrapping_sub(unsigned) as signed` = `checked_sub_unsigned` trick
+                    unsafe { Self::new_unchecked(
+                        ((MAX as $unsigned_type).wrapping_sub(
+                            offset - (lesser_vals + 1)
                         )) as $internal
                     ) }
                 }
@@ -863,6 +954,60 @@ macro_rules! impl_ranged {
         }
 
         impl<const MIN: $internal, const MAX: $internal> $optional_type<MIN, MAX> {
+            /// The value used as the niche. Must not be in the range `MIN..=MAX`.
+            const NICHE: $internal = match (MIN, MAX) {
+                ($internal::MIN, $internal::MAX) => panic!("type has no niche"),
+                ($internal::MIN, _) => $internal::MAX,
+                (_, _) => $internal::MIN,
+            };
+
+            /// An optional ranged value that is not present.
+            #[allow(non_upper_case_globals)]
+            pub const None: Self = Self(Self::NICHE);
+
+            /// Creates an optional ranged value that is present.
+            #[allow(non_snake_case)]
+            #[inline(always)]
+            pub const fn Some(value: $type<MIN, MAX>) -> Self {
+                <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                Self(value.get())
+            }
+
+            /// Returns the value as the standard library's [`Option`] type.
+            #[inline(always)]
+            pub const fn get(self) -> Option<$type<MIN, MAX>> {
+                <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                if self.0 == Self::NICHE {
+                    None
+                } else {
+                    // Safety: A stored value that is not the niche is always in range.
+                    Some(unsafe { $type::new_unchecked(self.0) })
+                }
+            }
+
+            /// Creates an optional ranged integer without checking the value.
+            ///
+            /// # Safety
+            ///
+            /// The value must be within the range `MIN..=MAX`. As the value used for niche
+            /// value optimization is unspecified, the provided value must not be the niche
+            /// value.
+            #[inline(always)]
+            pub const unsafe fn some_unchecked(value: $internal) -> Self {
+                <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                // Safety: The caller must ensure that the value is in range.
+                unsafe { $crate::assert_unchecked(MIN <= value && value <= MAX) };
+                Self(value)
+            }
+
+            /// Obtain the inner value of the struct. This is useful for comparisons.
+            #[inline(always)]
+            pub(crate) const fn inner(self) -> $internal {
+                <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                self.0
+            }
+
+            /// Obtain the value of the struct as an `Option` of the primitive type.
             #[inline(always)]
             pub const fn get_primitive(self) -> Option<$internal> {
                 <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
@@ -871,14 +1016,14 @@ macro_rules! impl_ranged {
 
             /// Returns `true` if the value is the niche value.
             #[inline(always)]
-            pub const fn is_none(self) -> bool {
+            pub const fn is_none(&self) -> bool {
                 <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
                 self.get().is_none()
             }
 
             /// Returns `true` if the value is not the niche value.
             #[inline(always)]
-            pub const fn is_some(self) -> bool {
+            pub const fn is_some(&self) -> bool {
                 <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
                 self.get().is_some()
             }
@@ -1197,10 +1342,10 @@ macro_rules! impl_ranged {
                 let internal = <$internal>::deserialize(deserializer)?;
                 Self::new(internal).ok_or_else(|| <D::Error as serde::de::Error>::invalid_value(
                     serde::de::Unexpected::Other("integer"),
-                    #[cfg(feature = "std")] {
-                        &format!("an integer in the range {}..={}", MIN, MAX).as_ref()
+                    #[cfg(feature = "alloc")] {
+                        &alloc::format!("an integer in the range {}..={}", MIN, MAX).as_ref()
                     },
-                    #[cfg(not(feature = "std"))] {
+                    #[cfg(not(feature = "alloc"))] {
                         &"an integer in the valid range"
                     }
                 ))
@@ -1220,28 +1365,60 @@ macro_rules! impl_ranged {
             }
         }
 
-        #[cfg(feature = "rand")]
+        #[cfg(feature = "rand08")]
         impl<
             const MIN: $internal,
             const MAX: $internal,
-        > rand::distributions::Distribution<$type<MIN, MAX>> for rand::distributions::Standard {
+        > rand08::distributions::Distribution<$type<MIN, MAX>> for rand08::distributions::Standard {
             #[inline]
-            fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $type<MIN, MAX> {
+            fn sample<R: rand08::Rng + ?Sized>(&self, rng: &mut R) -> $type<MIN, MAX> {
                 <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
                 $type::new(rng.gen_range(MIN..=MAX)).expect("rand failed to generate a valid value")
             }
         }
 
-        #[cfg(feature = "rand")]
+        if_not_manual_rand_09! {
+            [$($($skips)+)?]
+            #[cfg(feature = "rand09")]
+            impl<
+                const MIN: $internal,
+                const MAX: $internal,
+            > rand09::distr::Distribution<$type<MIN, MAX>> for rand09::distr::StandardUniform {
+                #[inline]
+                fn sample<R: rand09::Rng + ?Sized>(&self, rng: &mut R) -> $type<MIN, MAX> {
+                    <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                    $type::new(rng.random_range(MIN..=MAX)).expect("rand failed to generate a valid value")
+                }
+            }
+        }
+
+        #[cfg(feature = "rand08")]
         impl<
             const MIN: $internal,
             const MAX: $internal,
-        > rand::distributions::Distribution<$optional_type<MIN, MAX>>
-        for rand::distributions::Standard {
+        > rand08::distributions::Distribution<$optional_type<MIN, MAX>>
+        for rand08::distributions::Standard {
             #[inline]
-            fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> $optional_type<MIN, MAX> {
+            fn sample<R: rand08::Rng + ?Sized>(&self, rng: &mut R) -> $optional_type<MIN, MAX> {
                 <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
-                rng.gen::<Option<$type<MIN, MAX>>>().into()
+                rng.r#gen::<Option<$type<MIN, MAX>>>().into()
+            }
+        }
+
+        #[cfg(feature = "rand09")]
+        impl<
+            const MIN: $internal,
+            const MAX: $internal,
+        > rand09::distr::Distribution<$optional_type<MIN, MAX>>
+        for rand09::distr::StandardUniform {
+            #[inline]
+            fn sample<R: rand09::Rng + ?Sized>(&self, rng: &mut R) -> $optional_type<MIN, MAX> {
+                <$type<MIN, MAX> as $crate::traits::RangeIsValid>::ASSERT;
+                if rng.random() {
+                    $optional_type::None
+                } else {
+                    $optional_type::Some(rng.random::<$type<MIN, MAX>>())
+                }
             }
         }
 
@@ -1342,6 +1519,7 @@ impl_ranged! {
         signed: false
         unsigned: usize
         optional: OptionRangedUsize
+        manual: [rand_09]
     }
     RangedI8 {
         mod_name: ranged_i8
@@ -1384,5 +1562,56 @@ impl_ranged! {
         signed: true
         unsigned: usize
         optional: OptionRangedIsize
+        manual: [rand_09]
+    }
+}
+
+#[cfg(feature = "rand09")]
+impl<const MIN: usize, const MAX: usize> rand09::distr::Distribution<RangedUsize<MIN, MAX>>
+    for rand09::distr::StandardUniform
+{
+    #[inline]
+    fn sample<R: rand09::Rng + ?Sized>(&self, rng: &mut R) -> RangedUsize<MIN, MAX> {
+        <RangedUsize<MIN, MAX> as traits::RangeIsValid>::ASSERT;
+
+        #[cfg(target_pointer_width = "16")]
+        let value = rng.random_range(MIN as u16..=MAX as u16) as usize;
+        #[cfg(target_pointer_width = "32")]
+        let value = rng.random_range(MIN as u32..=MAX as u32) as usize;
+        #[cfg(target_pointer_width = "64")]
+        let value = rng.random_range(MIN as u64..=MAX as u64) as usize;
+        #[cfg(not(any(
+            target_pointer_width = "16",
+            target_pointer_width = "32",
+            target_pointer_width = "64"
+        )))]
+        compile_error("platform has unusual (and unsupported) pointer width");
+
+        RangedUsize::new(value).expect("rand failed to generate a valid value")
+    }
+}
+
+#[cfg(feature = "rand09")]
+impl<const MIN: isize, const MAX: isize> rand09::distr::Distribution<RangedIsize<MIN, MAX>>
+    for rand09::distr::StandardUniform
+{
+    #[inline]
+    fn sample<R: rand09::Rng + ?Sized>(&self, rng: &mut R) -> RangedIsize<MIN, MAX> {
+        <RangedIsize<MIN, MAX> as traits::RangeIsValid>::ASSERT;
+
+        #[cfg(target_pointer_width = "16")]
+        let value = rng.random_range(MIN as i16..=MAX as i16) as isize;
+        #[cfg(target_pointer_width = "32")]
+        let value = rng.random_range(MIN as i32..=MAX as i32) as isize;
+        #[cfg(target_pointer_width = "64")]
+        let value = rng.random_range(MIN as i64..=MAX as i64) as isize;
+        #[cfg(not(any(
+            target_pointer_width = "16",
+            target_pointer_width = "32",
+            target_pointer_width = "64"
+        )))]
+        compile_error("platform has unusual (and unsupported) pointer width");
+
+        RangedIsize::new(value).expect("rand failed to generate a valid value")
     }
 }

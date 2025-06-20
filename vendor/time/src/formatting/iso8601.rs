@@ -2,6 +2,8 @@
 
 use std::io;
 
+use num_conv::prelude::*;
+
 use crate::convert::*;
 use crate::format_description::well_known::iso8601::{
     DateKind, EncodedConfig, OffsetPrecision, TimePrecision,
@@ -12,7 +14,7 @@ use crate::{error, Date, Time, UtcOffset};
 
 /// Format the date portion of ISO 8601.
 pub(super) fn format_date<const CONFIG: EncodedConfig>(
-    output: &mut impl io::Write,
+    output: &mut (impl io::Write + ?Sized),
     date: Date,
 ) -> Result<usize, error::Format> {
     let mut bytes = 0;
@@ -26,10 +28,10 @@ pub(super) fn format_date<const CONFIG: EncodedConfig>(
             } else if !(0..=9999).contains(&year) {
                 return Err(error::Format::InvalidComponent("year"));
             } else {
-                bytes += format_number_pad_zero::<4>(output, year as u32)?;
+                bytes += format_number_pad_zero::<4>(output, year.cast_unsigned())?;
             }
             bytes += write_if(output, Iso8601::<CONFIG>::USE_SEPARATORS, b"-")?;
-            bytes += format_number_pad_zero::<2>(output, month as u8)?;
+            bytes += format_number_pad_zero::<2>(output, u8::from(month))?;
             bytes += write_if(output, Iso8601::<CONFIG>::USE_SEPARATORS, b"-")?;
             bytes += format_number_pad_zero::<2>(output, day)?;
         }
@@ -41,7 +43,7 @@ pub(super) fn format_date<const CONFIG: EncodedConfig>(
             } else if !(0..=9999).contains(&year) {
                 return Err(error::Format::InvalidComponent("year"));
             } else {
-                bytes += format_number_pad_zero::<4>(output, year as u32)?;
+                bytes += format_number_pad_zero::<4>(output, year.cast_unsigned())?;
             }
             bytes += write_if_else(output, Iso8601::<CONFIG>::USE_SEPARATORS, b"-W", b"W")?;
             bytes += format_number_pad_zero::<2>(output, week)?;
@@ -56,7 +58,7 @@ pub(super) fn format_date<const CONFIG: EncodedConfig>(
             } else if !(0..=9999).contains(&year) {
                 return Err(error::Format::InvalidComponent("year"));
             } else {
-                bytes += format_number_pad_zero::<4>(output, year as u32)?;
+                bytes += format_number_pad_zero::<4>(output, year.cast_unsigned())?;
             }
             bytes += write_if(output, Iso8601::<CONFIG>::USE_SEPARATORS, b"-")?;
             bytes += format_number_pad_zero::<3>(output, day)?;
@@ -68,7 +70,7 @@ pub(super) fn format_date<const CONFIG: EncodedConfig>(
 
 /// Format the time portion of ISO 8601.
 pub(super) fn format_time<const CONFIG: EncodedConfig>(
-    output: &mut impl io::Write,
+    output: &mut (impl io::Write + ?Sized),
     time: Time,
 ) -> Result<usize, error::Format> {
     let mut bytes = 0;
@@ -113,7 +115,7 @@ pub(super) fn format_time<const CONFIG: EncodedConfig>(
 
 /// Format the UTC offset portion of ISO 8601.
 pub(super) fn format_offset<const CONFIG: EncodedConfig>(
-    output: &mut impl io::Write,
+    output: &mut (impl io::Write + ?Sized),
     offset: UtcOffset,
 ) -> Result<usize, error::Format> {
     if Iso8601::<CONFIG>::FORMAT_TIME && offset.is_utc() {

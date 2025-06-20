@@ -22,6 +22,8 @@ pub mod rfc3339;
 pub mod timestamp;
 mod visitor;
 
+#[cfg(feature = "serde-human-readable")]
+use alloc::string::ToString;
 use core::marker::PhantomData;
 
 #[cfg(feature = "serde-human-readable")]
@@ -51,7 +53,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 )]
 /// This puts a module named `mod_name` in the current scope that can be used to format `Date`
 /// structs. A submodule (`mod_name::option`) is also generated for `Option<Date>`. Both
-/// modules are only visible in the current scope.
+/// modules are only visible in the current scope by default. To increase visibility, you can
+/// specify `pub`, `pub(crate)`, or similar before the module name:
+/// `serde::format_description!(pub mod_name, Date, FORMAT)`.
 ///
 /// The returned `Option` will contain a deserialized value if present and `None` if the field
 /// is present but the value is `null` (or the equivalent in other formats). To return `None`
@@ -117,9 +121,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
     doc = "use ::serde::Deserialize;"
 )]
 /// use time::serde;
-/// use time::format_description::FormatItem;
+/// use time::format_description::BorrowedFormatItem;
 ///
-/// const DATE_TIME_FORMAT: &[FormatItem<'_>] = time::macros::format_description!(
+/// const DATE_TIME_FORMAT: &[BorrowedFormatItem<'_>] = time::macros::format_description!(
 ///     "hour=[hour], minute=[minute]"
 /// );
 ///
@@ -170,9 +174,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// use time::serde;
 /// use time::format_description::well_known::{iso8601, Iso8601};
 ///
+/// # #[allow(dead_code)]
 /// const CONFIG: iso8601::EncodedConfig = iso8601::Config::DEFAULT
 ///     .set_year_is_six_digits(false)
 ///     .encode();
+/// # #[allow(dead_code)]
 /// const FORMAT: Iso8601<CONFIG> = Iso8601::<CONFIG>;
 ///
 /// // Makes a module `mod my_format { ... }`.
@@ -201,23 +207,24 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// ```
 /// 
 /// [`format_description::parse()`]: crate::format_description::parse()
-#[cfg(all(feature = "macros", any(feature = "formatting", feature = "parsing"),))]
+#[cfg(all(feature = "macros", any(feature = "formatting", feature = "parsing")))]
 pub use time_macros::serde_format_description as format_description;
 
 use self::visitor::Visitor;
 #[cfg(feature = "parsing")]
-use crate::format_description::{modifier, Component, FormatItem};
-use crate::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset, Weekday};
+use crate::format_description::{modifier, BorrowedFormatItem, Component};
+use crate::{
+    Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcDateTime, UtcOffset, Weekday,
+};
 
-// region: Date
 /// The format used when serializing and deserializing a human-readable `Date`.
 #[cfg(feature = "parsing")]
-const DATE_FORMAT: &[FormatItem<'_>] = &[
-    FormatItem::Component(Component::Year(modifier::Year::default())),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Month(modifier::Month::default())),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Day(modifier::Day::default())),
+const DATE_FORMAT: &[BorrowedFormatItem<'_>] = &[
+    BorrowedFormatItem::Component(Component::Year(modifier::Year::default())),
+    BorrowedFormatItem::Literal(b"-"),
+    BorrowedFormatItem::Component(Component::Month(modifier::Month::default())),
+    BorrowedFormatItem::Literal(b"-"),
+    BorrowedFormatItem::Component(Component::Day(modifier::Day::default())),
 ];
 
 impl Serialize for Date {
@@ -243,17 +250,16 @@ impl<'a> Deserialize<'a> for Date {
         }
     }
 }
-// endregion date
 
-// region: Duration
 impl Serialize for Duration {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[cfg(feature = "serde-human-readable")]
         if serializer.is_human_readable() {
             return serializer.collect_str(&format_args!(
-                "{}.{:>09}",
-                self.whole_seconds(),
-                self.subsec_nanoseconds().abs()
+                "{}{}.{:>09}",
+                if self.is_negative() { "-" } else { "" },
+                self.whole_seconds().unsigned_abs(),
+                self.subsec_nanoseconds().abs(),
             ));
         }
 
@@ -270,17 +276,15 @@ impl<'a> Deserialize<'a> for Duration {
         }
     }
 }
-// endregion Duration
 
-// region: OffsetDateTime
 /// The format used when serializing and deserializing a human-readable `OffsetDateTime`.
 #[cfg(feature = "parsing")]
-const OFFSET_DATE_TIME_FORMAT: &[FormatItem<'_>] = &[
-    FormatItem::Compound(DATE_FORMAT),
-    FormatItem::Literal(b" "),
-    FormatItem::Compound(TIME_FORMAT),
-    FormatItem::Literal(b" "),
-    FormatItem::Compound(UTC_OFFSET_FORMAT),
+const OFFSET_DATE_TIME_FORMAT: &[BorrowedFormatItem<'_>] = &[
+    BorrowedFormatItem::Compound(DATE_FORMAT),
+    BorrowedFormatItem::Literal(b" "),
+    BorrowedFormatItem::Compound(TIME_FORMAT),
+    BorrowedFormatItem::Literal(b" "),
+    BorrowedFormatItem::Compound(UTC_OFFSET_FORMAT),
 ];
 
 impl Serialize for OffsetDateTime {
@@ -317,15 +321,13 @@ impl<'a> Deserialize<'a> for OffsetDateTime {
         }
     }
 }
-// endregion OffsetDateTime
 
-// region: PrimitiveDateTime
 /// The format used when serializing and deserializing a human-readable `PrimitiveDateTime`.
 #[cfg(feature = "parsing")]
-const PRIMITIVE_DATE_TIME_FORMAT: &[FormatItem<'_>] = &[
-    FormatItem::Compound(DATE_FORMAT),
-    FormatItem::Literal(b" "),
-    FormatItem::Compound(TIME_FORMAT),
+const PRIMITIVE_DATE_TIME_FORMAT: &[BorrowedFormatItem<'_>] = &[
+    BorrowedFormatItem::Compound(DATE_FORMAT),
+    BorrowedFormatItem::Literal(b" "),
+    BorrowedFormatItem::Compound(TIME_FORMAT),
 ];
 
 impl Serialize for PrimitiveDateTime {
@@ -359,19 +361,53 @@ impl<'a> Deserialize<'a> for PrimitiveDateTime {
         }
     }
 }
-// endregion PrimitiveDateTime
 
-// region: Time
+/// The format used when serializing and deserializing a human-readable `UtcDateTime`.
+#[cfg(feature = "parsing")]
+const UTC_DATE_TIME_FORMAT: &[BorrowedFormatItem<'_>] = PRIMITIVE_DATE_TIME_FORMAT;
+
+impl Serialize for UtcDateTime {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[cfg(feature = "serde-human-readable")]
+        if serializer.is_human_readable() {
+            let Ok(s) = self.format(&PRIMITIVE_DATE_TIME_FORMAT) else {
+                return Err(S::Error::custom("failed formatting `UtcDateTime`"));
+            };
+            return serializer.serialize_str(&s);
+        }
+
+        (
+            self.year(),
+            self.ordinal(),
+            self.hour(),
+            self.minute(),
+            self.second(),
+            self.nanosecond(),
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for UtcDateTime {
+    fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
+        if cfg!(feature = "serde-human-readable") && deserializer.is_human_readable() {
+            deserializer.deserialize_any(Visitor::<Self>(PhantomData))
+        } else {
+            deserializer.deserialize_tuple(6, Visitor::<Self>(PhantomData))
+        }
+    }
+}
+
 /// The format used when serializing and deserializing a human-readable `Time`.
 #[cfg(feature = "parsing")]
-const TIME_FORMAT: &[FormatItem<'_>] = &[
-    FormatItem::Component(Component::Hour(<modifier::Hour>::default())),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Minute(<modifier::Minute>::default())),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Second(<modifier::Second>::default())),
-    FormatItem::Literal(b"."),
-    FormatItem::Component(Component::Subsecond(<modifier::Subsecond>::default())),
+const TIME_FORMAT: &[BorrowedFormatItem<'_>] = &[
+    BorrowedFormatItem::Component(Component::Hour(modifier::Hour::default())),
+    BorrowedFormatItem::Literal(b":"),
+    BorrowedFormatItem::Component(Component::Minute(modifier::Minute::default())),
+    BorrowedFormatItem::Literal(b":"),
+    BorrowedFormatItem::Component(Component::Second(modifier::Second::default())),
+    BorrowedFormatItem::Literal(b"."),
+    BorrowedFormatItem::Component(Component::Subsecond(modifier::Subsecond::default())),
 ];
 
 impl Serialize for Time {
@@ -397,23 +433,28 @@ impl<'a> Deserialize<'a> for Time {
         }
     }
 }
-// endregion Time
 
-// region: UtcOffset
+// FIXME: turn these constants into `const { ... }` blocks once we can depend on Rust 1.79.
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_HOUR: modifier::OffsetHour = {
+    let mut m = modifier::OffsetHour::default();
+    m.sign_is_mandatory = true;
+    m
+};
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_MINUTE: modifier::OffsetMinute = modifier::OffsetMinute::default();
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_SECOND: modifier::OffsetSecond = modifier::OffsetSecond::default();
 /// The format used when serializing and deserializing a human-readable `UtcOffset`.
 #[cfg(feature = "parsing")]
-const UTC_OFFSET_FORMAT: &[FormatItem<'_>] = &[
-    FormatItem::Component(Component::OffsetHour({
-        let mut m = modifier::OffsetHour::default();
-        m.sign_is_mandatory = true;
-        m
-    })),
-    FormatItem::Optional(&FormatItem::Compound(&[
-        FormatItem::Literal(b":"),
-        FormatItem::Component(Component::OffsetMinute(modifier::OffsetMinute::default())),
-        FormatItem::Optional(&FormatItem::Compound(&[
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::OffsetSecond(modifier::OffsetSecond::default())),
+const UTC_OFFSET_FORMAT: &[BorrowedFormatItem<'_>] = &[
+    BorrowedFormatItem::Component(Component::OffsetHour(UTC_OFFSET_HOUR)),
+    BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[
+        BorrowedFormatItem::Literal(b":"),
+        BorrowedFormatItem::Component(Component::OffsetMinute(UTC_OFFSET_MINUTE)),
+        BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[
+            BorrowedFormatItem::Literal(b":"),
+            BorrowedFormatItem::Component(Component::OffsetSecond(UTC_OFFSET_SECOND)),
         ])),
     ])),
 ];
@@ -446,9 +487,7 @@ impl<'a> Deserialize<'a> for UtcOffset {
         }
     }
 }
-// endregion UtcOffset
 
-// region: Weekday
 impl Serialize for Weekday {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[cfg(feature = "serde-human-readable")]
@@ -471,9 +510,7 @@ impl<'a> Deserialize<'a> for Weekday {
         }
     }
 }
-// endregion Weekday
 
-// region: Month
 impl Serialize for Month {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[cfg(feature = "serde-human-readable")]
@@ -483,7 +520,7 @@ impl Serialize for Month {
             return self.to_string().serialize(serializer);
         }
 
-        (*self as u8).serialize(serializer)
+        u8::from(*self).serialize(serializer)
     }
 }
 
@@ -496,4 +533,3 @@ impl<'a> Deserialize<'a> for Month {
         }
     }
 }
-// endregion Month
