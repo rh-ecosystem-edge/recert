@@ -15,8 +15,8 @@ use crate::format_description::Component;
 pub enum BorrowedFormatItem<'a> {
     /// Bytes that are formatted as-is.
     ///
-    /// **Note**: If you call the `format` method that returns a `String`, these bytes will be
-    /// passed through `String::from_utf8_lossy`.
+    /// **Note**: These bytes **should** be UTF-8, but are not required to be. The value is passed
+    /// through `String::from_utf8_lossy` when necessary.
     Literal(&'a [u8]),
     /// A minimal representation of a single non-literal item.
     Component(Component),
