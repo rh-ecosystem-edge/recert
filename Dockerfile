@@ -1,6 +1,6 @@
 FROM rust:1 AS chef
 RUN cargo install cargo-chef
-WORKDIR app
+WORKDIR /app
 
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock .
@@ -22,7 +22,7 @@ COPY build.rs build.rs
 RUN cargo build --release --bin recert
 
 FROM docker.io/library/debian:bookworm AS runtime
-WORKDIR app
+WORKDIR /app
 RUN apt-get update
 RUN apt-get install -y openssl openssh-client
 COPY --from=builder /app/target/release/recert /usr/local/bin

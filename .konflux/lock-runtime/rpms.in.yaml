@@ -1,0 +1,15 @@
+contentOrigin:
+  repofiles:
+     # rhel9 rpm repos
+     - ./redhat.repo
+
+packages:
+  - openssh-clients
+
+arches:
+  - x86_64
+
+context:
+    containerfile:
+      file: ../Dockerfile
+      stageName: runtime-image
