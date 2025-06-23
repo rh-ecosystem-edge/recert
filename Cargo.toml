@@ -1,6 +1,12 @@
 [package]
 name = "recert"
-# we need to compile with a rust version that is compatible with rhel9
+# The rust-version field is an optional key that tells cargo what version of the Rust toolchain you support for your package (https://doc.rust-lang.org/cargo/reference/rust-version.html)
+# This is important for a few reasons:
+#   1. It affects the output of cargo lockfiles
+#       - https://github.com/rust-lang/cargo/pull/12861
+#       - https://github.com/rust-lang/cargo/issues/13503
+#   2. It affects what runtime version the compiled code is compatible with
+# This version should match what is available and used in the production runtime container (.konflux/Dockerfile)
 rust-version = "1.75"
 version = "0.1.0"
 edition = "2021"
