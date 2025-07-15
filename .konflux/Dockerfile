@@ -1,7 +1,7 @@
 # See README.Konflux.md before editing this Dockerfile
 
 # build stage
-FROM registry.redhat.io/rhel9-4-els/rhel:9.4@sha256:a1049231b7f6ddddf5f23e21c0064e96738f636bc4a5ae2e47d43e76f16fbcad AS build-image
+FROM registry.redhat.io/rhel9-4-els/rhel:9.4@sha256:0130cc72a664c7f1988ccb361130fd92e03672fdabbf77bbf0c4f9471025cc0b AS build-image
 
 WORKDIR /app
 
