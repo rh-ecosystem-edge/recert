@@ -12,7 +12,7 @@ konflux-filter-unused-redhat-repos: ## Filter unused repositories from redhat.re
 .PHONY: konflux-update-tekton-task-refs
 konflux-update-tekton-task-refs: ## Update task references in Tekton pipeline files
 	@echo "Updating task references in Tekton pipeline files..."
-	$(MAKE) -C $(ROOT_DIR)telco5g-konflux/scripts/tekton update-task-refs PIPELINE_FILES="$(ROOT_DIR).tekton/build-pipeline.yaml $(ROOT_DIR).tekton/recert-4-20-push.yaml $(ROOT_DIR).tekton/recert-4-20-pull-request.yaml"
+	$(MAKE) -C $(ROOT_DIR)telco5g-konflux/scripts/tekton update-task-refs PIPELINE_FILES="$(shell find $(ROOT_DIR).tekton -name '*.yaml' -not -name 'OWNERS' | tr '\n' ' ')"
 	@echo "Task references updated successfully."
 
 .PHONY: konflux-all
