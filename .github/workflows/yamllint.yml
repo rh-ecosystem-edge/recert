@@ -1,5 +1,5 @@
 ---
-name: Rust
+name: Yamllint
 
 on:  # yamllint disable-line rule:truthy
   push:
@@ -16,5 +16,5 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Run rust-ci job
-        run: make rust-ci
+      - name: Run yamllint
+        run: make yamllint
