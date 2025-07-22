@@ -42,7 +42,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) files: Vec<ConfigPath>,
     pub(crate) cluster_rename: Option<ClusterNamesRename>,
     pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
+    pub(crate) ip_addresses: Vec<String>,
     pub(crate) proxy: Option<Proxy>,
     pub(crate) install_config: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
@@ -50,7 +50,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) pull_secret: Option<String>,
     pub(crate) user_ca_bundle: Option<String>,
     pub(crate) proxy_trusted_ca_bundle: Option<ProxyAdditionalTrustBundle>,
-    pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) machine_network_cidrs: Vec<String>,
     pub(crate) chrony_config: Option<String>,
 }
 
@@ -155,12 +155,12 @@ impl RecertConfig {
                 files: vec![],
                 cluster_rename: None,
                 hostname: None,
-                ip: None,
+                ip_addresses: vec![],
                 kubeadmin_password_hash: None,
                 pull_secret: None,
                 proxy: None,
                 install_config: None,
-                machine_network_cidr: None,
+                machine_network_cidrs: vec![],
                 user_ca_bundle: None,
                 proxy_trusted_ca_bundle: None,
                 chrony_config: None,
@@ -222,9 +222,20 @@ impl RecertConfig {
             Some(value) => Some(value.as_str().context("hostname must be a string")?.to_string()),
             None => None,
         };
-        let ip = match value.remove("ip") {
-            Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
-            None => None,
+        let ip_addresses: Vec<String> = match value.remove("ip") {
+            Some(serde_json::Value::Array(array)) => {
+                ensure!(array.len() <= 2, "ip array must up to 2 elements");
+                array
+                    .iter()
+                    .map(|v| -> Result<String, anyhow::Error> { Ok(v.as_str().context("ip array element must be a string")?.to_string()) })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+            Some(serde_json::Value::String(single_ip)) => {
+                // Handle single IP for backward compatibility
+                vec![single_ip.to_string()]
+            }
+            None => vec![],
+            _ => anyhow::bail!("ip must be a string or an array of strings"),
         };
         let pull_secret = match value.remove("pull_secret") {
             Some(value) => Some(value.as_str().context("pull_secret must be a string")?.to_string()),
@@ -260,9 +271,24 @@ impl RecertConfig {
             ),
             None => None,
         };
-        let machine_network_cidr = match value.remove("machine_network_cidr") {
-            Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
-            None => None,
+        let machine_network_cidrs = match value.remove("machine_network_cidr") {
+            Some(serde_json::Value::Array(array)) => {
+                ensure!(array.len() <= 2, "machine_network_cidr array must up to 2 elements");
+                array
+                    .iter()
+                    .map(|v| -> Result<String, anyhow::Error> {
+                        Ok(v.as_str()
+                            .context("machine_network_cidr array element must be a string")?
+                            .to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+            Some(serde_json::Value::String(single_cidr)) => {
+                // Handle single CIDR for backward compatibility
+                vec![single_cidr.to_string()]
+            }
+            None => vec![],
+            _ => anyhow::bail!("machine_network_cidr must be a string or an array of strings"),
         };
         let chrony_config = match value.remove("chrony_config") {
             Some(value) => Some(value.as_str().context("chrony_config must be a string")?.to_string()),
@@ -338,14 +364,14 @@ impl RecertConfig {
             files: cluster_customization_files,
             cluster_rename,
             hostname,
-            ip,
+            ip_addresses,
             kubeadmin_password_hash: set_kubeadmin_password_hash,
             pull_secret,
             user_ca_bundle,
             proxy_trusted_ca_bundle,
             proxy,
             install_config,
-            machine_network_cidr,
+            machine_network_cidrs,
             chrony_config,
         };
 
@@ -429,14 +455,14 @@ impl RecertConfig {
                 },
                 cluster_rename: cli.cluster_rename,
                 hostname: cli.hostname,
-                ip: cli.ip,
+                ip_addresses: cli.ip,
                 proxy: cli.proxy,
                 install_config: cli.install_config,
                 kubeadmin_password_hash: cli.kubeadmin_password_hash,
                 pull_secret: cli.pull_secret,
                 user_ca_bundle: cli.user_ca_bundle,
                 proxy_trusted_ca_bundle: cli.proxy_trusted_ca_bundle,
-                machine_network_cidr: cli.machine_network_cidr,
+                machine_network_cidrs: cli.machine_network_cidr,
                 chrony_config: cli.chrony_config,
             },
             encryption_customizations: EncryptionCustomizations {

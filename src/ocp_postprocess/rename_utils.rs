@@ -36,9 +36,10 @@ pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &st
         })
         .join("\n");
 
-    if !found {
-        bail!("could not find line starting with KUBERNETES_SERVICE_HOST='api-int. in apiserver-url.env");
-    }
+    ensure!(
+        found,
+        "could not find line starting with KUBERNETES_SERVICE_HOST='api-int. in apiserver-url.env"
+    );
 
     Ok(format!("{new}\n"))
 }
@@ -245,9 +246,7 @@ pub(crate) async fn fix_kubeconfig(cluster_name: &str, cluster_domain: &str, kub
         .as_array_mut()
         .context("clusters not an array")?;
 
-    if clusters.is_empty() {
-        bail!("expected at least one cluster in kubeconfig");
-    }
+    ensure!(!clusters.is_empty(), "expected at least one cluster in kubeconfig");
 
     clusters.iter_mut().try_for_each(|cluster| {
         // Only the kubelet kubeconfig contains the cluster's name as a .clusters[].cluster.name,
@@ -348,9 +347,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
 
     containers
         .iter_mut()
@@ -362,9 +359,7 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
                 .as_array_mut()
                 .context("args not an array")?;
 
-            if args.is_empty() {
-                bail!("expected at least one arg in kube-controller-manager");
-            }
+            ensure!(!args.is_empty(), "expected at least one arg in kube-controller-manager");
 
             let arg = args
                 .iter_mut()
@@ -697,9 +692,7 @@ pub(crate) fn fix_pod_container_env(pod: &mut Value, domain: &str, container_nam
                 .as_array_mut()
                 .context("env not an array")?;
 
-            if env.is_empty() {
-                bail!("expected at least one env in container");
-            }
+            ensure!(!env.is_empty(), "expected at least one env in container");
 
             env.iter_mut()
                 .find_map(|var| (var.get("name")? == env_name).then_some(var))

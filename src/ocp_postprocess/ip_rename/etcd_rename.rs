@@ -6,10 +6,83 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv6Addr};
 use std::sync::Arc;
 
-pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<String> {
+fn is_ipv6(ip: &str) -> Result<bool> {
+    let addr = ip
+        .parse::<IpAddr>()
+        .with_context(|| format!("Failed to parse IP address: {}", ip))?;
+    Ok(addr.is_ipv6())
+}
+
+// Extract both original IPv4 and IPv6 IPs from dual-stack cluster node configuration
+pub(crate) async fn extract_original_ips(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
+    // Extract IPs from node addresses - works for both single-stack and dual-stack
+    extract_original_ips_from_nodes(etcd_client).await
+}
+
+// Extract original IPs from node configuration - returns 1 IP for single-stack, 2 for dual-stack
+async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
+    let node_keys = etcd_client.list_keys("minions").await?;
+
+    ensure!(
+        node_keys.len() == 1,
+        "Expected exactly one node in the cluster, found {}",
+        node_keys.len()
+    );
+
+    let node_key = &node_keys[0];
+
+    let etcd_result = etcd_client.get(node_key.clone()).await?.context("Failed to get node from etcd")?;
+
+    let node: Value = serde_yaml::from_slice(&etcd_result.value).context("Failed to deserialize node value")?;
+
+    let addresses = node
+        .pointer("/status/addresses")
+        .and_then(|a| a.as_array())
+        .context("Node does not have /status/addresses array")?;
+
+    let mut original_ipv4: Option<String> = None;
+    let mut original_ipv6: Option<String> = None;
+
+    for address in addresses {
+        if let (Some(addr_type), Some(addr_value)) = (
+            address.pointer("/type").and_then(|t| t.as_str()),
+            address.pointer("/address").and_then(|a| a.as_str()),
+        ) {
+            if addr_type == "InternalIP" {
+                if is_ipv6(addr_value)? {
+                    original_ipv6 = Some(addr_value.to_string());
+                } else {
+                    original_ipv4 = Some(addr_value.to_string());
+                }
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+
+    if let Some(ipv4) = original_ipv4 {
+        result.push(ipv4);
+    }
+
+    if let Some(ipv6) = original_ipv6 {
+        result.push(ipv6);
+    }
+
+    ensure!(!result.is_empty(), "No InternalIP addresses found in node configuration");
+
+    if result.len() == 1 {
+        log::info!("Found single-stack IP: {}", result[0]);
+    } else {
+        log::info!("Found dual-stack IPs - IPv4: {}, IPv6: {}", result[0], result[1]);
+    }
+
+    Ok(result)
+}
+
+pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(Some("openshift-apiserver"), "Configmap", "config", "v1");
 
     let mut configmap = get_etcd_json(etcd_client, &k8s_resource_location)
@@ -25,49 +98,68 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
     let mut config: Value = serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
         .context("deserializing config.yaml")?;
 
-    let original_ip = config
+    // Check if the current config contains the original IP before making changes
+    let current_url = config
         .pointer("/storageConfig/urls/0")
         .context("no /storageConfig/urls/0")?
         .as_str()
-        .context("/storageConfig/urls/0 not a string")?
-        .strip_prefix("https://")
-        .context("storageConfig/urls/0 not an https URL")?
-        .strip_suffix(":2379")
-        .context("storageConfig/urls/0 not an etcd URL")?
-        .to_string();
+        .context("/storageConfig/urls/0 not a string")?;
 
-    let original_ip = if original_ip.contains(':') {
-        original_ip
-            .strip_prefix('[')
-            .context("IP containing ':' does not contain prefix '['")?
-            .strip_suffix(']')
-            .context("IP containing ':' does not contain suffix ']'")?
-            .to_string()
+    let expected_original_url = if original_ip.contains(':') {
+        format!("https://[{}]:2379", original_ip)
     } else {
-        original_ip
+        format!("https://{}:2379", original_ip)
     };
 
-    fix_storage_config(&mut config, ip)?;
+    // Only replace if the original IP is found
+    if current_url == expected_original_url {
+        fix_storage_config(&mut config, original_ip, ip)?;
 
-    data.insert(
-        "config.yaml".to_string(),
-        serde_json::Value::String(serde_json::to_string(&config).context("serializing config.yaml")?),
-    );
+        data.insert(
+            "config.yaml".to_string(),
+            serde_json::Value::String(serde_json::to_string(&config).context("serializing config.yaml")?),
+        );
 
-    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+        put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+    } else {
+        log::info!(
+            "Original IP {} not found in openshift apiserver configmap, current URL is {}, skipping replacement",
+            original_ip,
+            current_url
+        );
+    }
 
-    Ok(original_ip)
+    Ok(())
 }
 
-fn fix_storage_config(config: &mut Value, ip: &str) -> Result<()> {
+fn fix_storage_config(config: &mut Value, original_ip: &str, ip: &str) -> Result<()> {
     let storage_config = config.pointer_mut("/storageConfig").context("storageConfig not found")?;
 
-    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+    let current_urls = storage_config
+        .pointer("/urls")
+        .and_then(|urls| urls.as_array())
+        .context("storageConfig/urls not found or not an array")?;
 
-    storage_config.as_object_mut().context("storageConfig not an object")?.insert(
-        "urls".to_string(),
-        serde_json::Value::Array(vec![serde_json::Value::String(format!("https://{ip}:2379"))]),
-    );
+    let original_ip_formatted = if original_ip.contains(':') {
+        format!("[{original_ip}]")
+    } else {
+        original_ip.to_string()
+    };
+    let expected_url = format!("https://{original_ip_formatted}:2379");
+
+    // Only replace if the original IP is found in the URLs
+    let contains_original = current_urls.iter().any(|url| url.as_str().map_or(false, |s| s == expected_url));
+
+    if contains_original {
+        let new_ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+        storage_config.as_object_mut().context("storageConfig not an object")?.insert(
+            "urls".to_string(),
+            serde_json::Value::Array(vec![serde_json::Value::String(format!("https://{new_ip}:2379"))]),
+        );
+    } else {
+        log::info!("Original IP {} not found in storage config URLs, skipping replacement", original_ip);
+    }
+
     Ok(())
 }
 
@@ -121,7 +213,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
     Ok(())
 }
 
-pub(crate) async fn fix_etcd_endpoints(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<()> {
+pub(crate) async fn fix_etcd_endpoints(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
     join_all(
         etcd_client
             .list_keys("configmaps/openshift-etcd/etcd-endpoints".to_string().as_str())
@@ -154,9 +246,19 @@ pub(crate) async fn fix_etcd_endpoints(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &
                 // Ensure above guarantees that this unwrap will never panic
                 #[allow(clippy::unwrap_used)]
                 let current_member_id = data.keys().next().unwrap().clone();
-                data[&current_member_id] = serde_json::Value::String(ip.to_string());
+                let current_value = data[&current_member_id].as_str().context("current member value not a string")?;
 
-                put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+                // Only replace if the original IP is found
+                if current_value == original_ip {
+                    data[&current_member_id] = serde_json::Value::String(ip.to_string());
+                    put_etcd_yaml(etcd_client, &k8s_resource_location, configmap).await?;
+                } else {
+                    log::info!(
+                        "Original IP {} not found in etcd endpoints, current value is {}, skipping replacement",
+                        original_ip,
+                        current_value
+                    );
+                }
 
                 Ok(())
             }),
@@ -338,7 +440,7 @@ pub(crate) async fn fix_kubeapiservers_cluster(etcd_client: &Arc<InMemoryK8sEtcd
     Ok(())
 }
 
-pub(crate) async fn fix_openshiftapiservers_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<()> {
+pub(crate) async fn fix_openshiftapiservers_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "OpenShiftAPIServer", "cluster", "operator.openshift.io/v1");
     let mut cluster = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
@@ -346,7 +448,7 @@ pub(crate) async fn fix_openshiftapiservers_cluster(etcd_client: &Arc<InMemoryK8
 
     let observed_config = cluster.pointer_mut("/spec/observedConfig").context("no /spec/observedConfig")?;
 
-    fix_storage_config(observed_config, ip)?;
+    fix_storage_config(observed_config, original_ip, ip)?;
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, cluster).await?;
 
@@ -371,7 +473,8 @@ pub(crate) async fn fix_authentications_cluster(etcd_client: &Arc<InMemoryK8sEtc
 }
 
 pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
-    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "v1");
+    let k8s_resource_location = K8sResourceLocation::new(Some("openshift-oauth-apiserver"), "Deployment", "apiserver", "apps/v1");
+
     let mut deployment = get_etcd_json(etcd_client, &k8s_resource_location)
         .await?
         .context("getting openshift-oauth-apiserver deployment/apiserver")?;
@@ -407,8 +510,15 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
             let arg_idx = args
                 .iter_mut()
                 .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.contains(&find).then_some(i))
-                .context("name not found")?;
+                .find_map(|(i, arg)| arg.as_str()?.contains(&find).then_some(i));
+
+            let Some(arg_idx) = arg_idx else {
+                log::info!(
+                    "etcd server argument with {} not found, skipping (this is normal for IPv6 in dual-stack)",
+                    original_ip
+                );
+                return Ok(());
+            };
 
             let replace = if ip.contains(':') {
                 format!("--etcd-servers='https://[{ip}]:2379'")
@@ -426,7 +536,7 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
     Ok(())
 }
 
-pub(crate) async fn fix_networks_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<()> {
+pub(crate) async fn fix_networks_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
     let k8s_resource_location = K8sResourceLocation::new(None, "Network", "cluster", "operator.openshift.io/v1");
 
     let mut cluster = get_etcd_json(etcd_client, &k8s_resource_location)
@@ -439,23 +549,73 @@ pub(crate) async fn fix_networks_cluster(etcd_client: &Arc<InMemoryK8sEtcd>, ip:
         let annotations = annotations.as_object_mut().context("/metadata/annotations not an object")?;
         let key = "networkoperator.openshift.io/ovn-cluster-initiator";
 
-        if annotations.contains_key(key) {
-            annotations.insert(key.to_string(), Value::String(ip.to_string()));
-
-            put_etcd_yaml(etcd_client, &k8s_resource_location, cluster).await?;
+        if let Some(current_value) = annotations.get(key) {
+            let current_value_str = current_value.as_str().context("annotation value not a string")?;
+            // Only replace if the original IP is found
+            if current_value_str == original_ip {
+                annotations.insert(key.to_string(), Value::String(ip.to_string()));
+                put_etcd_yaml(etcd_client, &k8s_resource_location, cluster).await?;
+            } else {
+                log::info!(
+                    "Original IP {} not found in networks cluster annotation, current value is {}, skipping replacement",
+                    original_ip,
+                    current_value_str
+                );
+            }
+        } else {
+            log::info!("Network cluster annotation {} not found, skipping replacement", key);
         }
     }
 
     Ok(())
 }
 
-pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, ip: &str) -> Result<()> {
-    let mut update = format!("https://{}:2380", ip).to_string();
-    if ip.parse::<Ipv6Addr>().is_ok() {
-        update = format!("https://[{}]:2380", ip).to_string();
+pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
+    let etcd_client_ref = etcd_client.etcd_client.as_ref().context("etcd client not configured")?;
+
+    // Get current member list to check if original IP is present
+    let members_list = etcd_client_ref
+        .cluster_client()
+        .member_list()
+        .await
+        .context("listing etcd members list")?;
+
+    let members = members_list.members();
+    ensure!(
+        members.len() == 1,
+        "single-node must have exactly one etcd member, found {}",
+        members.len()
+    );
+
+    let current_member = &members[0];
+    let expected_original_url = if original_ip.parse::<Ipv6Addr>().is_ok() {
+        format!("https://[{}]:2380", original_ip)
+    } else {
+        format!("https://{}:2380", original_ip)
+    };
+
+    let contains_original = current_member.peer_urls().iter().any(|url| url == &expected_original_url);
+
+    if contains_original {
+        let new_member_url = if ip.parse::<Ipv6Addr>().is_ok() {
+            format!("https://[{}]:2380", ip)
+        } else {
+            format!("https://{}:2380", ip)
+        };
+
+        log::debug!("Updating etcd member from {} to {}", expected_original_url, new_member_url);
+        etcd_client
+            .update_member(new_member_url)
+            .await
+            .context("failed to update etcd member")?;
+    } else {
+        log::info!(
+            "Original IP {} not found in etcd member peer URLs, current URLs are {:?}, skipping replacement",
+            original_ip,
+            current_member.peer_urls()
+        );
     }
 
-    etcd_client.update_member(update).await.context("failed to update etcd member")?;
     Ok(())
 }
 
