@@ -42,7 +42,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) files: Vec<ConfigPath>,
     pub(crate) cluster_rename: Option<ClusterNamesRename>,
     pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
+    pub(crate) ip: Option<Vec<String>>,
     pub(crate) proxy: Option<Proxy>,
     pub(crate) install_config: Option<String>,
     pub(crate) kubeadmin_password_hash: Option<String>,
@@ -50,7 +50,7 @@ pub(crate) struct ClusterCustomizations {
     pub(crate) pull_secret: Option<String>,
     pub(crate) user_ca_bundle: Option<String>,
     pub(crate) proxy_trusted_ca_bundle: Option<ProxyAdditionalTrustBundle>,
-    pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) machine_network_cidr: Option<Vec<String>>,
     pub(crate) chrony_config: Option<String>,
 }
 
@@ -223,7 +223,17 @@ impl RecertConfig {
             None => None,
         };
         let ip = match value.remove("ip") {
-            Some(value) => Some(value.as_str().context("ip must be a string")?.to_string()),
+            Some(value) => {
+                if let Some(array) = value.as_array() {
+                    // Handle array of IPs for dual stack
+                    Some(array.iter().map(|v| -> Result<String, anyhow::Error> { Ok(v.as_str().context("ip array element must be a string")?.to_string()) }).collect::<Result<Vec<_>, _>>()?)
+                } else if let Some(single_ip) = value.as_str() {
+                    // Handle single IP for backward compatibility
+                    Some(vec![single_ip.to_string()])
+                } else {
+                    anyhow::bail!("ip must be a string or array of strings");
+                }
+            },
             None => None,
         };
         let pull_secret = match value.remove("pull_secret") {
@@ -261,7 +271,17 @@ impl RecertConfig {
             None => None,
         };
         let machine_network_cidr = match value.remove("machine_network_cidr") {
-            Some(value) => Some(value.as_str().context("machine_network_cidr must be a string")?.to_string()),
+            Some(value) => {
+                if let Some(array) = value.as_array() {
+                    // Handle array of CIDRs for dual stack
+                    Some(array.iter().map(|v| -> Result<String, anyhow::Error> { Ok(v.as_str().context("machine_network_cidr array element must be a string")?.to_string()) }).collect::<Result<Vec<_>, _>>()?)
+                } else if let Some(single_cidr) = value.as_str() {
+                    // Handle single CIDR for backward compatibility
+                    Some(vec![single_cidr.to_string()])
+                } else {
+                    anyhow::bail!("machine_network_cidr must be a string or array of strings");
+                }
+            },
             None => None,
         };
         let chrony_config = match value.remove("chrony_config") {
@@ -429,14 +449,14 @@ impl RecertConfig {
                 },
                 cluster_rename: cli.cluster_rename,
                 hostname: cli.hostname,
-                ip: cli.ip,
+                ip: if cli.ip.is_empty() { None } else { Some(cli.ip) },
                 proxy: cli.proxy,
                 install_config: cli.install_config,
                 kubeadmin_password_hash: cli.kubeadmin_password_hash,
                 pull_secret: cli.pull_secret,
                 user_ca_bundle: cli.user_ca_bundle,
                 proxy_trusted_ca_bundle: cli.proxy_trusted_ca_bundle,
-                machine_network_cidr: cli.machine_network_cidr,
+                machine_network_cidr: if cli.machine_network_cidr.is_empty() { None } else { Some(cli.machine_network_cidr) },
                 chrony_config: cli.chrony_config,
             },
             encryption_customizations: EncryptionCustomizations {

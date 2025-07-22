@@ -97,9 +97,9 @@ pub(crate) struct Cli {
     pub(crate) hostname: Option<String>,
 
     /// If given, the cluster resources that include the IP address will be modified to use this
-    /// one instead.
+    /// one instead. For dual stack, provide multiple IP addresses (IPv4 first).
     #[clap(long)]
-    pub(crate) ip: Option<String>,
+    pub(crate) ip: Vec<String>,
 
     /// If given, the cluster's HTTP proxy configuration will be modified to use this one instead.
     #[clap(long, value_parser = Proxy::parse)]
@@ -150,10 +150,11 @@ pub(crate) struct Cli {
 
     /// The CIDR of the machine network. If given, the machine network CIDR which appears in the
     /// install-config found in the cluster-config-v1 configmaps will be modified to use this
-    /// machine CIDR. WARNING: If a different machine network CIDR is stated in the
+    /// machine CIDR. For dual stack, provide multiple IPv4 and IPv6 CIDRs (IPv4 first).
+    /// WARNING: If a different machine network CIDR is stated in the
     /// --install-config parameter, it might overwrite the one given here.
     #[clap(long)]
-    pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) machine_network_cidr: Vec<String>,
 
     /// If given, the cluster resources that include chrony.config be modified to have this value.
     #[clap(long)]

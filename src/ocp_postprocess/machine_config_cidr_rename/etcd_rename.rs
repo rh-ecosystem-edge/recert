@@ -2,7 +2,7 @@ use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
 };
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result};
 use serde_json::Value;
 
 pub(crate) async fn fix_configmap(
@@ -31,13 +31,15 @@ pub(crate) async fn fix_configmap(
         .as_array_mut()
         .context("machineNetwork not an array")?;
 
-    ensure!(
-        machine_network.len() == 1,
-        "machineNetwork has more than one entry, dual stack clusters are not currently supported"
-    );
+    // For dual stack clusters, preserve all existing entries and just replace them with new network
+    // If machine_config_network contains commas, split into multiple networks for dual stack
+    let new_networks: Vec<_> = machine_config_network
+        .split(',')
+        .map(|cidr| serde_json::json!({"cidr": cidr.trim()}))
+        .collect();
 
-    machine_network.remove(0);
-    machine_network.push(serde_json::Value::String(machine_config_network.to_string()));
+    machine_network.clear();
+    machine_network.extend(new_networks);
 
     data.insert(
         "install-config".to_string(),
