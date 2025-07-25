@@ -4,3 +4,6 @@
 [submodule "etcddump"]
 	path = etcddump
 	url = https://github.com/omertuc/etcddump
+[submodule "telco5g-konflux"]
+	path = telco5g-konflux
+	url = https://github.com/openshift-kni/telco5g-konflux.git
