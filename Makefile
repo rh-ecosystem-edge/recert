@@ -66,19 +66,9 @@ konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs 
 # Rust build targets
 
 .PHONY: rust-deps
-rust-deps: ## Install Rust build dependencies (protobuf-compiler)
+rust-deps: ## Install Rust build dependencies (protobuf-compiler, rustfmt, rust, clippy)
 	@echo "Installing Rust build dependencies..."
-	@if command -v apt >/dev/null 2>&1; then \
-		sudo apt update && sudo apt install -y protobuf-compiler; \
-	elif command -v yum >/dev/null 2>&1; then \
-		sudo yum install -y protobuf-compiler; \
-	elif command -v dnf >/dev/null 2>&1; then \
-		sudo dnf install -y protobuf-compiler; \
-	elif command -v brew >/dev/null 2>&1; then \
-		brew install protobuf; \
-	else \
-		echo "Warning: Could not detect package manager. Please install protobuf-compiler manually."; \
-	fi
+	hack/rust-deps.sh
 	@echo "Dependencies installed successfully."
 
 .PHONY: rust-fmt
