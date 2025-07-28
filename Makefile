@@ -44,6 +44,21 @@ yamllint: ## Download yamllint and lint YAML files in the repository
 	yamllint -c $(ROOT_DIR)/.yamllint.yaml .
 	@echo "YAML linting completed successfully."
 
+.PHONY: yq
+yq: ## Download yq
+	@echo "Downloading yq..."
+	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/download download-yq DOWNLOAD_INSTALL_DIR=$(ROOT_DIR)/bin
+	@echo "Yq downloaded successfully."
+
+.PHONY: yq-sort-and-format
+yq-sort-and-format: yq ## Sort keys/reformat all YAML files in the repository
+	@echo "Sorting keys and reformatting YAML files..."
+	@find . -name "*.yaml" -o -name "*.yml" | grep -v -E "(telco5g-konflux/|target/|vendor/|bin/|\.git/)" | while read file; do \
+		echo "Processing $$file..."; \
+		yq -i '.. |= sort_keys(.)' "$$file"; \
+	done
+	@echo "YAML sorting and formatting completed successfully."
+
 .PHONY: konflux-all
 konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs ## Run all Konflux-related targets
 	@echo "All Konflux targets completed successfully."
