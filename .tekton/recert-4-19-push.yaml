@@ -1,3 +1,4 @@
+---
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -9,26 +10,30 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "push" && 
-      target_branch == "release-4.19" && 
+      event == "push" &&
+      target_branch == "release-4.19" &&
       (
+        '.konflux/Dockerfile'.pathChanged() ||
+        '.konflux/lock-build/***'.pathChanged() ||
+        '.konflux/lock-runtime/***'.pathChanged() ||
         '.tekton/build-pipeline.yaml'.pathChanged() ||
-        'etcddump/***'.pathChanged() ||
-        'hack/***'.pathChanged() ||
-        'ouger/***'.pathChanged() ||
-        'src/***'.pathChanged() ||
-        'vendor/***'.pathChanged() ||
+        '.tekton/recert-4-19-push.yaml'.pathChanged() ||
         'build.rs'.pathChanged() ||
         'Cargo.lock'.pathChanged() ||
         'Cargo.toml'.pathChanged() ||
+        'etcddump'.pathChanged() ||
+        'etcddump/***'.pathChanged() ||
+        'hack/***'.pathChanged() ||
+        'ouger'.pathChanged() ||
+        'ouger/***'.pathChanged() ||
         'ownership.sh'.pathChanged() ||
         'reproto'.pathChanged() ||
         'run_seed'.pathChanged() ||
+        'src/***'.pathChanged() ||
+        'telco5g-konflux'.pathChanged() ||
+        'telco5g-konflux/***'.pathChanged() ||
         'vendor.sh'.pathChanged() ||
-        '.tekton/recert-4-19-push.yaml'.pathChanged() ||
-        '.konflux/Dockerfile'.pathChanged() || 
-        '.konflux/lock-build/***'.pathChanged() ||
-        '.konflux/lock-runtime/***'.pathChanged()
+        'vendor/***'.pathChanged()
       )
   creationTimestamp: null
   labels:
