@@ -1,3 +1,4 @@
+---
 chrony_config: |
   pool 0.rhel.pool.ntp.org iburst
   driftfile /var/lib/chrony/drift
