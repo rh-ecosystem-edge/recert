@@ -1,17 +1,15 @@
-contentOrigin:
-  repofiles:
-     # rhel9 rpm repos
-     - ./redhat.repo
-
-packages:
-  - rust-toolset
-  - protobuf-compiler
-
+---
 arches:
   - x86_64
   - aarch64
-
+contentOrigin:
+  repofiles:
+    # rhel9 rpm repos
+    - ./redhat.repo
 context:
-    containerfile:
-      file: ../Dockerfile
-      stageName: build-image
+  containerfile:
+    file: ../Dockerfile
+    stageName: build-image
+packages:
+  - rust-toolset
+  - protobuf-compiler
