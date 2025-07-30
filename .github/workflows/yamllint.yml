@@ -12,7 +12,7 @@ name: Yamllint
 on:  # yamllint disable-line rule:truthy
   pull_request:
     branches:
-      - main
+      - release-4.14
   push:
     branches:
-      - main
+      - release-4.14
