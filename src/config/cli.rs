@@ -1,5 +1,6 @@
 use crate::{
     cnsanreplace::CnSanReplace,
+    encrypt_config::EncryptionConfig,
     ocp_postprocess::{
         additional_trust_bundle::params::ProxyAdditionalTrustBundle, cluster_domain_rename::params::ClusterNamesRename,
         proxy_rename::args::Proxy,
@@ -17,6 +18,33 @@ pub(crate) struct Cli {
     /// etcd endpoint of etcd instance to recertify
     #[clap(long)]
     pub(crate) etcd_endpoint: Option<String>,
+
+    // OpenShift supports encryption at rest for:
+    // - Secrets, ConfigMaps encrypted by the kube-apiserver
+    // - Routes encrypted by the openshift-kube-apiserver
+    // - oauth {access,authorize} tokens encrypted by the openshift-oauth-apiserver
+    // To discover whether the seed image has etcd encryption enabled, recert checks the apiserver CR's `spec.encryption.type == aesgcm | aescbc`.
+    // When enabled, the secrets/openshift-kube-apiserver/encryption-config and the secrets/openshift-oauth-apiserver/encryption-config
+    // are encrypted by the kube-apiserver and recerts decrypts those first in order to decrypt Routes and oauth token resources.
+    // Thus recert uses the kube-apiserver encryption-config file (i.e. /etc/kubernetes/static-pod-resources/kube-apiserver-pod-<latest>/secrets/encryption-config/encryption-config)
+    // to fetch the encryption details for the kube-apiserver encrypted resources (i.e. Secrets and ConfigMaps) first.
+    /// Kubernetes API server EncryptionConfiguration resource in JSON formatted string or path to the respective file.
+    /// When specified, recert will use the encryption keys in this config to encrypt the specified Kubernetes resources
+    /// and then put this config in etcd and the filesystem.
+    #[clap(long, value_parser = EncryptionConfig::parse)]
+    pub(crate) kube_encryption_config: Option<EncryptionConfig>,
+
+    /// OpenShift API server EncryptionConfiguration resource in JSON formatted string or path to the respective file.
+    /// When specified, recert will use these encryption keys in this config to encrypt the specified OpenShift resources
+    /// and then put this config in etcd.
+    #[clap(long, value_parser = EncryptionConfig::parse)]
+    pub(crate) openshift_encryption_config: Option<EncryptionConfig>,
+
+    /// OAuth API server EncryptionConfiguration resource in JSON formatted string or path to the respective file.
+    /// When specified, recert will use the encryption keys in this config to encrypt the specified oauth resources
+    /// and then put this config in etcd.
+    #[clap(long, value_parser = EncryptionConfig::parse)]
+    pub(crate) oauth_encryption_config: Option<EncryptionConfig>,
 
     // DEPRECATED: Use --crypto-dir and --cluster-customization-dir instead. This option will be
     // removed in a future release. Cannot be used with --crypto-dir or --cluster-customization-dir
@@ -69,9 +97,9 @@ pub(crate) struct Cli {
     pub(crate) hostname: Option<String>,
 
     /// If given, the cluster resources that include the IP address will be modified to use this
-    /// one instead.
+    /// one instead. For dual stack, provide multiple IP addresses (IPv4 first).
     #[clap(long)]
-    pub(crate) ip: Option<String>,
+    pub(crate) ip: Vec<String>,
 
     /// If given, the cluster's HTTP proxy configuration will be modified to use this one instead.
     #[clap(long, value_parser = Proxy::parse)]
@@ -122,10 +150,11 @@ pub(crate) struct Cli {
 
     /// The CIDR of the machine network. If given, the machine network CIDR which appears in the
     /// install-config found in the cluster-config-v1 configmaps will be modified to use this
-    /// machine CIDR. WARNING: If a different machine network CIDR is stated in the
+    /// machine CIDR. For dual stack, provide multiple IPv4 and IPv6 CIDRs (IPv4 first).
+    /// WARNING: If a different machine network CIDR is stated in the
     /// --install-config parameter, it might overwrite the one given here.
     #[clap(long)]
-    pub(crate) machine_network_cidr: Option<String>,
+    pub(crate) machine_network_cidr: Vec<String>,
 
     /// If given, the cluster resources that include chrony.config be modified to have this value.
     #[clap(long)]

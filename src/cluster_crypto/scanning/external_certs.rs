@@ -1,13 +1,15 @@
 use super::super::locations::K8sResourceLocation;
+use super::ExternalCerts;
 use crate::k8s_etcd::get_etcd_json;
 use crate::k8s_etcd::InMemoryK8sEtcd;
 use anyhow::{bail, Context, Result};
 use itertools::Itertools;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::sync::Arc;
 use x509_certificate::X509Certificate;
 
-pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<HashSet<String>> {
+pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<ExternalCerts> {
     let proxy_trusted_certs = vec![get_openshift_proxy_trusted_certs(&in_memory_etcd_client)
         .await
         .context("openshift trusted certs")?];
@@ -32,21 +34,30 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         .chain(ocp_trusted_certs)
         .join("\n");
 
-    pem::parse_many(all_certs_bundled)
-        .context("parsing")?
-        .into_iter()
-        .map(|pem| match pem.tag() {
-            "CERTIFICATE" => Ok({
-                let crt = X509Certificate::from_der(pem.contents()).context("from der")?;
-                let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+    Ok(ExternalCerts(
+        pem::parse_many(all_certs_bundled)
+            .context("parsing")?
+            .into_iter()
+            .map(|pem| match pem.tag() {
+                "CERTIFICATE" => Ok({
+                    let der_bytes = pem.contents();
+                    let crt = X509Certificate::from_der(der_bytes).context("from der")?;
+                    let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
 
-                log::trace!("Found external certificate: {}", cn);
+                    let hash = {
+                        let mut sha256 = Sha256::new();
+                        sha256.update(der_bytes);
+                        let digest = sha256.finalize();
+                        hex::encode(digest)
+                    };
 
-                cn.to_string()
-            }),
-            _ => bail!("unexpected tag"),
-        })
-        .collect::<Result<HashSet<_>>>()
+                    (cn, hash)
+                }),
+                _ => bail!("unexpected tag"),
+            })
+            .collect::<Result<HashSet<_>>>()
+            .context("failed to parse certs")?,
+    ))
 }
 
 pub(crate) async fn get_openshift_image_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {

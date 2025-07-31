@@ -1,4 +1,5 @@
 use crate::cluster_crypto::locations::K8sResourceLocation;
+use crate::encrypt::ResourceTransformers;
 use crate::etcd_encoding;
 use anyhow::{bail, ensure, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
@@ -24,16 +25,24 @@ pub(crate) struct InMemoryK8sEtcd {
     etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
     edited: Mutex<HashMap<String, Vec<u8>>>,
     deleted_keys: Mutex<HashSet<String>>,
+    decrypt_resource_transformers: Option<ResourceTransformers>,
+    encrypt_resource_transformers: Option<ResourceTransformers>,
 }
 
 impl InMemoryK8sEtcd {
     /// Pass a None etcd_client to disable actual etcd access (dummy mode, empty key list).
-    pub(crate) fn new(etcd_client: Option<EtcdClient>) -> Self {
+    pub(crate) fn new(
+        etcd_client: Option<EtcdClient>,
+        decrypt_resource_transformers: Option<ResourceTransformers>,
+        encrypt_resource_transformers: Option<ResourceTransformers>,
+    ) -> Self {
         Self {
             etcd_client: etcd_client.map(Arc::new),
             etcd_keyvalue_hashmap: Mutex::new(HashMap::new()),
             deleted_keys: Mutex::new(HashSet::new()),
             edited: Mutex::new(HashMap::new()),
+            decrypt_resource_transformers,
+            encrypt_resource_transformers,
         }
     }
 
@@ -98,13 +107,61 @@ impl InMemoryK8sEtcd {
             let key = key.clone();
             let value = value.clone();
             let etcd_client = Arc::clone(etcd_client);
-            let value = etcd_encoding::encode(value.as_slice()).await.context("encoding value")?;
+
+            let mut value = etcd_encoding::encode(value.as_slice()).await.context("encoding value")?;
+
+            if let Some(resource_transformers) = &self.encrypt_resource_transformers {
+                // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L172
+                if let Some(transformers) = resource_transformers
+                    .resource_to_prefix_transformers
+                    .get(&resource_from_key(key.to_string()))
+                {
+                    value = transformers[0]
+                        .encrypt(key.to_string(), value)
+                        .await
+                        .context("encrypting etcd value")?;
+                }
+            }
 
             etcd_client
                 .kv_client()
                 .put(key.as_bytes(), value.clone(), None)
                 .await
                 .context(format!("during etcd put {} {:?}", key, value))?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn reencrypt_resources(&self) -> Result<()> {
+        if let Some(resource_transformers) = &self.encrypt_resource_transformers {
+            for resource in resource_transformers.resource_to_prefix_transformers.keys() {
+                join_all(self.list_keys(resource).await?.into_iter().map(|key| async move {
+                    if !self.deleted_keys.lock().await.contains(&key) {
+                        let etcd_result = self
+                            .get(key.clone())
+                            .await
+                            .with_context(|| format!("getting key {:?}", key))?
+                            .context("key disappeared")?;
+
+                        let value: serde_json::Value = serde_json::from_slice(etcd_result.value.as_slice())
+                            .with_context(|| format!("deserializing value of key {:?}", key,))?;
+
+                        let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+                        let workload = get_etcd_json(self, &k8s_resource_location)
+                            .await?
+                            .context(format!("no workload for {:?}", k8s_resource_location.as_etcd_key()))?;
+
+                        put_etcd_yaml(self, &k8s_resource_location, workload).await?;
+                    }
+
+                    Ok(())
+                }))
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>>>()?;
+            }
         }
 
         Ok(())
@@ -134,7 +191,27 @@ impl InMemoryK8sEtcd {
         if let Some(value) = get_result.kvs().first() {
             let raw_etcd_value = value.value();
 
-            let decoded_value = etcd_encoding::decode(raw_etcd_value).await.context("decoding value")?;
+            let mut decoded_value = etcd_encoding::decode(raw_etcd_value).await.context("decoding value")?;
+
+            if let Some(resource_transformers) = &self.decrypt_resource_transformers {
+                // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L110
+                if let Some(transformers) = resource_transformers
+                    .resource_to_prefix_transformers
+                    .get(&resource_from_key(key.to_string()))
+                {
+                    for transformer in transformers {
+                        if raw_etcd_value.to_vec().starts_with(transformer.get_prefix().as_bytes()) {
+                            let plaintext_value = transformer
+                                .decrypt(key.to_string(), raw_etcd_value.to_vec())
+                                .await
+                                .context("decrypting etcd value")?;
+                            decoded_value = etcd_encoding::decode(&plaintext_value).await.context("decoding value")?;
+                            break;
+                        }
+                    }
+                }
+            }
+
             self.etcd_keyvalue_hashmap
                 .lock()
                 .await
@@ -159,10 +236,18 @@ impl InMemoryK8sEtcd {
             None => return Ok(vec![]),
         };
 
+        let kubernetes_keys = self.get_keys_with_prefix(etcd_client, "/kubernetes.io", resource_kind).await?;
+        let openshift_keys = self.get_keys_with_prefix(etcd_client, "/openshift.io", resource_kind).await?;
+        let keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys.into_iter()).collect();
+
+        Ok(keys)
+    }
+
+    async fn get_keys_with_prefix(&self, etcd_client: &Arc<EtcdClient>, prefix: &str, resource_kind: &str) -> Result<Vec<String>> {
         let etcd_get_options = GetOptions::new().with_prefix().with_limit(0).with_keys_only();
         let keys = etcd_client
             .kv_client()
-            .get(format!("/kubernetes.io/{}", resource_kind), Some(etcd_get_options.clone()))
+            .get(format!("{}/{}", prefix, resource_kind), Some(etcd_get_options.clone()))
             .await?;
 
         keys.kvs()
@@ -212,6 +297,10 @@ impl InMemoryK8sEtcd {
         etcd_client.maintenance_client().defragment().await.context("defragment etcd")?;
         Ok(())
     }
+}
+
+fn resource_from_key(key: String) -> String {
+    key.split('/').collect::<Vec<_>>()[2].to_string()
 }
 
 fn is_too_many_requests_error(delete_response: &std::prelude::v1::Result<etcd_client::DeleteResponse, etcd_client::Error>) -> bool {

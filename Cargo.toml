@@ -1,5 +1,13 @@
 [package]
 name = "recert"
+# The rust-version field is an optional key that tells cargo what version of the Rust toolchain you support for your package (https://doc.rust-lang.org/cargo/reference/rust-version.html)
+# This is important for a few reasons:
+#   1. It affects the output of cargo lockfiles
+#       - https://github.com/rust-lang/cargo/pull/12861
+#       - https://github.com/rust-lang/cargo/issues/13503
+#   2. It affects what runtime version the compiled code is compatible with
+# This version should match what is available and used in the production runtime container (.konflux/Dockerfile)
+rust-version = "1.75"
 version = "0.1.0"
 edition = "2021"
 
@@ -48,6 +56,10 @@ prost = "0.12.1"
 log = "0.4.20"
 itertools = "0.12.1"
 serial_test = "3.0.0"
+aes-gcm = "0.10.3"
+dyn-clone = "1.0.17"
+hex = "0.4.3"
+serde_with = { version = "3.11.0", features = ["base64"] }
 
 [build-dependencies]
 prost-build = "0.12.1"

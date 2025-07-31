@@ -3,6 +3,7 @@ use super::{
     jwt,
     keys::{PrivateKey, PublicKey},
     locations::Location,
+    scanning::ExternalCerts,
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -10,7 +11,6 @@ use bytes::Bytes;
 use p256::SecretKey;
 use pkcs1::DecodeRsaPrivateKey;
 use std::{
-    collections::HashSet,
     io::Write,
     process::{Command, Stdio},
 };
@@ -64,7 +64,7 @@ impl DiscoveredCryptoObect {
 pub(crate) fn process_unknown_value(
     value: String,
     location: &Location,
-    external_certs: &HashSet<String>,
+    external_certs: &ExternalCerts,
 ) -> Result<Vec<DiscoveredCryptoObect>> {
     let pem_bundle_objects = process_pem_bundle(&value, location, external_certs).context("processing pem bundle");
 
@@ -122,7 +122,7 @@ pub(crate) fn process_jwt(value: &str, location: &Location) -> Result<Option<Dis
 
 /// Given a PEM bundle, scan it for cryptographic keys and certificates and record them in the
 /// appropriate data structures.
-pub(crate) fn process_pem_bundle(value: &str, location: &Location, external_certs: &HashSet<String>) -> Result<Vec<DiscoveredCryptoObect>> {
+pub(crate) fn process_pem_bundle(value: &str, location: &Location, external_certs: &ExternalCerts) -> Result<Vec<DiscoveredCryptoObect>> {
     let pems = pem::parse_many(value).context("parsing pem")?;
 
     #[allow(clippy::unwrap_used)] // The filter ensures that unwrap will never panic. We can't use
@@ -149,7 +149,7 @@ pub(crate) fn process_pem_bundle(value: &str, location: &Location, external_cert
 
 /// Given a single PEM, scan it for cryptographic keys and certificates and record them in the
 /// appropriate data structures.
-pub(crate) fn process_single_pem(pem: &pem::Pem, external_certs: &HashSet<String>) -> Result<Option<CryptoObject>> {
+pub(crate) fn process_single_pem(pem: &pem::Pem, external_certs: &ExternalCerts) -> Result<Option<CryptoObject>> {
     match pem.tag() {
         "CERTIFICATE" => process_pem_cert(pem, external_certs).context("processing pem cert"),
         "TRUSTED CERTIFICATE" => process_pem_cert(pem, external_certs).context("processing trusted pem cert"), // TODO: we'll have to save it back as TRUSTED
@@ -224,12 +224,12 @@ pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<Crypto
 }
 
 /// Given a certificate PEM, record it in the appropriate data structures.
-pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &HashSet<String>) -> Result<Option<CryptoObject>> {
+pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -> Result<Option<CryptoObject>> {
     let x509_certificate = &x509_certificate::CapturedX509Certificate::from_der(pem.contents()).context("parsing DER")?;
 
     let hashable_cert = certificate::Certificate::try_from(x509_certificate).context("parsing cert")?;
 
-    if external_certs.contains(&hashable_cert.subject) {
+    if external_certs.has_cert(&hashable_cert).context("has external cert")? {
         log::trace!("ignoring external cert {}", hashable_cert.subject);
         return Ok(None);
     } else {

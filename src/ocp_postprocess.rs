@@ -25,6 +25,7 @@ pub(crate) mod additional_trust_bundle;
 mod arguments;
 pub(crate) mod chrony_config;
 pub(crate) mod cluster_domain_rename;
+pub(crate) mod encryption_config;
 mod fnv;
 mod go_base32;
 pub(crate) mod hostname_rename;
@@ -151,8 +152,19 @@ async fn run_cluster_customizations(
             .context("renaming cluster")?;
     }
 
-    if let Some(ip) = &cluster_customizations.ip {
-        ip_rename(in_memory_etcd_client, ip, dirs, files).await.context("renaming IP")?;
+    let ips = &cluster_customizations.ip_addresses;
+    if ips.len() == 1 {
+        log::info!("Processing single IP: {}", ips[0]);
+        ip_rename(in_memory_etcd_client, &ips[0], dirs, files)
+            .await
+            .context(format!("renaming IP {}", ips[0]))?;
+    } else if ips.len() == 2 {
+        log::info!("Processing dual-stack IPs: {}", ips.join(", "));
+        ip_rename_dual_stack(in_memory_etcd_client, ips, dirs, files)
+            .await
+            .context("renaming dual-stack IPs")?;
+    } else if ips.is_empty() {
+        log::info!("No IPs were provided, skipping IP rename");
     }
 
     if let Some(hostname) = &cluster_customizations.hostname {
@@ -195,8 +207,11 @@ async fn run_cluster_customizations(
     .await
     .context("renaming additional trust bundle")?;
 
-    if let Some(machine_network_cidr) = &cluster_customizations.machine_network_cidr {
-        fix_machine_network_cidr(in_memory_etcd_client, machine_network_cidr, dirs, files)
+    let machine_network_cidrs = &cluster_customizations.machine_network_cidrs;
+    if !machine_network_cidrs.is_empty() {
+        let combined_cidrs = machine_network_cidrs.join(",");
+        log::info!("Processing machine network CIDRs: {}", combined_cidrs);
+        fix_machine_network_cidr(in_memory_etcd_client, &combined_cidrs, dirs, files)
             .await
             .context("fixing machine network CIDR")?;
     }
@@ -908,6 +923,21 @@ pub(crate) async fn ip_rename(
     let etcd_client = in_memory_etcd_client;
 
     ip_rename::rename_all(etcd_client, ip, dirs, files).await.context("renaming all")?;
+
+    Ok(())
+}
+
+pub(crate) async fn ip_rename_dual_stack(
+    in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
+    ips: &[String],
+    dirs: &[ConfigPath],
+    files: &[ConfigPath],
+) -> Result<()> {
+    let etcd_client = in_memory_etcd_client;
+
+    ip_rename::rename_all_dual_stack(etcd_client, ips, dirs, files)
+        .await
+        .context("renaming all dual stack")?;
 
     Ok(())
 }

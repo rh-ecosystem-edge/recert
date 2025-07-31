@@ -135,7 +135,7 @@ impl CertKeyPair {
     /// # Errors
     ///
     /// This function will return an error if .
-    #[context["re-signing cert with subject {}", self.distributed_cert.borrow().certificate.subject]]
+    #[context["re-signing cert at locations {} with subject {}", self.distributed_cert.borrow().locations, self.distributed_cert.borrow().certificate.subject]]
     pub(crate) fn re_sign_cert(
         &mut self,
         sign_with: Option<&SigningKey>,

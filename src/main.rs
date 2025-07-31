@@ -8,6 +8,8 @@ use std::sync::atomic::Ordering::Relaxed;
 mod cluster_crypto;
 mod cnsanreplace;
 mod config;
+mod encrypt;
+mod encrypt_config;
 mod etcd_encoding;
 mod file_utils;
 mod json_tools;

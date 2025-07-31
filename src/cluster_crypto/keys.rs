@@ -35,7 +35,7 @@ impl Serialize for PrivateKey {
         match self {
             Self::Rsa(rsa_private_key) => serializer.serialize_str(
                 &base64_standard.encode(
-                    &rsa_private_key
+                    rsa_private_key
                         .to_pkcs8_pem(LineEnding::LF)
                         .unwrap_or("failed to serialize RSA private key".to_string().into()),
                 ),

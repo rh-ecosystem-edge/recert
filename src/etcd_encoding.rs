@@ -5,7 +5,7 @@ use super::protobuf_gen::{
             admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
             apps::v1::{ControllerRevision, DaemonSet, Deployment, StatefulSet},
             batch::v1::{CronJob, Job},
-            core::v1::{ConfigMap, Secret},
+            core::v1::{ConfigMap, Node, Secret},
         },
         apimachinery::pkg::runtime::{TypeMeta, Unknown},
     },
@@ -56,6 +56,7 @@ k8s_type!(JobWithMeta, Job);
 k8s_type!(CronJobWithMeta, CronJob);
 k8s_type!(StatefulSetWithMeta, StatefulSet);
 k8s_type!(ConfigMapWithMeta, ConfigMap);
+k8s_type!(NodeWithMeta, Node);
 k8s_type!(SecretWithMeta, Secret);
 k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration);
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
@@ -86,6 +87,7 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         "StatefulSet" => serde_json::to_vec(&StatefulSetWithMeta::try_from(unknown)?)?,
         "DaemonSet" => serde_json::to_vec(&DaemonsSetWithMeta::try_from(unknown)?)?,
         "ConfigMap" => serde_json::to_vec(&ConfigMapWithMeta::try_from(unknown)?)?,
+        "Node" => serde_json::to_vec(&NodeWithMeta::try_from(unknown)?)?,
         "Secret" => serde_json::to_vec(&SecretWithMeta::try_from(unknown)?)?,
         "ValidatingWebhookConfiguration" => serde_json::to_vec(&ValidatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "MutatingWebhookConfiguration" => serde_json::to_vec(&MutatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
