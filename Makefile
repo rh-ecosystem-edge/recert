@@ -4,7 +4,7 @@
 PROJECT_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
 ## Location to install dependencies to
-# If you are setting this externally then you must use an aboslute path
+# If you are setting this externally then you must use an absolute path
 LOCALBIN ?= $(PROJECT_DIR)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
@@ -16,7 +16,7 @@ YAMLLINT_VERSION ?= 1.35.1
 YQ_VERSION ?= v4.45.4
 
 # Prefer binaries in the local bin directory over system binaries.
-export PATH  := $(LOCALBIN):$(PATH)
+export PATH := $(abspath $(LOCALBIN)):$(PATH)
 export CARGO_TERM_COLOR := always
 
 # The 'all' target is the default goal.
@@ -27,7 +27,7 @@ all: yamllint rust-ci
 .PHONY: clean
 clean:
 	@rm -rf target
-	@rm -rf bin
+	@rm -rf $(LOCALBIN)
 
 .PHONY: test
 test: rust-test
@@ -36,10 +36,11 @@ test: rust-test
 # Konflux targets
 
 .PHONY: sync-git-submodules
-sync-git-submodules:
+sync-git-submodules: ## Sync git submodules (honors SKIP_SUBMODULE_SYNC=yes)
 	@echo "Checking git submodules"
 	@if [ "$(SKIP_SUBMODULE_SYNC)" != "yes" ]; then \
 		echo "Syncing git submodules"; \
+		git submodule sync --recursive; \
 		git submodule update --init --recursive; \
 	else \
 		echo "Skipping submodule sync"; \
@@ -56,22 +57,27 @@ konflux-filter-unused-redhat-repos: sync-git-submodules ## Filter unused reposit
 .PHONY: konflux-update-tekton-task-refs
 konflux-update-tekton-task-refs: sync-git-submodules ## Update task references in Tekton pipeline files
 	@echo "Updating task references in Tekton pipeline files..."
-	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/tekton update-task-refs PIPELINE_FILES="$(shell find $(PROJECT_DIR)/.tekton -name '*.yaml' -not -name 'OWNERS' | tr '\n' ' ')"
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/tekton update-task-refs \
+		PIPELINE_FILES="$$(find $(PROJECT_DIR)/.tekton -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 | xargs -0 -r printf '%s ')"
 	@echo "Task references updated successfully."
 
-.PHONY: yamllint
-yamllint: sync-git-submodules $(LOCALBIN)## Download yamllint and lint YAML files in the repository
+.PHONY: yamllint-download
+yamllint-download: sync-git-submodules $(LOCALBIN) ## Download yamllint
 	@echo "Downloading yamllint..."
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
 		download-yamllint \
 		DOWNLOAD_INSTALL_DIR=$(LOCALBIN) \
 		DOWNLOAD_YAMLLINT_VERSION=$(YAMLLINT_VERSION)
+	@echo "Yamllint downloaded successfully."
+
+.PHONY: yamllint
+yamllint: yamllint-download ## Lint YAML files in the repository
 	@echo "Running yamllint on repository YAML files..."
 	yamllint -c $(PROJECT_DIR)/.yamllint.yaml .
 	@echo "YAML linting completed successfully."
 
 .PHONY: yq
-yq: sync-git-submodules $(LOCALBIN)## Download yq
+yq: sync-git-submodules $(LOCALBIN) ## Download yq
 	@echo "Downloading yq..."
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
 		download-yq \
@@ -97,7 +103,7 @@ konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs 
 .PHONY: rust-deps
 rust-deps: ## Install Rust build dependencies (protobuf-compiler, rustfmt, rust, clippy)
 	@echo "Installing Rust build dependencies..."
-	hack/rust-deps.sh
+	$(PROJECT_DIR)/hack/rust-deps.sh
 	@echo "Dependencies installed successfully."
 
 .PHONY: rust-fmt
