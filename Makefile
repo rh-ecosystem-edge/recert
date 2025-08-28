@@ -20,6 +20,7 @@ export PATH := $(abspath $(LOCALBIN)):$(PATH)
 export CARGO_TERM_COLOR := always
 
 # The 'all' target is the default goal.
+.DEFAULT_GOAL := all
 .PHONY: all
 all: yamllint rust-ci
 	@echo "All linting and testing tasks completed successfully."
