@@ -100,6 +100,12 @@ konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs 
 
 # Rust build targets
 
+.PHONY: rust-compile
+rust-compile: sync-git-submodules rust-deps ## Compile the Rust code
+	@echo "Compiling Rust code..."
+	cargo build --release --bin recert
+	@echo "Compilation completed successfully."
+
 .PHONY: rust-deps
 rust-deps: ## Install Rust build dependencies (protobuf-compiler, rustfmt, rust, clippy)
 	@echo "Installing Rust build dependencies..."
@@ -131,7 +137,7 @@ rust-test: ## Run Rust tests
 	@echo "Tests completed successfully."
 
 .PHONY: rust-ci
-rust-ci: rust-deps rust-fmt rust-check rust-clippy rust-test ## Run all Rust CI checks (used for Github actions workflow)
+rust-ci: rust-deps rust-fmt rust-check rust-clippy rust-test rust-compile ## Run all Rust CI checks (used for Github actions workflow)
 	@echo "All Rust CI checks completed successfully."
 
 .PHONY: help
