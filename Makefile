@@ -1,12 +1,26 @@
 # Detect the root directory of this Makefile
 # Explicitly strip the trailing slash from the path
 # We will add the slash manually when required to prevent double slashes in the paths
-ROOT_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+PROJECT_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-export PATH  := $(PATH):$(PWD)/bin
+## Location to install dependencies to
+# If you are setting this externally then you must use an absolute path
+LOCALBIN ?= $(PROJECT_DIR)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+# YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
+YAMLLINT_VERSION ?= 1.35.1
+
+# YQ_VERSION defines the yq version to download from GitHub releases.
+YQ_VERSION ?= v4.45.4
+
+# Prefer binaries in the local bin directory over system binaries.
+export PATH := $(abspath $(LOCALBIN)):$(PATH)
 export CARGO_TERM_COLOR := always
 
 # The 'all' target is the default goal.
+.DEFAULT_GOAL := all
 .PHONY: all
 all: yamllint rust-ci
 	@echo "All linting and testing tasks completed successfully."
@@ -14,7 +28,7 @@ all: yamllint rust-ci
 .PHONY: clean
 clean:
 	@rm -rf target
-	@rm -rf bin
+	@rm -rf $(LOCALBIN)
 
 .PHONY: test
 test: rust-test
@@ -22,32 +36,54 @@ test: rust-test
 
 # Konflux targets
 
+.PHONY: sync-git-submodules
+sync-git-submodules: ## Sync git submodules (honors SKIP_SUBMODULE_SYNC=yes)
+	@echo "Checking git submodules"
+	@if [ "$(SKIP_SUBMODULE_SYNC)" != "yes" ]; then \
+		echo "Syncing git submodules"; \
+		git submodule sync --recursive; \
+		git submodule update --init --recursive; \
+	else \
+		echo "Skipping submodule sync"; \
+	fi
+
 .PHONY: konflux-filter-unused-redhat-repos
-konflux-filter-unused-redhat-repos: ## Filter unused repositories from redhat.repo files in both runtime and build lock folders
+konflux-filter-unused-redhat-repos: sync-git-submodules ## Filter unused repositories from redhat.repo files in both runtime and build lock folders
 	@echo "Filtering unused repositories from runtime lock folder..."
-	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(ROOT_DIR)/.konflux/lock-runtime/redhat.repo
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(PROJECT_DIR)/.konflux/lock-runtime/redhat.repo
 	@echo "Filtering unused repositories from build lock folder..."
-	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(ROOT_DIR)/.konflux/lock-build/redhat.repo
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(PROJECT_DIR)/.konflux/lock-build/redhat.repo
 	@echo "Filtering completed for both lock folders."
 
 .PHONY: konflux-update-tekton-task-refs
-konflux-update-tekton-task-refs: ## Update task references in Tekton pipeline files
+konflux-update-tekton-task-refs: sync-git-submodules ## Update task references in Tekton pipeline files
 	@echo "Updating task references in Tekton pipeline files..."
-	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/tekton update-task-refs PIPELINE_FILES="$(shell find $(ROOT_DIR)/.tekton -name '*.yaml' -not -name 'OWNERS' | tr '\n' ' ')"
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/tekton update-task-refs \
+		PIPELINE_FILES="$$(find $(PROJECT_DIR)/.tekton -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 | xargs -0 -r printf '%s ')"
 	@echo "Task references updated successfully."
 
-.PHONY: yamllint
-yamllint: ## Download yamllint and lint YAML files in the repository
+.PHONY: yamllint-download
+yamllint-download: sync-git-submodules $(LOCALBIN) ## Download yamllint
 	@echo "Downloading yamllint..."
-	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/download download-yamllint DOWNLOAD_INSTALL_DIR=$(ROOT_DIR)/bin
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
+		download-yamllint \
+		DOWNLOAD_INSTALL_DIR=$(LOCALBIN) \
+		DOWNLOAD_YAMLLINT_VERSION=$(YAMLLINT_VERSION)
+	@echo "Yamllint downloaded successfully."
+
+.PHONY: yamllint
+yamllint: yamllint-download ## Lint YAML files in the repository
 	@echo "Running yamllint on repository YAML files..."
-	yamllint -c $(ROOT_DIR)/.yamllint.yaml .
+	yamllint -c $(PROJECT_DIR)/.yamllint.yaml .
 	@echo "YAML linting completed successfully."
 
 .PHONY: yq
-yq: ## Download yq
+yq: sync-git-submodules $(LOCALBIN) ## Download yq
 	@echo "Downloading yq..."
-	$(MAKE) -C $(ROOT_DIR)/telco5g-konflux/scripts/download download-yq DOWNLOAD_INSTALL_DIR=$(ROOT_DIR)/bin
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
+		download-yq \
+		DOWNLOAD_INSTALL_DIR=$(LOCALBIN) \
+		DOWNLOAD_YQ_VERSION=$(YQ_VERSION)
 	@echo "Yq downloaded successfully."
 
 .PHONY: yq-sort-and-format
@@ -65,10 +101,16 @@ konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs 
 
 # Rust build targets
 
+.PHONY: rust-compile
+rust-compile: sync-git-submodules rust-deps ## Compile the Rust code
+	@echo "Compiling Rust code..."
+	cargo build --release --bin recert
+	@echo "Compilation completed successfully."
+
 .PHONY: rust-deps
 rust-deps: ## Install Rust build dependencies (protobuf-compiler, rustfmt, rust, clippy)
 	@echo "Installing Rust build dependencies..."
-	hack/rust-deps.sh
+	$(PROJECT_DIR)/hack/rust-deps.sh
 	@echo "Dependencies installed successfully."
 
 .PHONY: rust-fmt
@@ -96,7 +138,7 @@ rust-test: ## Run Rust tests
 	@echo "Tests completed successfully."
 
 .PHONY: rust-ci
-rust-ci: rust-deps rust-fmt rust-check rust-clippy rust-test ## Run all Rust CI checks (used for Github actions workflow)
+rust-ci: rust-deps rust-fmt rust-check rust-clippy rust-test rust-compile ## Run all Rust CI checks (used for Github actions workflow)
 	@echo "All Rust CI checks completed successfully."
 
 .PHONY: help
