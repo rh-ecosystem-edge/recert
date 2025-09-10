@@ -2,6 +2,8 @@
 arches:
   - x86_64
 contentOrigin:
+  # Repos defined in this list must exactly match the repos defined in the conforma configuration
+  # See https://github.com/release-engineering/rhtap-ec-policy/blob/main/data/known_rpm_repositories.yml
   repos:
     - repoid: rhel-9-for-$basearch-appstream-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - AppStream (RPMs)
