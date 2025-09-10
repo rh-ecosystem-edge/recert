@@ -3,9 +3,9 @@ arches:
   - x86_64
 contentOrigin:
   repos:
-    - repoid: rhel-9-for-x86_64-appstream-rpms
-      name: Red Hat Enterprise Linux 9 for x86_64 - AppStream (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/x86_64/appstream/os
+    - repoid: rhel-9-for-$basearch-appstream-rpms
+      name: Red Hat Enterprise Linux 9 for $basearch - AppStream (RPMs)
+      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/appstream/os
       enabled: "1"
       gpgcheck: "1"
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
@@ -17,9 +17,9 @@ contentOrigin:
       metadata_expire: "86400"
       enabled_metadata: "1"
       varsFromContainerfile: Dockerfile
-    - repoid: rhel-9-for-x86_64-baseos-rpms
-      name: Red Hat Enterprise Linux 9 for x86_64 - BaseOS (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/x86_64/baseos/os
+    - repoid: rhel-9-for-$basearch-baseos-rpms
+      name: Red Hat Enterprise Linux 9 for $basearch - BaseOS (RPMs)
+      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/baseos/os
       enabled: "1"
       gpgcheck: "1"
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
@@ -31,51 +31,9 @@ contentOrigin:
       metadata_expire: "86400"
       enabled_metadata: "1"
       varsFromContainerfile: Dockerfile
-    - repoid: codeready-builder-for-rhel-9-x86_64-rpms
-      name: Red Hat CodeReady Linux Builder for RHEL 9 x86_64 (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/x86_64/codeready-builder/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: rhel-9-for-aarch64-appstream-rpms
-      name: Red Hat Enterprise Linux 9 for aarch64 - AppStream (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/aarch64/appstream/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: rhel-9-for-aarch64-baseos-rpms
-      name: Red Hat Enterprise Linux 9 for aarch64 - BaseOS (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/aarch64/baseos/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: codeready-builder-for-rhel-9-aarch64-rpms
-      name: Red Hat CodeReady Linux Builder for RHEL 9 aarch64 (RPMs)
-      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/aarch64/codeready-builder/os
+    - repoid: codeready-builder-for-rhel-9-$basearch-rpms
+      name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch (RPMs)
+      baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/codeready-builder/os
       enabled: "1"
       gpgcheck: "1"
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
