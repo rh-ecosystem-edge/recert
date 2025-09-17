@@ -2,5 +2,10 @@
 extends: default
 ignore:
   - vendor/
+  # Ignore the generated rpm lock files because we can't easily control their formatting
+  - .konflux/lock-build/rpms.lock.yaml
+  - .konflux/lock-runtime/rpms.lock.yaml
+  # Ignore the submodule directories
+  - telco5g-konflux/
 rules:
   line-length: disable
