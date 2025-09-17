@@ -9,6 +9,29 @@ LOCALBIN ?= $(PROJECT_DIR)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
+# RHEL9_ACTIVATION_KEY defines the activation key to use for the rpm lock file for the runtime
+# This should be set in your environment prior to running the `konflux-update-rpm-lock-runtime` target
+RHEL9_ACTIVATION_KEY ?= ""
+
+# RHEL9_ORG_ID defines the organization to use for the rpm lock file for the runtime
+# This should be set in your environment prior to running the `konflux-update-rpm-lock-runtime` target
+RHEL9_ORG_ID ?= ""
+
+# The registry auth file is mounted into the container to allow for private registry pulls.
+# This is automatically detected and mounted into the container if it exists on the host.
+# If it does not exist, a warning is printed and the registry pulls may fail if not public.
+# This can be set from the command line if the default is not correct for your environment.
+REGISTRY_AUTH_FILE ?= $(shell echo $${XDG_RUNTIME_DIR:-/run/user/$$(id -u)})/containers/auth.json
+
+# RHEL9_RELEASE defines the RHEL9 release version to update the rpm lock file for the runtime
+# This is automatically extracted from the Containerfile
+RHEL9_RELEASE ?= $(shell awk '/registry\.redhat\.io\/rhel9.*-els\/rhel:/ {split($$2, parts, /[:|@]/); print parts[2]}' $(PROJECT_DIR)/.konflux/Dockerfile)
+RHEL9_RELEASE_DASHED := $(subst .,-,$(RHEL9_RELEASE))
+
+# These images are extracted from the Containerfile `FROM` lines
+RHEL9_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel:/ {split($$2, parts, /[ @]/); print parts[1]}' $(PROJECT_DIR)/.konflux/Dockerfile)
+RHEL9_MINIMAL_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel-minimal:/ {split($$2, parts, /[ @]/); print parts[1]}' $(PROJECT_DIR)/.konflux/Dockerfile)
+
 # YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
 YAMLLINT_VERSION ?= 1.35.1
 
@@ -47,13 +70,53 @@ sync-git-submodules: ## Sync git submodules (honors SKIP_SUBMODULE_SYNC=yes)
 		echo "Skipping submodule sync"; \
 	fi
 
-.PHONY: konflux-filter-unused-redhat-repos
-konflux-filter-unused-redhat-repos: sync-git-submodules ## Filter unused repositories from redhat.repo files in both runtime and build lock folders
-	@echo "Filtering unused repositories from runtime lock folder..."
-	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(PROJECT_DIR)/.konflux/lock-runtime/redhat.repo
-	@echo "Filtering unused repositories from build lock folder..."
-	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock filter-unused-repos REPO_FILE=$(PROJECT_DIR)/.konflux/lock-build/redhat.repo
-	@echo "Filtering completed for both lock folders."
+.PHONY: konflux-update-rpm-lock-runtime
+konflux-update-rpm-lock-runtime: sync-git-submodules ## Update the rpm lock file for the runtime
+	@echo "Updating rpm lock file for the runtime..."
+	@echo "Copying Dockerfile to lock directory for container context..."
+	@cp $(PROJECT_DIR)/.konflux/Dockerfile $(PROJECT_DIR)/.konflux/lock-runtime/Dockerfile
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock generate-rhel9-locks \
+		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-runtime \
+		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \
+		RHEL9_IMAGE_TO_LOCK=$(RHEL9_MINIMAL_IMAGE) \
+		\
+		RHEL9_RELEASE=$(RHEL9_RELEASE) \
+		RHEL9_ACTIVATION_KEY=$(RHEL9_ACTIVATION_KEY) \
+		RHEL9_ORG_ID=$(RHEL9_ORG_ID) \
+		RHEL9_EXECUTION_IMAGE=$(RHEL9_IMAGE) \
+		; \
+	result=$$?; \
+	echo "Cleaning up copied Dockerfile..."; \
+	rm -f $(PROJECT_DIR)/.konflux/lock-runtime/Dockerfile; \
+	if [ $$result -ne 0 ]; then \
+		echo "rpm lock file update failed."; \
+		exit $$result; \
+	fi
+	@echo "Rpm lock file updated successfully."
+
+.PHONY: konflux-update-rpm-lock-build
+konflux-update-rpm-lock-build: sync-git-submodules ## Update the rpm lock file for the build
+	@echo "Updating rpm lock file for the build..."
+	@echo "Copying Dockerfile to lock directory for container context..."
+	@cp $(PROJECT_DIR)/.konflux/Dockerfile $(PROJECT_DIR)/.konflux/lock-build/Dockerfile
+	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock generate-rhel9-locks \
+		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-build \
+		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \
+		RHEL9_IMAGE_TO_LOCK=$(RHEL9_IMAGE) \
+		\
+		RHEL9_RELEASE=$(RHEL9_RELEASE) \
+		RHEL9_ACTIVATION_KEY=$(RHEL9_ACTIVATION_KEY) \
+		RHEL9_ORG_ID=$(RHEL9_ORG_ID) \
+		RHEL9_EXECUTION_IMAGE=$(RHEL9_IMAGE) \
+		; \
+	result=$$?; \
+	echo "Cleaning up copied Dockerfile..."; \
+	rm -f $(PROJECT_DIR)/.konflux/lock-build/Dockerfile; \
+	if [ $$result -ne 0 ]; then \
+		echo "rpm lock file update failed."; \
+		exit $$result; \
+	fi
+	@echo "Rpm lock file updated successfully."
 
 .PHONY: konflux-update-tekton-task-refs
 konflux-update-tekton-task-refs: sync-git-submodules ## Update task references in Tekton pipeline files
@@ -96,7 +159,7 @@ yq-sort-and-format: yq ## Sort keys/reformat all YAML files in the repository
 	@echo "YAML sorting and formatting completed successfully."
 
 .PHONY: konflux-all
-konflux-all: konflux-filter-unused-redhat-repos konflux-update-tekton-task-refs ## Run all Konflux-related targets
+konflux-all: konflux-update-rpm-lock-runtime konflux-update-rpm-lock-build konflux-update-tekton-task-refs ## Run all Konflux-related targets
 	@echo "All Konflux targets completed successfully."
 
 # Rust build targets
