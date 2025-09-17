@@ -1,16 +1,36 @@
+---
 # See the OWNERS docs at https://go.k8s.io/owners
 
 component: "Telco Edge"
-subcomponent: "Recert"
-
 filters:
   ".*":
-    reviewers:
-      - recert-reviewers
     approvers:
       - recert-approvers
-  ^Dockerfile:
     reviewers:
-    - rauhersu
+      - recert-reviewers
+  ".konflux/*":
+    approvers:
+      - konflux-approvers
+    reviewers:
+      - konflux-reviewers
+  ".tekton/*":
+    approvers:
+      - konflux-approvers
+    reviewers:
+      - konflux-reviewers
+  ^Dockerfile:
     labels:
       - downstream-change-needed
+    reviewers:
+      - rauhersu
+  "renovate.json":
+    approvers:
+      - konflux-approvers
+    reviewers:
+      - konflux-reviewers
+  "telco5g-konflux/":
+    approvers:
+      - konflux-approvers
+    reviewers:
+      - konflux-reviewers
+subcomponent: "Recert"
