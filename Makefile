@@ -29,8 +29,8 @@ RHEL9_RELEASE ?= $(shell awk '/registry\.redhat\.io\/rhel9.*-els\/rhel:/ {split(
 RHEL9_RELEASE_DASHED := $(subst .,-,$(RHEL9_RELEASE))
 
 # These images are extracted from the Containerfile `FROM` lines
-RHEL9_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel:/ {split($$2, parts, /[ @]/); print parts[1]}' $(PROJECT_DIR)/.konflux/Dockerfile)
-RHEL9_MINIMAL_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel-minimal:/ {split($$2, parts, /[ @]/); print parts[1]}' $(PROJECT_DIR)/.konflux/Dockerfile)
+RHEL9_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel:/ {print $$2}' $(PROJECT_DIR)/.konflux/Dockerfile)
+RHEL9_MINIMAL_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel-minimal:/ {print $$2}' $(PROJECT_DIR)/.konflux/Dockerfile)
 
 # YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
 YAMLLINT_VERSION ?= 1.35.1
