@@ -81,41 +81,6 @@ arches:
     name: libutempter
     evr: 1.2.1-6.el9
     sourcerpm: libutempter-1.2.1-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/o/openssh-8.7p1-38.el9_4.4.aarch64.rpm
-    repoid: rhel-9-for-aarch64-baseos-rpms
-    size: 466503
-    checksum: sha256:4d3e43a76fc2242e8a0e0beb9e2113cafb0bbcb0e5c488330d2a989ba723cf16
-    name: openssh
-    evr: 8.7p1-38.el9_4.4
-    sourcerpm: openssh-8.7p1-38.el9_4.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/o/openssh-clients-8.7p1-38.el9_4.4.aarch64.rpm
-    repoid: rhel-9-for-aarch64-baseos-rpms
-    size: 705715
-    checksum: sha256:e4dde18b7bf746fa8099dc219523384838fc2ab27521bd154294e837a42adc54
-    name: openssh-clients
-    evr: 8.7p1-38.el9_4.4
-    sourcerpm: openssh-8.7p1-38.el9_4.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/o/openssl-3.0.7-28.el9_4.aarch64.rpm
-    repoid: rhel-9-for-aarch64-baseos-rpms
-    size: 1246716
-    checksum: sha256:23aaee350db63934f7afc9fca10c65c1df6f95561659bbf6f3c045219b4252c9
-    name: openssl
-    evr: 1:3.0.7-28.el9_4
-    sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/o/openssl-libs-3.0.7-28.el9_4.aarch64.rpm
-    repoid: rhel-9-for-aarch64-baseos-rpms
-    size: 1878584
-    checksum: sha256:2844734aa1cef6d41802d074d4f0491dce3e6a28b9a928dc5e5011801f32722a
-    name: openssl-libs
-    evr: 1:3.0.7-28.el9_4
-    sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/p/pam-1.5.1-19.el9.aarch64.rpm
-    repoid: rhel-9-for-aarch64-baseos-rpms
-    size: 646757
-    checksum: sha256:37683e8ae32dc4f5bfff343d91d83f595905fa4ec990f25a5d70da893a3d9033
-    name: pam
-    evr: 1.5.1-19.el9
-    sourcerpm: pam-1.5.1-19.el9.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9.4/aarch64/baseos/os/Packages/u/util-linux-2.37.4-18.el9.aarch64.rpm
     repoid: rhel-9-for-aarch64-baseos-rpms
     size: 2394535
@@ -130,6 +95,34 @@ arches:
     name: util-linux-core
     evr: 2.37.4-18.el9
     sourcerpm: util-linux-2.37.4-18.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/aarch64/baseos/os/Packages/o/openssh-8.7p1-38.el9_4.5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-eus-rpms
+    size: 463505
+    checksum: sha256:2d90c96a3b297af8a0a3c89b0836c0b12317d6225ad20bfc8f892fcea4ef0ae5
+    name: openssh
+    evr: 8.7p1-38.el9_4.5
+    sourcerpm: openssh-8.7p1-38.el9_4.5.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/aarch64/baseos/os/Packages/o/openssh-clients-8.7p1-38.el9_4.5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-eus-rpms
+    size: 705635
+    checksum: sha256:88c3b641ec06dc581063dbd5934342db8a4996287dfcb51a8ef5f5665df8e23d
+    name: openssh-clients
+    evr: 8.7p1-38.el9_4.5
+    sourcerpm: openssh-8.7p1-38.el9_4.5.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/aarch64/baseos/os/Packages/o/openssl-3.0.7-29.el9_4.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-eus-rpms
+    size: 1244228
+    checksum: sha256:aa2685dd4c7134d38eb069f8bc2e1ec130d3422dd050d26c00949c5a917cc3c4
+    name: openssl
+    evr: 1:3.0.7-29.el9_4
+    sourcerpm: openssl-3.0.7-29.el9_4.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/aarch64/baseos/os/Packages/p/pam-1.5.1-24.el9_4.1.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-eus-rpms
+    size: 643278
+    checksum: sha256:a72cd2a43b9477c4fa1c097e513f38b1ff7694627acd1063d80eea33427bc2b3
+    name: pam
+    evr: 1.5.1-24.el9_4.1
+    sourcerpm: pam-1.5.1-24.el9_4.1.src.rpm
   source: []
   module_metadata: []
 - arch: x86_64
@@ -211,41 +204,6 @@ arches:
     name: libutempter
     evr: 1.2.1-6.el9
     sourcerpm: libutempter-1.2.1-6.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/o/openssh-8.7p1-38.el9_4.4.x86_64.rpm
-    repoid: rhel-9-for-x86_64-baseos-rpms
-    size: 477128
-    checksum: sha256:4dfc84f29b23f1d227c99eb32adbb425cee0aea039101dfcb7184787d85e1f13
-    name: openssh
-    evr: 8.7p1-38.el9_4.4
-    sourcerpm: openssh-8.7p1-38.el9_4.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/o/openssh-clients-8.7p1-38.el9_4.4.x86_64.rpm
-    repoid: rhel-9-for-x86_64-baseos-rpms
-    size: 739455
-    checksum: sha256:d5fee8ce71d338cb20386c647d1f20b7a4310db2280e470fc2744de11731b508
-    name: openssh-clients
-    evr: 8.7p1-38.el9_4.4
-    sourcerpm: openssh-8.7p1-38.el9_4.4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/o/openssl-3.0.7-28.el9_4.x86_64.rpm
-    repoid: rhel-9-for-x86_64-baseos-rpms
-    size: 1268306
-    checksum: sha256:255fb57a1b308c1f2df2027c63953955717498a76056f4d4e1279f02001e9aa8
-    name: openssl
-    evr: 1:3.0.7-28.el9_4
-    sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/o/openssl-libs-3.0.7-28.el9_4.x86_64.rpm
-    repoid: rhel-9-for-x86_64-baseos-rpms
-    size: 1986963
-    checksum: sha256:9f5939d641e236dae1c75ba05395f3fa644dddc3ba74a58a729e3c2384c86c1b
-    name: openssl-libs
-    evr: 1:3.0.7-28.el9_4
-    sourcerpm: openssl-3.0.7-28.el9_4.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/p/pam-1.5.1-19.el9.x86_64.rpm
-    repoid: rhel-9-for-x86_64-baseos-rpms
-    size: 646595
-    checksum: sha256:19366591c6a2b50d354bc27cce98e707d6c23fa92af4addb93ed7237f2818711
-    name: pam
-    evr: 1.5.1-19.el9
-    sourcerpm: pam-1.5.1-19.el9.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9.4/x86_64/baseos/os/Packages/u/util-linux-2.37.4-18.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-baseos-rpms
     size: 2396787
@@ -260,5 +218,33 @@ arches:
     name: util-linux-core
     evr: 2.37.4-18.el9
     sourcerpm: util-linux-2.37.4-18.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/x86_64/baseos/os/Packages/o/openssh-8.7p1-38.el9_4.5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-eus-rpms
+    size: 474293
+    checksum: sha256:44c59d9397cfa395e146155a01fdb0fc5b9e87d597a9a9b9fc5fe345a5b46b67
+    name: openssh
+    evr: 8.7p1-38.el9_4.5
+    sourcerpm: openssh-8.7p1-38.el9_4.5.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/x86_64/baseos/os/Packages/o/openssh-clients-8.7p1-38.el9_4.5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-eus-rpms
+    size: 736808
+    checksum: sha256:3897e45c11ee0c6d9a5ca3d5f02bfa45187aae4628737244d1da73446b29dc14
+    name: openssh-clients
+    evr: 8.7p1-38.el9_4.5
+    sourcerpm: openssh-8.7p1-38.el9_4.5.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/x86_64/baseos/os/Packages/o/openssl-3.0.7-29.el9_4.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-eus-rpms
+    size: 1265961
+    checksum: sha256:aa92fbd2ebf2087b784857f1daa6f1fe665b0a50bf73d777943cae487fcf6072
+    name: openssl
+    evr: 1:3.0.7-29.el9_4
+    sourcerpm: openssl-3.0.7-29.el9_4.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.4/x86_64/baseos/os/Packages/p/pam-1.5.1-24.el9_4.1.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-eus-rpms
+    size: 645046
+    checksum: sha256:850327c6e6415e4f0ca55c353227135672fe9aced101815ddad08d66852ba693
+    name: pam
+    evr: 1.5.1-24.el9_4.1
+    sourcerpm: pam-1.5.1-24.el9_4.1.src.rpm
   source: []
   module_metadata: []
