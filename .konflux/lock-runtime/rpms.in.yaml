@@ -19,6 +19,20 @@ contentOrigin:
       metadata_expire: "86400"
       enabled_metadata: "1"
       varsFromContainerfile: Dockerfile
+    - repoid: rhel-9-for-$basearch-appstream-eus-rpms
+      name: Red Hat Enterprise Linux 9 for $basearch - AppStream EUS (RPMs)
+      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/appstream/os
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslcacert: /etc/rhsm/ca/redhat-uep.pem
+      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
+      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      varsFromContainerfile: Dockerfile
     - repoid: rhel-9-for-$basearch-baseos-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - BaseOS (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/baseos/os
@@ -33,9 +47,37 @@ contentOrigin:
       metadata_expire: "86400"
       enabled_metadata: "1"
       varsFromContainerfile: Dockerfile
+    - repoid: rhel-9-for-$basearch-baseos-eus-rpms
+      name: Red Hat Enterprise Linux 9 for $basearch - BaseOS EUS (RPMs)
+      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/baseos/os
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslcacert: /etc/rhsm/ca/redhat-uep.pem
+      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
+      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      varsFromContainerfile: Dockerfile
     - repoid: codeready-builder-for-rhel-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/codeready-builder/os
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslcacert: /etc/rhsm/ca/redhat-uep.pem
+      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
+      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      varsFromContainerfile: Dockerfile
+    - repoid: codeready-builder-for-rhel-9-$basearch-eus-rpms
+      name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch EUS (RPMs)
+      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/codeready-builder/os
       enabled: "1"
       gpgcheck: "1"
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
