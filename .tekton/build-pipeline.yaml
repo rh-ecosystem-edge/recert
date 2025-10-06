@@ -105,6 +105,10 @@ spec:
       default: docker
       type: string
       description: The format for the resulting image's mediaType. Valid values are oci or docker.
+    - default: []
+      description: Additional labels to apply to the built container image
+      name: additional-labels
+      type: array
   results:
     - description: ''
       name: IMAGE_URL
@@ -250,12 +254,13 @@ spec:
         - name: LABELS
           value:
             - $(tasks.generate-labels.results.labels[*])
+            - $(params.additional-labels[*])
             - com.redhat.component=recert
             - description=recert
             - distribution-scope=public
             - io.k8s.description=recert
-            - name=openshift4/recert-rhel9
-            - release=4.15
+            - release=4.14
+            - cpe="cpe:/a:redhat:openshift:4.14::el9"
             - url=https://github.com/rh-ecosystem-edge/recert
             - vendor=Red Hat, Inc.
             - io.k8s.display-name=recert
