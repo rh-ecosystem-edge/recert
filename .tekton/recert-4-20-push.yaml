@@ -17,7 +17,7 @@ metadata:
         '.konflux/lock-build/***'.pathChanged() ||
         '.konflux/lock-runtime/***'.pathChanged() ||
         '.tekton/build-pipeline.yaml'.pathChanged() ||
-        '.tekton/recert-4-20-pull-request.yaml'.pathChanged() ||
+        '.tekton/recert-4-20-push.yaml'.pathChanged() ||
         'build.rs'.pathChanged() ||
         'Cargo.lock'.pathChanged() ||
         'Cargo.toml'.pathChanged() ||
