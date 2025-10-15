@@ -1,7 +1,7 @@
 # See README.Konflux.md before editing this Dockerfile
 
 # build stage
-FROM registry.redhat.io/rhel9-4-els/rhel:9.4@sha256:ffcdbfde8abfe6dd3bcd94f7779736f9d5207da7080c1de81764399205ddc33e AS build-image
+FROM registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:e7834be17a5c9c22291c6626c0d35e2cc76c062a946c94ac1d2a95fedf7af503 AS build-image
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN PKGS="rust-toolset protobuf-compiler" \
 RUN cargo build --release --bin recert
 
 # runtime stage
-FROM registry.redhat.io/rhel9-4-els/rhel-minimal:9.4@sha256:44aca991940c02b026c46dd07d485a6a63356b3e809459c9cecd92f997ca4ca8 AS runtime-image
+FROM registry.redhat.io/rhel9-6-els/rhel-minimal:9.6@sha256:2bdf19e0877fdbb0696330159ed72a12deef8a60eed819c4e2fc0064147b39df AS runtime-image
 
 RUN PKGS="openssh-clients" \
     && microdnf install -y $PKGS \
