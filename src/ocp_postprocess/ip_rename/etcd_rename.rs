@@ -6,15 +6,8 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::Ipv6Addr;
 use std::sync::Arc;
-
-fn is_ipv6(ip: &str) -> Result<bool> {
-    let addr = ip
-        .parse::<IpAddr>()
-        .with_context(|| format!("Failed to parse IP address: {}", ip))?;
-    Ok(addr.is_ipv6())
-}
 
 // Extract both original IPv4 and IPv6 IPs from dual-stack cluster node configuration
 pub(crate) async fn extract_original_ips(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
@@ -43,8 +36,7 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
         .and_then(|a| a.as_array())
         .context("Node does not have /status/addresses array")?;
 
-    let mut original_ipv4: Option<String> = None;
-    let mut original_ipv6: Option<String> = None;
+    let mut result = Vec::new();
 
     for address in addresses {
         if let (Some(addr_type), Some(addr_value)) = (
@@ -52,23 +44,9 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
             address.pointer("/address").and_then(|a| a.as_str()),
         ) {
             if addr_type == "InternalIP" {
-                if is_ipv6(addr_value)? {
-                    original_ipv6 = Some(addr_value.to_string());
-                } else {
-                    original_ipv4 = Some(addr_value.to_string());
-                }
+                result.push(addr_value.to_string());
             }
         }
-    }
-
-    let mut result = Vec::new();
-
-    if let Some(ipv4) = original_ipv4 {
-        result.push(ipv4);
-    }
-
-    if let Some(ipv6) = original_ipv6 {
-        result.push(ipv6);
     }
 
     ensure!(!result.is_empty(), "No InternalIP addresses found in node configuration");
@@ -76,7 +54,7 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
     if result.len() == 1 {
         log::info!("Found single-stack IP: {}", result[0]);
     } else {
-        log::info!("Found dual-stack IPs - IPv4: {}, IPv6: {}", result[0], result[1]);
+        log::info!("Found {} InternalIP(s) {}", result.len(), result.join(", "));
     }
 
     Ok(result)
