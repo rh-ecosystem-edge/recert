@@ -14,12 +14,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
     - repoid: rhel-9-for-$basearch-appstream-eus-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - AppStream EUS (RPMs)
       baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/appstream/os
@@ -28,12 +34,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
     - repoid: rhel-9-for-$basearch-baseos-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - BaseOS (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/baseos/os
@@ -42,12 +54,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
     - repoid: rhel-9-for-$basearch-baseos-eus-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - BaseOS EUS (RPMs)
       baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/baseos/os
@@ -56,12 +74,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
     - repoid: codeready-builder-for-rhel-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/codeready-builder/os
@@ -70,12 +94,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
     - repoid: codeready-builder-for-rhel-9-$basearch-eus-rpms
       name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch EUS (RPMs)
       baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/codeready-builder/os
@@ -84,16 +114,18 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-context:
-  containerfile:
-    file: Dockerfile
-    stageName: build-image
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1
+      #
 packages:
   - rust-toolset
   - protobuf-compiler
