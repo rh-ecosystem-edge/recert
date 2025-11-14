@@ -57,10 +57,12 @@ spec:
         - linux/x86_64
     - name: dockerfile
       value: .konflux/Dockerfile
+    - name: build-args-file
+      value: .konflux/container_build_args.conf
     - name: hermetic
       value: "true"
     - name: prefetch-input
-      value: '[{"type": "rpm", "path": ".konflux/lock-build"}, {"type": "rpm", "path": ".konflux/lock-runtime"}]'
+      value: '[{"type": "rpm", "path": ".konflux/lock-build/"}, {"type": "rpm", "path": ".konflux/lock-runtime/"}]'
     - name: dev-package-managers
       value: true
     - name: build-source-image
