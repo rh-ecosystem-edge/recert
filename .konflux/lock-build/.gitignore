@@ -1,4 +1,1 @@
-Dockerfile
-podman_script.sh
-redhat.repo
-rpms.out.yaml
+tmp/
