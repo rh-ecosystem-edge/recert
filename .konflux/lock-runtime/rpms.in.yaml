@@ -19,20 +19,6 @@ contentOrigin:
       # Mintmaker should keep these in sync automatically when it performs updates
       varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal@sha256:53ea1f6d835898acda5becdb3f8b1292038a480384bbcf994fc0bcf1f7e8eaf7
       #
-    - repoid: ubi-9-for-$basearch-appstream-eus-rpms
-      name: Red Hat Universal Base Image 9 for $basearch - AppStream EUS (RPMs)
-      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal@sha256:53ea1f6d835898acda5becdb3f8b1292038a480384bbcf994fc0bcf1f7e8eaf7
-      #
     - repoid: ubi-9-for-$basearch-baseos-rpms
       name: Red Hat Universal Base Image 9 for $basearch - BaseOS (RPMs)
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os
@@ -47,36 +33,8 @@ contentOrigin:
       # Mintmaker should keep these in sync automatically when it performs updates
       varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal@sha256:53ea1f6d835898acda5becdb3f8b1292038a480384bbcf994fc0bcf1f7e8eaf7
       #
-    - repoid: ubi-9-for-$basearch-baseos-eus-rpms
-      name: Red Hat Universal Base Image 9 for $basearch - BaseOS EUS (RPMs)
-      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal@sha256:53ea1f6d835898acda5becdb3f8b1292038a480384bbcf994fc0bcf1f7e8eaf7
-      #
     - repoid: codeready-builder-for-ubi-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for UBI 9 $basearch (RPMs)
-      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/codeready-builder/os/
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal@sha256:53ea1f6d835898acda5becdb3f8b1292038a480384bbcf994fc0bcf1f7e8eaf7
-      #
-    - repoid: codeready-builder-for-ubi-9-$basearch-eus-rpms
-      name: Red Hat CodeReady Linux Builder for UBI 9 $basearch EUS (RPMs)
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/codeready-builder/os/
       enabled: "1"
       gpgcheck: "1"
