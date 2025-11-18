@@ -23,10 +23,6 @@ RHEL9_ORG_ID ?= ""
 # This can be set from the command line if the default is not correct for your environment.
 REGISTRY_AUTH_FILE ?= $(shell echo $${XDG_RUNTIME_DIR:-/run/user/$$(id -u)})/containers/auth.json
 
-# RHEL9_RELEASE defines the RHEL9 release version to update the rpm lock file for the runtime
-# This is automatically extracted from the Containerfile
-RHEL9_RELEASE ?= $(shell awk -F'[=:@]' '/^BUILDER_IMAGE=registry\.redhat\.io\/rhel9.*-els\/rhel:/ {print $$3}' $(PROJECT_DIR)/.konflux/container_build_args.conf)
-
 # YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
 YAMLLINT_VERSION ?= 1.35.1
 
@@ -102,7 +98,6 @@ konflux-update-rpm-lock-build: sync-git-submodules ## Update the rpm lock file f
 		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-build/tmp/ \
 		RHEL9_EXECUTION_IMAGE=$$(awk -F'=' '/^BUILDER_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf | sed 's|@.*||') \
 		RHEL9_IMAGE_TO_LOCK=$$(awk -F'=' '/^BUILDER_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf) \
-		RHEL9_RELEASE=$(RHEL9_RELEASE) \
 		RHEL9_ACTIVATION_KEY=$(RHEL9_ACTIVATION_KEY) \
 		RHEL9_ORG_ID=$(RHEL9_ORG_ID) \
 		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \

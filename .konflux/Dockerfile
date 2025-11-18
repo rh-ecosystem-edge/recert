@@ -1,5 +1,5 @@
 # See README.Konflux.md before editing this Dockerfile
-ARG BUILDER_IMAGE=registry.redhat.io/rhel9-6-els/rhel:9.6
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/ubi:latest
 ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # build stage
