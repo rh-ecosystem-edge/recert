@@ -1,7 +1,9 @@
 # See README.Konflux.md before editing this Dockerfile
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/ubi:latest
+ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # build stage
-FROM registry.redhat.io/rhel9-6-els/rhel:9.6@sha256:5f284a072ae41d6db952300c5e4aa1bb2410960075e158f81fc9c552f9d6d7e1 AS build-image
+FROM ${BUILDER_IMAGE} AS builder-image
 
 WORKDIR /app
 
@@ -14,7 +16,7 @@ RUN PKGS="rust-toolset protobuf-compiler" \
 RUN cargo build --release --bin recert
 
 # runtime stage
-FROM registry.redhat.io/rhel9-6-els/rhel-minimal:9.6@sha256:9d598db1de300ae0b319b2d2b8b0f9459cc289f76f11dc8a659c13bab0d66393 AS runtime-image
+FROM ${RUNTIME_IMAGE} AS runtime-image
 
 RUN PKGS="openssh-clients" \
     && microdnf install -y $PKGS \
@@ -22,6 +24,6 @@ RUN PKGS="openssh-clients" \
 
 WORKDIR /app
 
-COPY --from=build-image /app/target/release/recert /usr/local/bin
+COPY --from=builder-image /app/target/release/recert /usr/local/bin
 
 ENTRYPOINT ["/usr/local/bin/recert"]
