@@ -6,6 +6,53 @@ contentOrigin:
   # Repos defined in this list must exactly match the repos defined in the conforma configuration
   # See https://github.com/release-engineering/rhtap-ec-policy/blob/main/data/known_rpm_repositories.yml
   repos:
+    # UBI Repos are used for most of the packages
+    - repoid: ubi-9-for-$basearch-appstream-rpms
+      name: Red Hat Universal Base Image 9 for $basearch - AppStream (RPMs)
+      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      priority: 1
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
+    - repoid: ubi-9-for-$basearch-baseos-rpms
+      name: Red Hat Universal Base Image 9 for $basearch - BaseOS (RPMs)
+      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      priority: 1
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
+    - repoid: codeready-builder-for-ubi-9-$basearch-rpms
+      name: Red Hat CodeReady Linux Builder for UBI 9 $basearch (RPMs)
+      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/codeready-builder/os/
+      enabled: "1"
+      gpgcheck: "1"
+      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+      sslverify: "1"
+      sslverifystatus: "1"
+      metadata_expire: "86400"
+      enabled_metadata: "1"
+      priority: 1
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
+    # RHEL repos are required for some packages
     - repoid: rhel-9-for-$basearch-appstream-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - AppStream (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/appstream/os
@@ -14,26 +61,19 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: rhel-9-for-$basearch-appstream-eus-rpms
-      name: Red Hat Enterprise Linux 9 for $basearch - AppStream EUS (RPMs)
-      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/appstream/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      priority: 2
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
     - repoid: rhel-9-for-$basearch-baseos-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - BaseOS (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/baseos/os
@@ -42,26 +82,19 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: rhel-9-for-$basearch-baseos-eus-rpms
-      name: Red Hat Enterprise Linux 9 for $basearch - BaseOS EUS (RPMs)
-      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/baseos/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
+      priority: 2
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
     - repoid: codeready-builder-for-rhel-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch (RPMs)
       baseurl: https://cdn.redhat.com/content/dist/rhel9/{version}/$basearch/codeready-builder/os
@@ -70,30 +103,19 @@ contentOrigin:
       gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
       sslverify: "1"
       sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
+      # The SSL_CLIENT_KEY and SSL_CLIENT_CERT values will be provided in the environment on the Konflux cluster
+      # For the local make target, they are instead replaced with sed substitutions
+      sslclientkey: $SSL_CLIENT_KEY
+      sslclientcert: $SSL_CLIENT_CERT
+      #
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-    - repoid: codeready-builder-for-rhel-9-$basearch-eus-rpms
-      name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch EUS (RPMs)
-      baseurl: https://cdn.redhat.com/content/eus/rhel9/{version}/$basearch/codeready-builder/os
-      enabled: "1"
-      gpgcheck: "1"
-      gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-      sslverify: "1"
-      sslcacert: /etc/rhsm/ca/redhat-uep.pem
-      sslclientkey: /etc/pki/entitlement/placeholder-key.pem
-      sslclientcert: /etc/pki/entitlement/placeholder.pem
-      sslverifystatus: "1"
-      metadata_expire: "86400"
-      enabled_metadata: "1"
-      varsFromContainerfile: Dockerfile
-context:
-  containerfile:
-    file: Dockerfile
-    stageName: build-image
+      priority: 2
+      # This should match the BUILDER_IMAGE in container_build_args.conf
+      # Mintmaker should keep these in sync automatically when it performs updates
+      varsFromImage: registry.access.redhat.com/ubi9/ubi@sha256:bbac76ac0310eefd6298ed3ab3c1710e1c842f1f778800de0f49e660b402bdc5
+      #
 packages:
   - rust-toolset
   - protobuf-compiler
