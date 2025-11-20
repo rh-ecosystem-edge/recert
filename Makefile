@@ -23,15 +23,6 @@ RHEL9_ORG_ID ?= ""
 # This can be set from the command line if the default is not correct for your environment.
 REGISTRY_AUTH_FILE ?= $(shell echo $${XDG_RUNTIME_DIR:-/run/user/$$(id -u)})/containers/auth.json
 
-# RHEL9_RELEASE defines the RHEL9 release version to update the rpm lock file for the runtime
-# This is automatically extracted from the Containerfile
-RHEL9_RELEASE ?= $(shell awk '/registry\.redhat\.io\/rhel9.*-els\/rhel:/ {split($$2, parts, /[:|@]/); print parts[2]}' $(PROJECT_DIR)/.konflux/Dockerfile)
-RHEL9_RELEASE_DASHED := $(subst .,-,$(RHEL9_RELEASE))
-
-# These images are extracted from the Containerfile `FROM` lines
-RHEL9_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel:/ {print $$2}' $(PROJECT_DIR)/.konflux/Dockerfile)
-RHEL9_MINIMAL_IMAGE ?= $(shell awk '/^FROM registry\.redhat\.io\/rhel9.*-els\/rhel-minimal:/ {print $$2}' $(PROJECT_DIR)/.konflux/Dockerfile)
-
 # YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
 YAMLLINT_VERSION ?= 1.35.1
 
@@ -72,51 +63,49 @@ sync-git-submodules: ## Sync git submodules (honors SKIP_SUBMODULE_SYNC=yes)
 
 .PHONY: konflux-update-rpm-lock-runtime
 konflux-update-rpm-lock-runtime: sync-git-submodules ## Update the rpm lock file for the runtime
+	@echo "Creating lock-runtime/tmp/ directory..."
+	mkdir -p $(PROJECT_DIR)/.konflux/lock-runtime/tmp/
+	@echo "Copying rpms.runtime.in.yaml to lock-runtime/tmp/ directory..."
+	cp $(PROJECT_DIR)/.konflux/lock-runtime/rpms.in.yaml $(PROJECT_DIR)/.konflux/lock-runtime/tmp/rpms.in.yaml
+	@cat $(PROJECT_DIR)/.konflux/lock-runtime/tmp/rpms.in.yaml
 	@echo "Updating rpm lock file for the runtime..."
-	@echo "Copying Dockerfile to lock directory for container context..."
-	@cp $(PROJECT_DIR)/.konflux/Dockerfile $(PROJECT_DIR)/.konflux/lock-runtime/Dockerfile
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock generate-rhel9-locks \
-		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-runtime \
-		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \
-		RHEL9_IMAGE_TO_LOCK=$(RHEL9_MINIMAL_IMAGE) \
-		\
-		RHEL9_RELEASE=$(RHEL9_RELEASE) \
-		RHEL9_ACTIVATION_KEY=$(RHEL9_ACTIVATION_KEY) \
-		RHEL9_ORG_ID=$(RHEL9_ORG_ID) \
-		RHEL9_EXECUTION_IMAGE=$(RHEL9_IMAGE) \
-		; \
-	result=$$?; \
-	echo "Cleaning up copied Dockerfile..."; \
-	rm -f $(PROJECT_DIR)/.konflux/lock-runtime/Dockerfile; \
-	if [ $$result -ne 0 ]; then \
-		echo "rpm lock file update failed."; \
-		exit $$result; \
-	fi
-	@echo "Rpm lock file updated successfully."
+		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-runtime/tmp/ \
+		RHEL9_EXECUTION_IMAGE=$$(awk -F'=' '/^RUNTIME_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf | sed 's|ubi-minimal|ubi|g' | sed 's|@.*||') \
+		RHEL9_IMAGE_TO_LOCK=$$(awk -F'=' '/^RUNTIME_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf)
+	@echo "Update rpms.lock.yaml with new contents..."
+	cp $(PROJECT_DIR)/.konflux/lock-runtime/tmp/rpms.lock.yaml $(PROJECT_DIR)/.konflux/lock-runtime/rpms.lock.yaml
+	# intentionally keep lock-runtime/tmp/ directory for debugging purposes
+	@echo "RPM lock file updated successfully."
 
 .PHONY: konflux-update-rpm-lock-build
 konflux-update-rpm-lock-build: sync-git-submodules ## Update the rpm lock file for the build
+	@echo "Creating lock-build/tmp/ directory..."
+	mkdir -p $(PROJECT_DIR)/.konflux/lock-build/tmp/
+	@echo "Copying rpms.build.in.yaml to lock-build/tmp/ directory..."
+	cp $(PROJECT_DIR)/.konflux/lock-build/rpms.in.yaml $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml
+	@echo "Replacing SSL_CLIENT_KEY and SSL_CLIENT_CERT in lock-build/tmp/rpms.in.yaml..."
+	if [ "$$(uname)" = "Darwin" ]; then \
+		sed -i '' 's|sslclientkey: $$SSL_CLIENT_KEY|sslclientkey: /etc/pki/entitlement/placeholder-key.pem|g' $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml; \
+		sed -i '' 's|sslclientcert: $$SSL_CLIENT_CERT|sslclientcert: /etc/pki/entitlement/placeholder.pem|g' $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml; \
+	else \
+		sed -i 's|sslclientkey: $$SSL_CLIENT_KEY|sslclientkey: /etc/pki/entitlement/placeholder-key.pem|g' $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml; \
+		sed -i 's|sslclientcert: $$SSL_CLIENT_CERT|sslclientcert: /etc/pki/entitlement/placeholder.pem|g' $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml; \
+	fi
+	@cat $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.in.yaml
 	@echo "Updating rpm lock file for the build..."
-	@echo "Copying Dockerfile to lock directory for container context..."
-	@cp $(PROJECT_DIR)/.konflux/Dockerfile $(PROJECT_DIR)/.konflux/lock-build/Dockerfile
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock generate-rhel9-locks \
-		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-build \
-		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \
-		RHEL9_IMAGE_TO_LOCK=$(RHEL9_IMAGE) \
-		\
-		RHEL9_RELEASE=$(RHEL9_RELEASE) \
+		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-build/tmp/ \
+		RHEL9_EXECUTION_IMAGE=$$(awk -F'=' '/^BUILDER_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf | sed 's|@.*||') \
+		RHEL9_IMAGE_TO_LOCK=$$(awk -F'=' '/^BUILDER_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf) \
 		RHEL9_ACTIVATION_KEY=$(RHEL9_ACTIVATION_KEY) \
 		RHEL9_ORG_ID=$(RHEL9_ORG_ID) \
-		RHEL9_EXECUTION_IMAGE=$(RHEL9_IMAGE) \
-		; \
-	result=$$?; \
-	echo "Cleaning up copied Dockerfile..."; \
-	rm -f $(PROJECT_DIR)/.konflux/lock-build/Dockerfile; \
-	if [ $$result -ne 0 ]; then \
-		echo "rpm lock file update failed."; \
-		exit $$result; \
-	fi
-	@echo "Rpm lock file updated successfully."
+		REGISTRY_AUTH_FILE=$(REGISTRY_AUTH_FILE) \
+		;
+	@echo "Update rpms.lock.yaml with new contents..."
+	cp $(PROJECT_DIR)/.konflux/lock-build/tmp/rpms.lock.yaml $(PROJECT_DIR)/.konflux/lock-build/rpms.lock.yaml
+	# intentionally keep lock-build/tmp/ directory for debugging purposes
+	@echo "RPM lock file updated successfully."
 
 .PHONY: konflux-update-tekton-task-refs
 konflux-update-tekton-task-refs: sync-git-submodules ## Update task references in Tekton pipeline files
