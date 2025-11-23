@@ -35,7 +35,7 @@ use x509_certificate::{
     CapturedX509Certificate, EcdsaCurve, KeyAlgorithm, Sign, X509Certificate,
 };
 
-mod cert_mutations;
+pub(crate) mod cert_mutations;
 mod key_identifiers;
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]

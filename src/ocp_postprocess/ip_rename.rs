@@ -149,6 +149,10 @@ async fn fix_etcd_resources_for_ip_pair(etcd_client: &Arc<InMemoryK8sEtcd>, orig
         .await
         .context("fixing etcd member")?;
 
+    etcd_rename::delete_runtime_resources_if_exist(etcd_client)
+        .await
+        .context("deleting runtime resources if exist")?;
+
     Ok(())
 }
 

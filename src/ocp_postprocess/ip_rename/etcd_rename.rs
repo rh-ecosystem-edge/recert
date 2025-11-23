@@ -597,6 +597,23 @@ pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, original
     Ok(())
 }
 
+pub(crate) async fn delete_runtime_resources_if_exist(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    let prefixes = [
+        "pods/",               //  Pods may experience issues connectivity issues after IP change
+        "minions",             // Nodes should be regenerated
+        "services/endpoints/", // Some endpoints may have the old IP
+        "endpointslices/",     // Some endpointslices may have the old IP
+    ];
+
+    for prefix in prefixes {
+        for key in etcd_client.list_keys(prefix).await? {
+            etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+        }
+    }
+
+    Ok(())
+}
+
 fn replace_etcd_servers(cluster: &mut Value, original_ip: &str, ip: &str) -> Result<()> {
     let observed_config = cluster.pointer_mut("/spec/observedConfig").context("no /spec/observedConfig")?;
 

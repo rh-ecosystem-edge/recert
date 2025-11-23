@@ -10,14 +10,19 @@ use self::{
 };
 use crate::{
     cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
+    cnsanreplace::CnSanReplaceRules,
     config::CryptoCustomizations,
-    k8s_etcd::{self, InMemoryK8sEtcd},
+    k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
     rules::KNOWN_MISSING_PRIVATE_KEY_CERTS,
 };
 use anyhow::{bail, ensure, Context, Result};
 use serde::Serialize;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 use std::{
     collections::hash_map::Entry::{Occupied, Vacant},
     sync::atomic::AtomicBool,
@@ -490,9 +495,93 @@ impl ClusterCryptoObjects {
         self.establish_relationships().context("establishing relationships")?;
         log::info!("Established relationships between crypto objects");
 
+        if crypto_customizations.ip_change_only {
+            self.prune_cert_key_pairs_to_changed_cn_san_trees(&crypto_customizations.cn_san_replace_rules)
+                .context("pruning cert-key-pairs to CN/SAN-changed trees")?;
+            self.prune_standalone_keys().context("pruning standalone keys")?;
+        }
+
         self.regenerate_crypto(rsa_pool, crypto_customizations)
             .context("regenerating crypto")?;
         log::info!("Regenerated all crypto objects");
+
+        Ok(())
+    }
+
+    fn prune_cert_key_pairs_to_changed_cn_san_trees(&mut self, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
+        // For each root cert-key-pair tree: if *any* cert in the tree would change if
+        // cn_san_replace_rules were applied (CN and/or SAN), keep the *entire* tree.
+        let mut keep: HashSet<usize> = HashSet::new();
+
+        let roots: Vec<Rc<RefCell<CertKeyPair>>> = self
+            .cert_key_pairs
+            .iter()
+            .filter(|pair| (**pair).borrow().signer.is_none())
+            .cloned()
+            .collect();
+
+        // TODO: Improve this flow:
+        // don't use two passes and don't use the visted set unless absolutely necessary
+        // Consider removing only the roots, but this will mean we can't log
+        // easily how many cert-key-pairs were pruned.
+        for root in roots {
+            let mut visited = HashSet::new();
+            let tree_has_change =
+                tree_has_change(&root, cn_san_replace_rules, &mut visited).context("checking if tree has CN/SAN changes")?;
+
+            if tree_has_change {
+                let mut visited_collect = HashSet::new();
+                collect_all_pairs_in_tree(&root, &mut keep, &mut visited_collect);
+            }
+        }
+
+        let before_count = self.cert_key_pairs.len();
+        self.cert_key_pairs.retain(|pair| keep.contains(&(Rc::as_ptr(pair) as usize)));
+        let after_count = self.cert_key_pairs.len();
+
+        log::info!(
+            "ip-change-only enabled: kept {} cert-key-pairs, pruned {}",
+            after_count,
+            before_count.saturating_sub(after_count)
+        );
+
+        Ok(())
+    }
+
+    fn prune_standalone_keys(&mut self) -> Result<()> {
+        // When doing an ip-change-only run, we want to minimize churn: only regenerate cert trees
+        // that actually change CN/SAN. Standalone keys (private/public) are not part of those trees,
+        // so we drop them from the regeneration/commit sets.
+
+        let before_private_count = self.distributed_private_keys.len();
+        let before_public_count = self.distributed_public_keys.len();
+
+        // Keep only public keys that are associated with a certificate (cert-key-pair).
+        let mut cert_public_keys_to_keep: HashSet<PublicKey> = HashSet::new();
+        for cert_key_pair in &self.cert_key_pairs {
+            cert_public_keys_to_keep.insert(
+                (*(**cert_key_pair).borrow().distributed_cert)
+                    .borrow()
+                    .certificate
+                    .public_key
+                    .clone(),
+            );
+        }
+
+        self.distributed_public_keys
+            .retain(|public_key, _| cert_public_keys_to_keep.contains(public_key));
+        self.public_to_private
+            .retain(|public_key, _| cert_public_keys_to_keep.contains(public_key));
+
+        self.distributed_private_keys.clear();
+
+        let after_public_count = self.distributed_public_keys.len();
+
+        log::info!(
+            "ip-change-only enabled: pruned {} standalone private keys and {} standalone public keys",
+            before_private_count,
+            before_public_count.saturating_sub(after_public_count),
+        );
 
         Ok(())
     }
@@ -593,4 +682,63 @@ impl ClusterCryptoObjects {
             }
         }
     }
+}
+
+fn tree_has_change(
+    pair: &Rc<RefCell<CertKeyPair>>,
+    cn_san_replace_rules: &CnSanReplaceRules,
+    visited: &mut HashSet<usize>,
+) -> Result<bool> {
+    let ptr = Rc::as_ptr(pair) as usize;
+    if !visited.insert(ptr) {
+        return Ok(false);
+    }
+
+    let mut has_change = {
+        let pair_borrow = pair.borrow();
+        let cert_borrow = pair_borrow.distributed_cert.borrow();
+        cert_would_change_from_cn_san_replace(&cert_borrow.certificate, cn_san_replace_rules)
+            .context("checking whether cert CN/SAN would change")?
+    };
+
+    let signees = { pair.borrow().signees.clone() };
+    for signee in signees {
+        if let signee::Signee::CertKeyPair(child) = &signee {
+            if tree_has_change(child, cn_san_replace_rules, visited).context("walking child cert-key-pair")? {
+                has_change = true;
+            }
+        }
+    }
+
+    Ok(has_change)
+}
+
+fn collect_all_pairs_in_tree(pair: &Rc<RefCell<CertKeyPair>>, out: &mut HashSet<usize>, visited: &mut HashSet<usize>) {
+    let ptr = Rc::as_ptr(pair) as usize;
+    if !visited.insert(ptr) {
+        return;
+    }
+
+    out.insert(ptr);
+
+    let signees = { pair.borrow().signees.clone() };
+    for signee in signees {
+        if let signee::Signee::CertKeyPair(child) = &signee {
+            collect_all_pairs_in_tree(&child, out, visited);
+        }
+    }
+}
+
+fn cert_would_change_from_cn_san_replace(cert: &certificate::Certificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<bool> {
+    let x509_cert: &x509_certificate::X509Certificate = &cert.cert;
+    let cert_ref: &x509_certificate::rfc5280::Certificate = x509_cert.as_ref();
+
+    let before =
+        crate::cluster_crypto::crypto_utils::encode_tbs_cert_to_der(&cert_ref.tbs_certificate).context("encoding original TBS cert")?;
+    let mut tbs_after = cert_ref.tbs_certificate.clone();
+    crate::cluster_crypto::cert_key_pair::cert_mutations::mutate_cert_cn_san(&mut tbs_after, cn_san_replace_rules)
+        .context("mutating TBS CN/SAN")?;
+    let after = crate::cluster_crypto::crypto_utils::encode_tbs_cert_to_der(&tbs_after).context("encoding mutated TBS cert")?;
+
+    Ok(before != after)
 }
