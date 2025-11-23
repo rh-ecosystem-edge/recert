@@ -11,6 +11,7 @@ pub(crate) async fn fix_filesystem_ip(original_ip: &str, ip: &str, dir: &Path) -
         file_utils::globvec(dir, "**/etcd-pod.yaml")?
             .into_iter()
             .chain(file_utils::globvec(dir, "**/*etcd-pod/pod.yaml")?)
+            .chain(file_utils::globvec(dir, "**/restore-etcd-pod/quorum-restore-pod.yaml")?)
             .chain(file_utils::globvec(dir, "**/etcd-scripts/etcd.env")?)
             .chain(file_utils::globvec(dir, "**/etcd-endpoints/*")?)
             .chain(file_utils::globvec(dir, "**/kube-apiserver-pod-*/configmaps/config/config.yaml")?)
