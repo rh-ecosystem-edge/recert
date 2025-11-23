@@ -597,6 +597,108 @@ pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, original
     Ok(())
 }
 
+pub(crate) async fn fix_pods_status(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
+    // Only mutate known Pod status IP fields if they equal the original IP
+    fn replace_status_ips(pod: &mut Value, original_ip: &str, new_ip: &str) -> Result<bool> {
+        let mut changed = false;
+
+        // status.podIP
+        if let Some(v) = pod.pointer_mut("/status/podIP") {
+            if let Some(curr) = v.as_str() {
+                if curr == original_ip {
+                    *v = Value::String(new_ip.to_string());
+                    changed = true;
+                }
+            }
+        }
+
+        // status.hostIP
+        if let Some(v) = pod.pointer_mut("/status/hostIP") {
+            if let Some(curr) = v.as_str() {
+                if curr == original_ip {
+                    *v = Value::String(new_ip.to_string());
+                    changed = true;
+                }
+            }
+        }
+
+        // status.podIPs (array of objects {ip: string} or strings)
+        if let Some(arr) = pod.pointer_mut("/status/podIPs").and_then(|v| v.as_array_mut()) {
+            for entry in arr.iter_mut() {
+                if let Some(s) = entry.as_str() {
+                    if s == original_ip {
+                        *entry = Value::String(new_ip.to_string());
+                        changed = true;
+                    }
+                    continue;
+                }
+                if let Some(ip_field) = entry.as_object_mut().and_then(|m| m.get_mut("ip")) {
+                    if let Some(s) = ip_field.as_str() {
+                        if s == original_ip {
+                            *ip_field = Value::String(new_ip.to_string());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // status.hostIPs (array of objects {ip: string} or strings) - if present
+        if let Some(arr) = pod.pointer_mut("/status/hostIPs").and_then(|v| v.as_array_mut()) {
+            for entry in arr.iter_mut() {
+                if let Some(s) = entry.as_str() {
+                    if s == original_ip {
+                        *entry = Value::String(new_ip.to_string());
+                        changed = true;
+                    }
+                    continue;
+                }
+                if let Some(ip_field) = entry.as_object_mut().and_then(|m| m.get_mut("ip")) {
+                    if let Some(s) = ip_field.as_str() {
+                        if s == original_ip {
+                            *ip_field = Value::String(new_ip.to_string());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(changed)
+    }
+
+    join_all(etcd_client.list_keys("pods/").await?.into_iter().map(|key| async move {
+        let etcd_result = etcd_client
+            .get(key.clone())
+            .await
+            .with_context(|| format!("getting key {:?}", key))?
+            .context("key disappeared")?;
+        let value: Value =
+            serde_yaml::from_slice(etcd_result.value.as_slice()).with_context(|| format!("deserializing value of key {:?}", key,))?;
+        let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+        let mut pod = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("getting pod")?;
+
+        if replace_status_ips(&mut pod, original_ip, ip)? {
+            put_etcd_yaml(etcd_client, &k8s_resource_location, pod).await?;
+        }
+
+        Ok(())
+    }))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_minions_if_exist(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    for key in etcd_client.list_keys("minions").await? {
+        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+    }
+    Ok(())
+}
+
 fn replace_etcd_servers(cluster: &mut Value, original_ip: &str, ip: &str) -> Result<()> {
     let observed_config = cluster.pointer_mut("/spec/observedConfig").context("no /spec/observedConfig")?;
 
