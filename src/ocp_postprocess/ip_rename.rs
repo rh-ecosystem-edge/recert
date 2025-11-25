@@ -149,6 +149,14 @@ async fn fix_etcd_resources_for_ip_pair(etcd_client: &Arc<InMemoryK8sEtcd>, orig
         .await
         .context("fixing etcd member")?;
 
+    etcd_rename::fix_pods_status(etcd_client, original_ip, new_ip)
+        .await
+        .context("fixing pods status")?;
+
+    etcd_rename::delete_minions_if_exist(etcd_client)
+        .await
+        .context("deleting minions if exist")?;
+
     Ok(())
 }
 
