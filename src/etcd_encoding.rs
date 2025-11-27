@@ -5,7 +5,7 @@ use super::protobuf_gen::{
             admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
             apps::v1::{ControllerRevision, DaemonSet, Deployment, StatefulSet},
             batch::v1::{CronJob, Job},
-            core::v1::{ConfigMap, Node, Secret},
+            core::v1::{ConfigMap, Node, Pod, Secret},
         },
         apimachinery::pkg::runtime::{TypeMeta, Unknown},
     },
@@ -58,6 +58,7 @@ k8s_type!(StatefulSetWithMeta, StatefulSet);
 k8s_type!(ConfigMapWithMeta, ConfigMap);
 k8s_type!(NodeWithMeta, Node);
 k8s_type!(SecretWithMeta, Secret);
+k8s_type!(PodWithMeta, Pod);
 k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration);
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
 k8s_type!(OAuthClientWithMeta, OAuthClient);
@@ -89,6 +90,7 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         "ConfigMap" => serde_json::to_vec(&ConfigMapWithMeta::try_from(unknown)?)?,
         "Node" => serde_json::to_vec(&NodeWithMeta::try_from(unknown)?)?,
         "Secret" => serde_json::to_vec(&SecretWithMeta::try_from(unknown)?)?,
+        "Pod" => serde_json::to_vec(&PodWithMeta::try_from(unknown)?)?,
         "ValidatingWebhookConfiguration" => serde_json::to_vec(&ValidatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "MutatingWebhookConfiguration" => serde_json::to_vec(&MutatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "OAuthClient" => serde_json::to_vec(&OAuthClientWithMeta::try_from(unknown)?)?,
@@ -111,6 +113,8 @@ pub(crate) async fn encode(data: &[u8]) -> Result<Vec<u8>> {
             "ConfigMap" => Unknown::from(serde_json::from_slice::<ConfigMapWithMeta>(data)?),
             "Route" => Unknown::from(serde_json::from_slice::<RouteWithMeta>(data)?),
             "Secret" => Unknown::from(serde_json::from_slice::<SecretWithMeta>(data)?),
+            "Node" => Unknown::from(serde_json::from_slice::<NodeWithMeta>(data)?),
+            "Pod" => Unknown::from(serde_json::from_slice::<PodWithMeta>(data)?),
             "Deployment" => Unknown::from(serde_json::from_slice::<DeploymentWithMeta>(data)?),
             "ControllerRevision" => Unknown::from(serde_json::from_slice::<ControllerRevisionWithMeta>(data)?),
             "Job" => Unknown::from(serde_json::from_slice::<JobWithMeta>(data)?),
