@@ -20,7 +20,7 @@ contentOrigin:
       priority: 1
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
     - repoid: ubi-9-for-$basearch-baseos-rpms
       name: Red Hat Universal Base Image 9 for $basearch - BaseOS (RPMs)
@@ -35,7 +35,7 @@ contentOrigin:
       priority: 1
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
     - repoid: codeready-builder-for-ubi-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for UBI 9 $basearch (RPMs)
@@ -50,7 +50,7 @@ contentOrigin:
       priority: 1
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
     # RHEL repos are required for some packages
     - repoid: rhel-9-for-$basearch-appstream-rpms
@@ -72,7 +72,7 @@ contentOrigin:
       priority: 2
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
     - repoid: rhel-9-for-$basearch-baseos-rpms
       name: Red Hat Enterprise Linux 9 for $basearch - BaseOS (RPMs)
@@ -93,7 +93,7 @@ contentOrigin:
       priority: 2
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
     - repoid: codeready-builder-for-rhel-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for RHEL 9 $basearch (RPMs)
@@ -114,7 +114,7 @@ contentOrigin:
       priority: 2
       # This should match the BUILDER_IMAGE in container_build_args.conf
       # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:7daaafccb9cb594b5a737d248ab6adcc783ea7055291d4fcd799a1201326ca16
+      varsFromImage: registry.access.redhat.com/ubi9/ubi:latest@sha256:d4feb579a84ead49894ec71fe54f14300992e202f3491d9bb22b62cc57affd49
       #
 packages:
   - rust-toolset
