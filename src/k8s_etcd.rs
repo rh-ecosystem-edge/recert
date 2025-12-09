@@ -173,6 +173,10 @@ impl InMemoryK8sEtcd {
             None => bail!("etcd client not configured"),
         };
 
+        if self.deleted_keys.lock().await.contains(&key) {
+            return Ok(None);
+        }
+
         let mut result = EtcdResult {
             key: key.to_string(),
             value: vec![],
@@ -238,7 +242,11 @@ impl InMemoryK8sEtcd {
 
         let kubernetes_keys = self.get_keys_with_prefix(etcd_client, "/kubernetes.io", resource_kind).await?;
         let openshift_keys = self.get_keys_with_prefix(etcd_client, "/openshift.io", resource_kind).await?;
-        let keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys.into_iter()).collect();
+        let mut keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys.into_iter()).collect();
+
+        // Filter out keys that are marked as deleted in our cache.
+        let deleted = self.deleted_keys.lock().await;
+        keys.retain(|k| !deleted.contains(k));
 
         Ok(keys)
     }
