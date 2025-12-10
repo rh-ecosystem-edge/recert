@@ -146,12 +146,6 @@ async fn run_cluster_customizations(
     let dirs = &cluster_customizations.dirs;
     let files = &cluster_customizations.files;
 
-    if let Some(cluster_names_rename) = &cluster_customizations.cluster_rename {
-        cluster_rename(in_memory_etcd_client, cluster_names_rename, dirs, files)
-            .await
-            .context("renaming cluster")?;
-    }
-
     let ips = &cluster_customizations.ip_addresses;
     if ips.len() == 1 {
         log::info!("Processing single IP: {}", ips[0]);
@@ -165,6 +159,12 @@ async fn run_cluster_customizations(
             .context("renaming dual-stack IPs")?;
     } else if ips.is_empty() {
         log::info!("No IPs were provided, skipping IP rename");
+    }
+
+    if let Some(cluster_names_rename) = &cluster_customizations.cluster_rename {
+        cluster_rename(in_memory_etcd_client, cluster_names_rename, dirs, files)
+            .await
+            .context("renaming cluster")?;
     }
 
     if let Some(hostname) = &cluster_customizations.hostname {
