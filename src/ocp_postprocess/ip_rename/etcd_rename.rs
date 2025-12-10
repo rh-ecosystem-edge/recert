@@ -6,15 +6,8 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::Ipv6Addr;
 use std::sync::Arc;
-
-fn is_ipv6(ip: &str) -> Result<bool> {
-    let addr = ip
-        .parse::<IpAddr>()
-        .with_context(|| format!("Failed to parse IP address: {}", ip))?;
-    Ok(addr.is_ipv6())
-}
 
 // Extract both original IPv4 and IPv6 IPs from dual-stack cluster node configuration
 pub(crate) async fn extract_original_ips(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Vec<String>> {
@@ -43,8 +36,7 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
         .and_then(|a| a.as_array())
         .context("Node does not have /status/addresses array")?;
 
-    let mut original_ipv4: Option<String> = None;
-    let mut original_ipv6: Option<String> = None;
+    let mut result = Vec::new();
 
     for address in addresses {
         if let (Some(addr_type), Some(addr_value)) = (
@@ -52,23 +44,9 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
             address.pointer("/address").and_then(|a| a.as_str()),
         ) {
             if addr_type == "InternalIP" {
-                if is_ipv6(addr_value)? {
-                    original_ipv6 = Some(addr_value.to_string());
-                } else {
-                    original_ipv4 = Some(addr_value.to_string());
-                }
+                result.push(addr_value.to_string());
             }
         }
-    }
-
-    let mut result = Vec::new();
-
-    if let Some(ipv4) = original_ipv4 {
-        result.push(ipv4);
-    }
-
-    if let Some(ipv6) = original_ipv6 {
-        result.push(ipv6);
     }
 
     ensure!(!result.is_empty(), "No InternalIP addresses found in node configuration");
@@ -76,7 +54,7 @@ async fn extract_original_ips_from_nodes(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
     if result.len() == 1 {
         log::info!("Found single-stack IP: {}", result[0]);
     } else {
-        log::info!("Found dual-stack IPs - IPv4: {}, IPv6: {}", result[0], result[1]);
+        log::info!("Found {} InternalIP(s) {}", result.len(), result.join(", "));
     }
 
     Ok(result)
@@ -616,6 +594,108 @@ pub(crate) async fn fix_etcd_member(etcd_client: &Arc<InMemoryK8sEtcd>, original
         );
     }
 
+    Ok(())
+}
+
+pub(crate) async fn fix_pods_status(etcd_client: &Arc<InMemoryK8sEtcd>, original_ip: &str, ip: &str) -> Result<()> {
+    // Only mutate known Pod status IP fields if they equal the original IP
+    fn replace_status_ips(pod: &mut Value, original_ip: &str, new_ip: &str) -> Result<bool> {
+        let mut changed = false;
+
+        // status.podIP
+        if let Some(v) = pod.pointer_mut("/status/podIP") {
+            if let Some(curr) = v.as_str() {
+                if curr == original_ip {
+                    *v = Value::String(new_ip.to_string());
+                    changed = true;
+                }
+            }
+        }
+
+        // status.hostIP
+        if let Some(v) = pod.pointer_mut("/status/hostIP") {
+            if let Some(curr) = v.as_str() {
+                if curr == original_ip {
+                    *v = Value::String(new_ip.to_string());
+                    changed = true;
+                }
+            }
+        }
+
+        // status.podIPs (array of objects {ip: string} or strings)
+        if let Some(arr) = pod.pointer_mut("/status/podIPs").and_then(|v| v.as_array_mut()) {
+            for entry in arr.iter_mut() {
+                if let Some(s) = entry.as_str() {
+                    if s == original_ip {
+                        *entry = Value::String(new_ip.to_string());
+                        changed = true;
+                    }
+                    continue;
+                }
+                if let Some(ip_field) = entry.as_object_mut().and_then(|m| m.get_mut("ip")) {
+                    if let Some(s) = ip_field.as_str() {
+                        if s == original_ip {
+                            *ip_field = Value::String(new_ip.to_string());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // status.hostIPs (array of objects {ip: string} or strings) - if present
+        if let Some(arr) = pod.pointer_mut("/status/hostIPs").and_then(|v| v.as_array_mut()) {
+            for entry in arr.iter_mut() {
+                if let Some(s) = entry.as_str() {
+                    if s == original_ip {
+                        *entry = Value::String(new_ip.to_string());
+                        changed = true;
+                    }
+                    continue;
+                }
+                if let Some(ip_field) = entry.as_object_mut().and_then(|m| m.get_mut("ip")) {
+                    if let Some(s) = ip_field.as_str() {
+                        if s == original_ip {
+                            *ip_field = Value::String(new_ip.to_string());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(changed)
+    }
+
+    join_all(etcd_client.list_keys("pods/").await?.into_iter().map(|key| async move {
+        let etcd_result = etcd_client
+            .get(key.clone())
+            .await
+            .with_context(|| format!("getting key {:?}", key))?
+            .context("key disappeared")?;
+        let value: Value =
+            serde_yaml::from_slice(etcd_result.value.as_slice()).with_context(|| format!("deserializing value of key {:?}", key,))?;
+        let k8s_resource_location = K8sResourceLocation::try_from(&value)?;
+
+        let mut pod = get_etcd_json(etcd_client, &k8s_resource_location).await?.context("getting pod")?;
+
+        if replace_status_ips(&mut pod, original_ip, ip)? {
+            put_etcd_yaml(etcd_client, &k8s_resource_location, pod).await?;
+        }
+
+        Ok(())
+    }))
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_minions_if_exist(etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<()> {
+    for key in etcd_client.list_keys("minions").await? {
+        etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
+    }
     Ok(())
 }
 

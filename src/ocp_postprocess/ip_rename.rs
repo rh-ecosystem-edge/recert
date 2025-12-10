@@ -25,6 +25,15 @@ pub(crate) async fn rename_all_dual_stack(
         .await
         .context("extracting original dual-stack IPs")?;
 
+    ensure!(
+        original_ips.len() == ips.len(),
+        "original IPs count ({}) must equal new IPs count ({})",
+        original_ips.len(),
+        ips.len()
+    );
+
+    log::info!("Applying dual-stack IP changes");
+
     fix_etcd_resources_dual_stack(etcd_client, &original_ips, ips)
         .await
         .context("modifying etcd resources for dual stack")?;
@@ -73,15 +82,11 @@ async fn fix_dir_resources(original_ip: &str, ip: &str, dir: &Path) -> Result<()
 }
 
 async fn fix_dir_resources_dual_stack(original_ips: &[String], ips: &[String], dir: &Path) -> Result<()> {
-    // Apply IPv4 replacement (original IPv4 → new IPv4)
-    filesystem_rename::fix_filesystem_ip(&original_ips[0], &ips[0], dir)
-        .await
-        .context(format!("fix filesystem IPv4 in {:?}", dir))?;
-
-    // Apply IPv6 replacement (original IPv6 → new IPv6) - both are guaranteed to be present
-    filesystem_rename::fix_filesystem_ip(&original_ips[1], &ips[1], dir)
-        .await
-        .context(format!("fix filesystem IPv6 in {:?}", dir))?;
+    for (idx, (original_ip, new_ip)) in original_ips.iter().zip(ips.iter()).enumerate() {
+        filesystem_rename::fix_filesystem_ip(original_ip, new_ip, dir)
+            .await
+            .context(format!("fix filesystem IP replacement pair {} in {:?}", idx, dir))?;
+    }
 
     Ok(())
 }
@@ -144,6 +149,14 @@ async fn fix_etcd_resources_for_ip_pair(etcd_client: &Arc<InMemoryK8sEtcd>, orig
         .await
         .context("fixing etcd member")?;
 
+    etcd_rename::fix_pods_status(etcd_client, original_ip, new_ip)
+        .await
+        .context("fixing pods status")?;
+
+    etcd_rename::delete_minions_if_exist(etcd_client)
+        .await
+        .context("deleting minions if exist")?;
+
     Ok(())
 }
 
@@ -181,31 +194,12 @@ async fn extract_original_dual_stack_ips(etcd_client: &Arc<InMemoryK8sEtcd>) -> 
 }
 
 async fn fix_etcd_resources_dual_stack(etcd_client: &Arc<InMemoryK8sEtcd>, original_ips: &[String], new_ips: &[String]) -> Result<()> {
-    let original_ipv4 = &original_ips[0];
-    let original_ipv6 = &original_ips[1];
-
-    let new_ipv4 = &new_ips[0];
-    let new_ipv6 = new_ips.get(1).context("Second IP (IPv6) is required for dual-stack processing")?;
-
-    log::info!(
-        "Applying dual-stack IP changes - IPv4: {} → {}, IPv6: {} → {}",
-        original_ipv4,
-        new_ipv4,
-        original_ipv6,
-        new_ipv6
-    );
-
-    log::info!("Applying IPv4 replacements: {} → {}", original_ipv4, new_ipv4);
-
-    fix_etcd_resources_for_ip_pair(etcd_client, original_ipv4, new_ipv4)
-        .await
-        .context("applying IPv4 etcd resource fixes")?;
-
-    log::info!("Applying IPv6 replacements: {} → {}", original_ipv6, new_ipv6);
-
-    fix_etcd_resources_for_ip_pair(etcd_client, original_ipv6, new_ipv6)
-        .await
-        .context("applying IPv6 etcd resource fixes")?;
+    for (idx, (original_ip, new_ip)) in original_ips.iter().zip(new_ips.iter()).enumerate() {
+        log::info!("Applying replacements pair {}: {} → {}", idx, original_ip, new_ip);
+        fix_etcd_resources_for_ip_pair(etcd_client, original_ip, new_ip)
+            .await
+            .context(format!("applying etcd resource fixes for pair {}", idx))?;
+    }
 
     Ok(())
 }
