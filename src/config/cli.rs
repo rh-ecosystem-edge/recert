@@ -84,6 +84,15 @@ pub(crate) struct Cli {
     #[clap(long, value_parser = CnSanReplace::parse)]
     pub(crate) cn_san_replace: Vec<CnSanReplace>,
 
+    /// If set, recert will only regenerate certificate trees that contain at least one certificate
+    /// whose Subject Alternative Name contains an IP address that appears as the "old" side of a
+    /// --cn-san-replace rule (i.e. the original IP).
+    ///
+    /// This is intended to reduce work when only certificates containing specific IP SANs need to
+    /// be updated.
+    #[clap(long = "ip-change-only", default_value_t = false)]
+    pub(crate) ip_change_only: bool,
+
     /// Experimental feature. Colon separated cluster name and cluster base domain. If given, many
     /// cluster resources which refer to a cluster name / cluster base domain (typically through
     /// URLs which they happen to contian) will be modified to use this cluster name and base

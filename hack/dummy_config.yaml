@@ -17,7 +17,9 @@ cn_san_replace_rules:
   - api-int.seed.redhat.com:api-int.new-name.foo.com
   - api.seed.redhat.com:api.new-name.foo.com
   - '*.apps.seed.redhat.com:*.apps.new-name.foo.com'
-  - 192.168.126.10:192.168.127.11
+  - 192.168.127.162:192.168.127.163
+  - 1001:db9::50,1001:db9::51
+# ip_change_only: true
 crypto_dirs:
   - backup/etc/kubernetes
   - backup/var/lib/kubelet
