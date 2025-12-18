@@ -30,6 +30,7 @@ pub(crate) struct CryptoCustomizations {
     pub(crate) dirs: Vec<ConfigPath>,
     pub(crate) files: Vec<ConfigPath>,
     pub(crate) cn_san_replace_rules: CnSanReplaceRules,
+    pub(crate) ip_change_only: bool,
     pub(crate) use_key_rules: UseKeyRules,
     pub(crate) use_cert_rules: UseCertRules,
     pub(crate) extend_expiration: bool,
@@ -145,6 +146,7 @@ impl RecertConfig {
                 dirs: vec![],
                 files: vec![],
                 cn_san_replace_rules: parse_cs_san_rules(json!([]))?,
+                ip_change_only: false,
                 use_key_rules: parse_use_key_rules(json!([]))?,
                 use_cert_rules: parse_cert_rules(json!([]))?,
                 extend_expiration: false,
@@ -191,6 +193,11 @@ impl RecertConfig {
             Some(value) => parse_cs_san_rules(value)?,
             None => CnSanReplaceRules(vec![]),
         };
+        let ip_change_only = value
+            .remove("ip_change_only")
+            .unwrap_or(Value::Bool(false))
+            .as_bool()
+            .context("ip_change_only must be a boolean")?;
         let use_key_rules = match value.remove("use_key_rules") {
             Some(value) => parse_use_key_rules(value)?,
             None => UseKeyRules(vec![]),
@@ -353,6 +360,7 @@ impl RecertConfig {
             dirs: crypto_dirs,
             files: crypto_files,
             cn_san_replace_rules,
+            ip_change_only,
             use_key_rules,
             use_cert_rules,
             extend_expiration,
@@ -415,6 +423,10 @@ impl RecertConfig {
             !(recert_config.dry_run && recert_config.etcd_defrag),
             "dry_run and etcd_defrag are mutually exclusive"
         );
+        ensure!(
+            !(recert_config.crypto_customizations.ip_change_only && recert_config.crypto_customizations.cn_san_replace_rules.0.is_empty()),
+            "ip-change-only requires at least one cn_san_replace rule"
+        );
 
         Ok(recert_config)
     }
@@ -437,6 +449,7 @@ impl RecertConfig {
                     cli.static_file.clone().into_iter().map(ConfigPath::from).collect()
                 },
                 cn_san_replace_rules: CnSanReplaceRules(cli.cn_san_replace),
+                ip_change_only: cli.ip_change_only,
                 use_key_rules: UseKeyRules(cli.use_key),
                 use_cert_rules: UseCertRules(cli.use_cert),
                 extend_expiration: cli.extend_expiration,
