@@ -1,6 +1,5 @@
 use super::{
     distributed_public_key::DistributedPublicKey,
-    k8s_etcd::get_etcd_json,
     keys::PrivateKey,
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
     pem_utils,
@@ -11,6 +10,7 @@ use crate::{
     file_utils::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
     },
+    k8s_etcd::get_etcd_json,
     k8s_etcd::InMemoryK8sEtcd,
     rsa_key_pool::RsaKeyPool,
 };

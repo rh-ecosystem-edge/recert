@@ -6,7 +6,8 @@ use der::Decode;
 use p256::pkcs8::EncodePublicKey;
 use serde::{ser::SerializeStruct, Serialize};
 use std::hash::{Hash, Hasher};
-use x509_cert::ext::pkix::name::GeneralName::DnsName;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use x509_cert::ext::pkix::name::GeneralName::{DnsName, IpAddress};
 use x509_cert::ext::pkix::SubjectAltName;
 use x509_certificate::{self, rfc5280, CapturedX509Certificate};
 
@@ -97,6 +98,17 @@ impl TryFrom<&CapturedX509Certificate> for Certificate {
                                 .filter_map(|san| -> Option<String> {
                                     let value: Option<String> = match san {
                                         DnsName(name) => Some(name.to_string()),
+                                        IpAddress(ip) => {
+                                            let bytes = ip.as_bytes();
+                                            match bytes.len() {
+                                                4 => Some(IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])).to_string()),
+                                                16 => {
+                                                    let arr: [u8; 16] = bytes.try_into().ok()?;
+                                                    Some(IpAddr::V6(Ipv6Addr::from(arr)).to_string())
+                                                }
+                                                _ => None,
+                                            }
+                                        }
                                         _ => None,
                                     };
 
