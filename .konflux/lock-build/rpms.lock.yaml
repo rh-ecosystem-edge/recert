@@ -95,13 +95,13 @@ arches:
     name: llvm-libs
     evr: 20.1.8-3.el9
     sourcerpm: llvm-20.1.8-3.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/appstream/os/Packages/p/python-unversioned-command-3.9.23-2.el9.noarch.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/appstream/os/Packages/p/python-unversioned-command-3.9.25-2.el9_7.noarch.rpm
     repoid: ubi-9-for-aarch64-appstream-rpms
-    size: 9209
-    checksum: sha256:20ed4bbcb151aef651eb315825d3a02e0f6203ab1b858e94812258f5b41ce703
+    size: 9351
+    checksum: sha256:ddc75f8460178a142a203ba8d5082c7d58393281238400d11a82cc5ee6487390
     name: python-unversioned-command
-    evr: 3.9.23-2.el9
-    sourcerpm: python3.9-3.9.23-2.el9.src.rpm
+    evr: 3.9.25-2.el9_7
+    sourcerpm: python3.9-3.9.25-2.el9_7.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/appstream/os/Packages/r/rust-1.88.0-1.el9.aarch64.rpm
     repoid: ubi-9-for-aarch64-appstream-rpms
     size: 28639155
@@ -158,20 +158,20 @@ arches:
     name: bash
     evr: 5.1.8-9.el9
     sourcerpm: bash-5.1.8-9.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/b/binutils-2.35.2-67.el9.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/b/binutils-2.35.2-67.el9_7.1.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
-    size: 5016714
-    checksum: sha256:b65a3ea523d2160626d0d2b2196c3d10bb87d0ffb9791e61a798a729d05bc6d0
+    size: 5017674
+    checksum: sha256:5c26e9da5ebaf4d5feb38f117b4468c41ad0c66cd80e52a68a9c322abf2b04ba
     name: binutils
-    evr: 2.35.2-67.el9
-    sourcerpm: binutils-2.35.2-67.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/b/binutils-gold-2.35.2-67.el9.aarch64.rpm
+    evr: 2.35.2-67.el9_7.1
+    sourcerpm: binutils-2.35.2-67.el9_7.1.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/b/binutils-gold-2.35.2-67.el9_7.1.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
-    size: 902721
-    checksum: sha256:e224074a641e78c1ab5c37f204ca4cf53d2142a3f370c028bb3d38230d78cb0d
+    size: 902260
+    checksum: sha256:a9e2c2aac2f03056149fb55ed37a0df540dd65c921612ef3cde3d899ea7d8224
     name: binutils-gold
-    evr: 2.35.2-67.el9
-    sourcerpm: binutils-2.35.2-67.el9.src.rpm
+    evr: 2.35.2-67.el9_7.1
+    sourcerpm: binutils-2.35.2-67.el9_7.1.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/b/bzip2-libs-1.0.8-10.el9_5.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
     size: 43945
@@ -823,20 +823,20 @@ arches:
     name: publicsuffix-list-dafsa
     evr: 20210518-3.el9
     sourcerpm: publicsuffix-list-20210518-3.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/python3-3.9.23-2.el9.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/python3-3.9.25-2.el9_7.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
-    size: 26208
-    checksum: sha256:61362064f2fad6a572a4b52dedac8a4f7aa2b80bf91c914d35d4608272a3a86b
+    size: 26375
+    checksum: sha256:bbb23567ae8df61c75e65e95c017d424ec6662a2c9908c63a5ddd958cb7c18ee
     name: python3
-    evr: 3.9.23-2.el9
-    sourcerpm: python3.9-3.9.23-2.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/python3-libs-3.9.23-2.el9.aarch64.rpm
+    evr: 3.9.25-2.el9_7
+    sourcerpm: python3.9-3.9.25-2.el9_7.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/python3-libs-3.9.25-2.el9_7.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
-    size: 8464402
-    checksum: sha256:433d9fc1e3b431d206334cd6271e92b53a1b40b805dc265c772b3f0935cda9ea
+    size: 8462763
+    checksum: sha256:f08b46456cab63d937c4d3af9351918c6b1503d9d15824066f40972e5a48bd3c
     name: python3-libs
-    evr: 3.9.23-2.el9
-    sourcerpm: python3.9-3.9.23-2.el9.src.rpm
+    evr: 3.9.25-2.el9_7
+    sourcerpm: python3.9-3.9.25-2.el9_7.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/python3-pip-wheel-21.3.1-1.el9.noarch.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
     size: 1193706
