@@ -63,12 +63,18 @@ k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
 k8s_type!(OAuthClientWithMeta, OAuthClient);
 
+mod k8s_cbor;
+
 pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
     if !data.starts_with("k8s\x00".as_bytes()) {
         // k8s uses CBOR with the self-describing tag 55799, we can use its bytes to detect CBOR
         if data.starts_with([0xd9, 0xd9, 0xf7].as_ref()) {
-            bail!("CBOR encoding is not supported");
+            // It's CBOR, just convert to JSON
+            let json_value = k8s_cbor::k8s_cbor_bytes_to_json(data).context("converting CBOR to JSON")?;
+            return Ok(serde_json::to_vec(&json_value)?);
         }
+
+        // Not CBOR, not protobuf, it's probably just raw JSON, return as-is
         return Ok(data.to_vec());
     }
 
