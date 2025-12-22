@@ -65,6 +65,10 @@ k8s_type!(OAuthClientWithMeta, OAuthClient);
 
 pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
     if !data.starts_with("k8s\x00".as_bytes()) {
+        // k8s uses CBOR with the self-describing tag 55799, we can use its bytes to detect CBOR
+        if data.starts_with([0xd9, 0xd9, 0xf7].as_ref()) {
+            bail!("CBOR encoding is not supported");
+        }
         return Ok(data.to_vec());
     }
 
