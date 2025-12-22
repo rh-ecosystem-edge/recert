@@ -90,3 +90,15 @@ pub(crate) fn k8s_cbor_bytes_to_json(cbor_bytes: &[u8]) -> Result<JsonValue> {
 
     cbor_to_json(v)
 }
+
+pub(crate) fn json_to_k8s_cbor_bytes(json: JsonValue) -> Result<Vec<u8>> {
+    let cbor = json_to_cbor(json)?;
+
+    // Put back the self-describing CBOR tag that we stripped
+    let tagged_cbor = CborValue::Tag(SELF_DESCRIBING_CBOR_TAG, Box::new(cbor));
+
+    let mut bytes = Vec::new();
+    ciborium::ser::into_writer(&tagged_cbor, &mut bytes)?;
+
+    Ok(bytes)
+}
