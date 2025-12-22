@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "0.4.x"
+  - package-ecosystem: "cargo"
+    directory: "/fuzz/"
+    schedule:
+      interval: "weekly"
+    target-branch: "0.4.x"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "0.4.x"
