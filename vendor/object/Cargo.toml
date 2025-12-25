@@ -68,6 +68,9 @@ write_core = ["dep:crc32fast", "dep:indexmap", "dep:hashbrown"]
 write_std = ["write_core", "std", "indexmap?/std", "crc32fast?/std"]
 xcoff = []
 
+[lib]
+path = "src/lib.rs"
+
 [package]
 description = "A unified interface for reading and writing object file formats."
 edition = "2018"
@@ -80,5 +83,6 @@ repository = "https://github.com/gimli-rs/object"
 resolver = "2"
 rust-version = "1.60"
 version = "0.32.1"
+
 [package.metadata.docs.rs]
 features = ["doc"]

@@ -19,9 +19,14 @@ extra-traits = ["syn/extra-traits"]
 spans = ["wasm-bindgen-backend/spans"]
 strict-macro = []
 
+[lib]
+path = "src/lib.rs"
+
 [package]
 authors = ["The wasm-bindgen Developers"]
-description = "The part of the implementation of the `#[wasm_bindgen]` attribute that is not in the shared backend crate\n"
+description = """
+The part of the implementation of the `#[wasm_bindgen]` attribute that is not in the shared backend crate
+"""
 documentation = "https://docs.rs/wasm-bindgen"
 edition = "2018"
 homepage = "https://rustwasm.github.io/wasm-bindgen/"

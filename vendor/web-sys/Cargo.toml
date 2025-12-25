@@ -1573,12 +1573,13 @@ gpu_shader_stage = []
 gpu_texture_usage = []
 
 [lib]
-doctest = false
-test = false
+path = "src/lib.rs"
 
 [package]
 authors = ["The wasm-bindgen Developers"]
-description = "Bindings for all Web APIs, a procedurally generated crate from WebIDL\n"
+description = """
+Bindings for all Web APIs, a procedurally generated crate from WebIDL
+"""
 documentation = "https://rustwasm.github.io/wasm-bindgen/api/web_sys/"
 edition = "2018"
 homepage = "https://rustwasm.github.io/wasm-bindgen/web-sys/index.html"
@@ -1589,11 +1590,13 @@ repository = "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/web-sy
 resolver = "2"
 rust-version = "1.56"
 version = "0.3.64"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg=web_sys_unstable_apis"]
-[target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-futures]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies.wasm-bindgen-futures]
 version = "0.4.37"
 
-[target."cfg(target_arch = \"wasm32\")".dev-dependencies.wasm-bindgen-test]
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies.wasm-bindgen-test]
 version = "0.3.37"

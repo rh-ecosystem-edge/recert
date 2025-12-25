@@ -1,0 +1,42 @@
+[package]
+name = "clio"
+description = "A library for parsing CLI file names"
+keywords = ["cli", "stdin", "stdout"]
+authors = ["AJ Bagwell <aj.bagwell@gmail.com>"]
+license = "MIT"
+version = "0.3.4"
+repository = "https://github.com/aj-bagwell/clio"
+documentation = "https://docs.rs/clio"
+readme = "README.md"
+edition = "2021"
+rust-version = "1.63.0"
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+features = ["http-ureq", "clap-parse"]
+
+[features]
+http = ["url"]
+http-curl = ["curl", "pipe", "http"]
+http-ureq = ["ureq", "pipe", "http"]
+clap-parse = ["clap"]
+
+[dependencies]
+curl = { version = "0.4", optional = true }
+ureq = { version = "2.0", optional = true }
+pipe = { version = "0.4", optional = true }
+clap = { version = ">=3.2, < 5.0", features = ["derive"], optional = true}
+url = { version = "2.3.1", optional = true }
+cfg-if = "1.0.0"
+tempfile = "3.3.0"
+walkdir = "2.3.3"
+is-terminal = "0.4.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.42", features = ["Win32_Foundation"] }
+
+[dev-dependencies]
+clap = { version = "4.3.0", features = ["derive"] }
+either = "1.8.1"

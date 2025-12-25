@@ -322,6 +322,9 @@ Win32_UI_Xaml_Diagnostics = ["Win32_UI_Xaml"]
 default = []
 deprecated = []
 
+[lib]
+path = "src/lib.rs"
+
 [package]
 authors = ["Microsoft"]
 description = "Rust for Windows"
@@ -332,31 +335,44 @@ readme = "readme.md"
 repository = "https://github.com/microsoft/windows-rs"
 rust-version = "1.49"
 version = "0.42.0"
+
 [package.metadata.docs.rs]
 all-features = true
 default-target = "x86_64-pc-windows-msvc"
 targets = []
+
 [target.aarch64-pc-windows-gnullvm.dependencies.windows_aarch64_gnullvm]
 version = "0.42.0"
+
 [target.aarch64-pc-windows-msvc.dependencies.windows_aarch64_msvc]
 version = "0.42.0"
+
 [target.aarch64-uwp-windows-msvc.dependencies.windows_aarch64_msvc]
 version = "0.42.0"
+
 [target.i686-pc-windows-gnu.dependencies.windows_i686_gnu]
 version = "0.42.0"
+
 [target.i686-pc-windows-msvc.dependencies.windows_i686_msvc]
 version = "0.42.0"
+
 [target.i686-uwp-windows-gnu.dependencies.windows_i686_gnu]
 version = "0.42.0"
+
 [target.i686-uwp-windows-msvc.dependencies.windows_i686_msvc]
 version = "0.42.0"
+
 [target.x86_64-pc-windows-gnu.dependencies.windows_x86_64_gnu]
 version = "0.42.0"
+
 [target.x86_64-pc-windows-gnullvm.dependencies.windows_x86_64_gnullvm]
 version = "0.42.0"
+
 [target.x86_64-pc-windows-msvc.dependencies.windows_x86_64_msvc]
 version = "0.42.0"
+
 [target.x86_64-uwp-windows-gnu.dependencies.windows_x86_64_gnu]
 version = "0.42.0"
+
 [target.x86_64-uwp-windows-msvc.dependencies.windows_x86_64_msvc]
 version = "0.42.0"

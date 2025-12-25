@@ -1,0 +1,198 @@
+name: All Tests and Builds
+
+on:
+  push:
+    branches: [main, 0.4.x]
+  pull_request:
+
+jobs:
+  timezones:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        tz: ["ACST-9:30", "EST4", "UTC0", "Asia/Katmandu"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features --color=always -- --color=always
+
+  # later this may be able to be included with the below
+  # kept separate for now as the following don't compile on 1.57
+  # * arbitrary (requires 1.63 as of v1.3.0)
+  rust_msrv:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.57
+      - uses: Swatinem/rust-cache@v2
+      # run --lib and --doc to avoid the long running integration tests
+      # which are run elsewhere
+      - run: |
+          cargo test --lib \
+            --features \
+            unstable-locales,wasmbind,oldtime,clock,rustc-serialize,winapi,serde \
+            --color=always -- --color=always
+      - run: |
+          cargo test --doc \
+            --features \
+            unstable-locales,wasmbind,oldtime,clock,rustc-serialize,winapi,serde \
+            --color=always -- --color=always
+
+  rust_versions:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust_version: ["stable", "beta", "nightly"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust_version }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --manifest-path bench/Cargo.toml --benches
+      - run: cargo check --manifest-path fuzz/Cargo.toml --all-targets
+      # run --lib and --doc to avoid the long running integration tests
+      # which are run elsewhere
+      - run: cargo test --lib --all-features --color=always -- --color=always
+      - run: cargo test --doc --all-features --color=always -- --color=always
+
+  features_check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo hack check --feature-powerset --optional-deps serde,rkyv \
+            --skip __internal_bench,iana-time-zone,pure-rust-locales,libc,winapi \
+            --all-targets
+        # run using `bash` on all platforms for consistent
+        # line-continuation marks
+        shell: bash
+        env:
+          RUSTFLAGS: "-D warnings"
+      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features=alloc
+      - run: cargo test --no-default-features --features=unstable-locales
+      - run: cargo test --no-default-features --features=alloc,unstable-locales
+
+  no_std:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        target: [thumbv6m-none-eabi, x86_64-fortanix-unknown-sgx]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --target ${{ matrix.target }} --color=always
+        working-directory: ./ci/core-test
+
+  alternative_targets:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        target:
+          [
+            wasm32-unknown-emscripten,
+            aarch64-apple-ios,
+            aarch64-linux-android,
+          ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          node-version: "12"
+      - run: cargo build --target ${{ matrix.target }}  --color=always
+
+  test_wasm:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v3
+      - uses: jetli/wasm-pack-action@v0.4.0
+      # The `TZ` and `NOW` variables are used to compare the results inside the WASM environment
+      # with the host system.
+      - run: TZ="$(date +%z)" NOW="$(date +%s)" wasm-pack test --node -- --features wasmbind
+
+  test_wasi:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        target:
+          - wasm32-wasi
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasi
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-wasi
+      - uses: mwilliamson/setup-wasmtime-action@v2
+        with:
+          wasmtime-version: "12.0.1"
+      # We can't use `--all-features` because `rustc-serialize` doesn't support
+      # `wasm32-wasi`.
+      - run: cargo wasi test --features=serde,unstable-locales --color=always -- --color=always
+
+  cross-targets:
+    strategy:
+      matrix:
+        target:
+          - x86_64-sun-solaris
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cross
+      - uses: Swatinem/rust-cache@v2
+      - run: cross check --target ${{ matrix.target }}
+
+  cross-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cross
+      - uses: Swatinem/rust-cache@v2
+      - run: cross test --lib --all-features --target i686-unknown-linux-gnu --color=always
+      - run: cross test --doc --all-features --target i686-unknown-linux-gnu --color=always
+      - run: cross test --lib --all-features --target i686-unknown-linux-musl --color=always
+      - run: cross test --doc --all-features --target i686-unknown-linux-musl --color=always
+
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo +nightly doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings --cfg docsrs"

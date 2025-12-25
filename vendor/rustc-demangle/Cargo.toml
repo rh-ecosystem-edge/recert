@@ -11,9 +11,14 @@ version = "1.0.0"
 rustc-dep-of-std = ["core", "compiler_builtins"]
 std = []
 
+[lib]
+path = "src/lib.rs"
+
 [package]
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-description = "Rust compiler symbol demangling.\n"
+description = """
+Rust compiler symbol demangling.
+"""
 documentation = "https://docs.rs/rustc-demangle"
 homepage = "https://github.com/alexcrichton/rustc-demangle"
 license = "MIT/Apache-2.0"
@@ -21,8 +26,10 @@ name = "rustc-demangle"
 readme = "README.md"
 repository = "https://github.com/alexcrichton/rustc-demangle"
 version = "0.1.23"
+
 [package.metadata.docs.rs]
 features = ["std"]
 rustdoc-args = ["--cfg", "docsrs"]
+
 [profile.release]
 lto = true
