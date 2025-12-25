@@ -498,6 +498,7 @@ impl ClusterCryptoObjects {
         if crypto_customizations.ip_change_only {
             self.prune_cert_key_pairs_to_changed_cn_san_trees(&crypto_customizations.cn_san_replace_rules)
                 .context("pruning cert-key-pairs to CN/SAN-changed trees")?;
+            self.prune_standalone_keys().context("pruning standalone keys")?;
         }
 
         self.regenerate_crypto(rsa_pool, crypto_customizations)
@@ -542,6 +543,44 @@ impl ClusterCryptoObjects {
             "ip-change-only enabled: kept {} cert-key-pairs, pruned {}",
             after_count,
             before_count.saturating_sub(after_count)
+        );
+
+        Ok(())
+    }
+
+    fn prune_standalone_keys(&mut self) -> Result<()> {
+        // When doing an ip-change-only run, we want to minimize churn: only regenerate cert trees
+        // that actually change CN/SAN. Standalone keys (private/public) are not part of those trees,
+        // so we drop them from the regeneration/commit sets.
+
+        let before_private_count = self.distributed_private_keys.len();
+        let before_public_count = self.distributed_public_keys.len();
+
+        // Keep only public keys that are associated with a certificate (cert-key-pair).
+        let mut cert_public_keys_to_keep: HashSet<PublicKey> = HashSet::new();
+        for cert_key_pair in &self.cert_key_pairs {
+            cert_public_keys_to_keep.insert(
+                (*(**cert_key_pair).borrow().distributed_cert)
+                    .borrow()
+                    .certificate
+                    .public_key
+                    .clone(),
+            );
+        }
+
+        self.distributed_public_keys
+            .retain(|public_key, _| cert_public_keys_to_keep.contains(public_key));
+        self.public_to_private
+            .retain(|public_key, _| cert_public_keys_to_keep.contains(public_key));
+
+        self.distributed_private_keys.clear();
+
+        let after_public_count = self.distributed_public_keys.len();
+
+        log::info!(
+            "ip-change-only enabled: pruned {} standalone private keys and {} standalone public keys",
+            before_private_count,
+            before_public_count.saturating_sub(after_public_count),
         );
 
         Ok(())
