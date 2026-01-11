@@ -1,0 +1,55 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  doc:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: nightly
+          profile: minimal
+    - name: Spell Check Repo
+      uses: crate-ci/typos@master
+    - name: Format
+      run: cargo fmt -- --check
+    - name: Docs
+      run: cargo +nightly doc --features http-ureq,clap-parse
+      env:
+        RUSTDOCFLAGS: --cfg docsrs
+
+    - uses: baptiste0928/cargo-install@v2
+      with:
+        crate: cargo-msrv
+    - name: Verify minimum rust version
+      run: cargo msrv verify
+
+  build:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      matrix:
+        os: [ubuntu, windows, macOS]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Check
+      run: cargo check --tests --features http-ureq
+    - name: Check
+      run: cargo check --tests --features clap-parse
+    - name: Check
+      run: cargo check --tests --features http-curl
+    - name: Clippy ureq
+      run: cargo clippy --no-deps --features http-ureq
+    - name: Clippy clap & curl
+      run: cargo clippy --no-deps --features http-curl,clap-parse
+    - name: Run tests with default features (i.e. none)
+      run: cargo test
+    - name: Run clap & curl tests
+      run: cargo test --features http-curl,clap-parse

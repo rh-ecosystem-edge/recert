@@ -1,0 +1,22 @@
+[package]
+name = "hyper-timeout"
+version = "0.4.1"
+authors = ["Herman J. Radtke III <herman@hermanradtke.com>"]
+edition = "2018"
+description = "A connect, read and write timeout aware connector to be used with hyper Client."
+license = "MIT/Apache-2.0"
+documentation = "https://github.com/hjr3/hyper-timeout"
+homepage = "https://github.com/hjr3/hyper-timeout"
+repository = "https://github.com/hjr3/hyper-timeout"
+readme = "README.md"
+
+[dependencies]
+hyper = { version = "0.14.2", features = ["client"] }
+pin-project-lite = "0.2"
+tokio = "1.0.0"
+tokio-io-timeout = "1.1.0"
+
+[dev-dependencies]
+hyper = { version = "0.14", features = ["client", "http1", "tcp"] }
+hyper-tls = "0.5"
+tokio = { version = "1.0.0", features = ["io-std", "io-util", "macros"] }

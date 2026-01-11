@@ -24,9 +24,14 @@ version = "=0.2.87"
 extra-traits = ["syn/extra-traits"]
 spans = []
 
+[lib]
+path = "src/lib.rs"
+
 [package]
 authors = ["The wasm-bindgen Developers"]
-description = "Backend code generation of the wasm-bindgen tool\n"
+description = """
+Backend code generation of the wasm-bindgen tool
+"""
 documentation = "https://docs.rs/wasm-bindgen-backend"
 edition = "2018"
 homepage = "https://rustwasm.github.io/wasm-bindgen/"
