@@ -67,6 +67,7 @@
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
 /// +k8s:deepcopy-gen=true
 /// +k8s:openapi-gen=true
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -83,6 +84,7 @@ pub struct Quantity {
 /// +protobuf.options.marshal=false
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
 /// +k8s:deepcopy-gen=true
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]

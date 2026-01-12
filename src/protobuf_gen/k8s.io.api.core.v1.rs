@@ -4,6 +4,7 @@
 /// must also be in the same AWS zone as the kubelet. An AWS EBS disk
 /// can only be mounted as read/write once. AWS EBS volumes support
 /// ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -35,6 +36,7 @@ pub struct AwsElasticBlockStoreVolumeSource {
     pub read_only: ::core::option::Option<bool>,
 }
 /// Affinity is a group of affinity scheduling rules.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -54,6 +56,7 @@ pub struct Affinity {
     pub pod_anti_affinity: ::core::option::Option<PodAntiAffinity>,
 }
 /// AttachedVolume describes a volume attached to a node
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -69,6 +72,7 @@ pub struct AttachedVolume {
 /// AvoidPods describes pods that should avoid this node. This is the value for a
 /// Node annotation with key scheduler.alpha.kubernetes.io/preferAvoidPods and
 /// will eventually become a field of NodeStatus.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -81,6 +85,7 @@ pub struct AvoidPods {
     pub prefer_avoid_pods: ::prost::alloc::vec::Vec<PreferAvoidPodsEntry>,
 }
 /// AzureDisk represents an Azure Data Disk mount on the host and bind mount to the pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -112,6 +117,7 @@ pub struct AzureDiskVolumeSource {
     pub kind: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// AzureFile represents an Azure File Service mount on the host and bind mount to the pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -135,6 +141,7 @@ pub struct AzureFilePersistentVolumeSource {
     pub secret_namespace: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// AzureFile represents an Azure File Service mount on the host and bind mount to the pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -154,6 +161,7 @@ pub struct AzureFileVolumeSource {
 }
 /// Binding ties one object to another; for example, a pod is bound to a node by a scheduler.
 /// Deprecated in 1.7, please use the bindings subresource of pods instead.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -171,6 +179,7 @@ pub struct Binding {
     pub target: ::core::option::Option<ObjectReference>,
 }
 /// Represents storage that is managed by an external CSI volume driver (Beta feature)
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -246,6 +255,7 @@ pub struct CsiPersistentVolumeSource {
     pub node_expand_secret_ref: ::core::option::Option<SecretReference>,
 }
 /// Represents a source location of a volume to mount, managed by an external CSI driver
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -284,6 +294,7 @@ pub struct CsiVolumeSource {
     pub node_publish_secret_ref: ::core::option::Option<LocalObjectReference>,
 }
 /// Adds and removes POSIX capabilities from running containers.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -300,6 +311,7 @@ pub struct Capabilities {
 }
 /// Represents a Ceph Filesystem mount that lasts the lifetime of a pod
 /// Cephfs volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -337,6 +349,7 @@ pub struct CephFsPersistentVolumeSource {
 }
 /// Represents a Ceph Filesystem mount that lasts the lifetime of a pod
 /// Cephfs volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -376,6 +389,7 @@ pub struct CephFsVolumeSource {
 /// A Cinder volume must exist before mounting to a container.
 /// The volume must also be in the same region as the kubelet.
 /// Cinder volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -408,6 +422,7 @@ pub struct CinderPersistentVolumeSource {
 /// A Cinder volume must exist before mounting to a container.
 /// The volume must also be in the same region as the kubelet.
 /// Cinder volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -440,6 +455,7 @@ pub struct CinderVolumeSource {
 ///
 /// Exactly one of these fields should be set.  Consumers of this type must
 /// treat an empty object as if it has an unknown value.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -467,6 +483,7 @@ pub struct ClaimSource {
     >,
 }
 /// ClientIPConfig represents the configurations of Client IP based session affinity.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -480,6 +497,7 @@ pub struct ClientIpConfig {
     pub timeout_seconds: ::core::option::Option<i32>,
 }
 /// Information about the condition of a component.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -506,6 +524,7 @@ pub struct ComponentCondition {
 }
 /// ComponentStatus (and ComponentStatusList) holds the cluster validation info.
 /// Deprecated: This API is deprecated in v1.19+
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -527,6 +546,7 @@ pub struct ComponentStatus {
 }
 /// Status of all the conditions for the component as a list of ComponentStatus objects.
 /// Deprecated: This API is deprecated in v1.19+
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -544,6 +564,7 @@ pub struct ComponentStatusList {
     pub items: ::prost::alloc::vec::Vec<ComponentStatus>,
 }
 /// ConfigMap holds configuration data for pods to consume.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -593,6 +614,7 @@ pub struct ConfigMap {
 ///
 /// The contents of the target ConfigMap's Data field will represent the
 /// key-value pairs as environment variables.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -608,6 +630,7 @@ pub struct ConfigMapEnvSource {
 }
 /// Selects a key from a ConfigMap.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -625,6 +648,7 @@ pub struct ConfigMapKeySelector {
     pub optional: ::core::option::Option<bool>,
 }
 /// ConfigMapList is a resource containing a list of ConfigMap objects.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -642,6 +666,7 @@ pub struct ConfigMapList {
 }
 /// ConfigMapNodeConfigSource contains the information to reference a ConfigMap as a config source for the Node.
 /// This API is deprecated since 1.22: <https://git.k8s.io/enhancements/keps/sig-node/281-dynamic-kubelet-configuration>
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -677,6 +702,7 @@ pub struct ConfigMapNodeConfigSource {
 /// unless the items element is populated with specific mappings of keys to paths.
 /// Note that this is identical to a configmap volume source without the default
 /// mode.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -705,6 +731,7 @@ pub struct ConfigMapProjection {
 /// volume as files using the keys in the Data field as the file names, unless
 /// the items element is populated with specific mappings of keys to paths.
 /// ConfigMap volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -738,6 +765,7 @@ pub struct ConfigMapVolumeSource {
     pub optional: ::core::option::Option<bool>,
 }
 /// A single application container that you want to run within a pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -947,6 +975,7 @@ pub struct Container {
     pub tty: ::core::option::Option<bool>,
 }
 /// Describe a container image
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -963,6 +992,7 @@ pub struct ContainerImage {
     pub size_bytes: ::core::option::Option<i64>,
 }
 /// ContainerPort represents a network port in a single container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -997,6 +1027,7 @@ pub struct ContainerPort {
     pub host_ip: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ContainerResizePolicy represents resource resize policy for the container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1014,6 +1045,7 @@ pub struct ContainerResizePolicy {
 /// ContainerState holds a possible state of container.
 /// Only one of its members may be specified.
 /// If none of them is specified, the default one is ContainerStateWaiting.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1033,6 +1065,7 @@ pub struct ContainerState {
     pub terminated: ::core::option::Option<ContainerStateTerminated>,
 }
 /// ContainerStateRunning is a running state of a container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1046,6 +1079,7 @@ pub struct ContainerStateRunning {
     >,
 }
 /// ContainerStateTerminated is a terminated state of a container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1084,6 +1118,7 @@ pub struct ContainerStateTerminated {
     pub container_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ContainerStateWaiting is a waiting state of a container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1099,6 +1134,7 @@ pub struct ContainerStateWaiting {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ContainerStatus contains details for the current status of this container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1180,6 +1216,7 @@ pub struct ContainerStatus {
     pub resources: ::core::option::Option<ResourceRequirements>,
 }
 /// DaemonEndpoint contains information about a single Daemon endpoint.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1192,6 +1229,7 @@ pub struct DaemonEndpoint {
 /// Represents downward API info for projecting into a projected volume.
 /// Note that this is identical to a downwardAPI volume source without the default
 /// mode.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1203,6 +1241,7 @@ pub struct DownwardApiProjection {
     pub items: ::prost::alloc::vec::Vec<DownwardApiVolumeFile>,
 }
 /// DownwardAPIVolumeFile represents information to create the file containing the pod field
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1232,6 +1271,7 @@ pub struct DownwardApiVolumeFile {
 }
 /// DownwardAPIVolumeSource represents a volume containing downward API info.
 /// Downward API volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1255,6 +1295,7 @@ pub struct DownwardApiVolumeSource {
 }
 /// Represents an empty directory for a pod.
 /// Empty directory volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1281,6 +1322,7 @@ pub struct EmptyDirVolumeSource {
 }
 /// EndpointAddress is a tuple that describes single IP address.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1306,6 +1348,7 @@ pub struct EndpointAddress {
 }
 /// EndpointPort is a tuple that describes a single port.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1359,6 +1402,7 @@ pub struct EndpointPort {
 ///
 /// 	a: \[ 10.10.1.1:8675, 10.10.2.2:8675 \],
 /// 	b: \[ 10.10.1.1:309, 10.10.2.2:309 \]
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1393,6 +1437,7 @@ pub struct EndpointSubset {
 /// 	     Ports: \[{"name": "a", "port": 93}, {"name": "b", "port": 76}\]
 /// 	   },
 /// 	]
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1417,6 +1462,7 @@ pub struct Endpoints {
     pub subsets: ::prost::alloc::vec::Vec<EndpointSubset>,
 }
 /// EndpointsList is a list of endpoints.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1434,6 +1480,7 @@ pub struct EndpointsList {
     pub items: ::prost::alloc::vec::Vec<Endpoints>,
 }
 /// EnvFromSource represents the source of a set of ConfigMaps
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1453,6 +1500,7 @@ pub struct EnvFromSource {
     pub secret_ref: ::core::option::Option<SecretEnvSource>,
 }
 /// EnvVar represents an environment variable present in a Container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1479,6 +1527,7 @@ pub struct EnvVar {
     pub value_from: ::core::option::Option<EnvVarSource>,
 }
 /// EnvVarSource represents a source for the value of an EnvVar.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1511,6 +1560,7 @@ pub struct EnvVarSource {
 ///
 /// To add an ephemeral container, use the ephemeralcontainers subresource of an existing
 /// Pod. Ephemeral containers may not be removed or restarted.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1536,6 +1586,7 @@ pub struct EphemeralContainer {
 /// EphemeralContainer. This separate type allows easy conversion from EphemeralContainer
 /// to Container and allows separate documentation for the fields of EphemeralContainer.
 /// When a new field is added to Container it must be added here as well.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1709,6 +1760,7 @@ pub struct EphemeralContainerCommon {
     pub tty: ::core::option::Option<bool>,
 }
 /// Represents an ephemeral volume that is handled by a normal storage driver.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1744,6 +1796,7 @@ pub struct EphemeralVolumeSource {
 /// with a given Reason reflecting a consistent underlying trigger, or the
 /// continued existence of events with that Reason.  Events should be
 /// treated as informative, best-effort, supplemental data.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1821,6 +1874,7 @@ pub struct Event {
     pub reporting_instance: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// EventList is a list of events.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1839,6 +1893,7 @@ pub struct EventList {
 }
 /// EventSeries contain information on series of events, i.e. thing that was/is happening
 /// continuously for some time.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1854,6 +1909,7 @@ pub struct EventSeries {
     >,
 }
 /// EventSource contains information for an event.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1869,6 +1925,7 @@ pub struct EventSource {
     pub host: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ExecAction describes a "run in container" action.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1886,6 +1943,7 @@ pub struct ExecAction {
 /// Represents a Fibre Channel volume.
 /// Fibre Channel volumes can only be mounted as read/write once.
 /// Fibre Channel volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1919,6 +1977,7 @@ pub struct FcVolumeSource {
 }
 /// FlexPersistentVolumeSource represents a generic persistent volume resource that is
 /// provisioned/attached using an exec based plugin.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1956,6 +2015,7 @@ pub struct FlexPersistentVolumeSource {
 }
 /// FlexVolume represents a generic volume resource that is
 /// provisioned/attached using an exec based plugin.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1994,6 +2054,7 @@ pub struct FlexVolumeSource {
 /// Represents a Flocker volume mounted by the Flocker agent.
 /// One and only one of datasetName and datasetUUID should be set.
 /// Flocker volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2015,6 +2076,7 @@ pub struct FlockerVolumeSource {
 /// also be in the same GCE project and zone as the kubelet. A GCE PD
 /// can only be mounted as read/write once or read-only many times. GCE
 /// PDs support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2047,6 +2109,7 @@ pub struct GcePersistentDiskVolumeSource {
     #[prost(bool, optional, tag = "4")]
     pub read_only: ::core::option::Option<bool>,
 }
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2071,6 +2134,7 @@ pub struct GrpcAction {
 /// DEPRECATED: GitRepo is deprecated. To provision a container with a git repo, mount an
 /// EmptyDir into an InitContainer that clones the repo using git, then mount the EmptyDir
 /// into the Pod's container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2093,6 +2157,7 @@ pub struct GitRepoVolumeSource {
 }
 /// Represents a Glusterfs mount that lasts the lifetime of a pod.
 /// Glusterfs volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2121,6 +2186,7 @@ pub struct GlusterfsPersistentVolumeSource {
 }
 /// Represents a Glusterfs mount that lasts the lifetime of a pod.
 /// Glusterfs volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2142,6 +2208,7 @@ pub struct GlusterfsVolumeSource {
     pub read_only: ::core::option::Option<bool>,
 }
 /// HTTPGetAction describes an action based on HTTP Get requests.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2174,6 +2241,7 @@ pub struct HttpGetAction {
     pub http_headers: ::prost::alloc::vec::Vec<HttpHeader>,
 }
 /// HTTPHeader describes a custom header to be used in HTTP probes
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2189,6 +2257,7 @@ pub struct HttpHeader {
 }
 /// HostAlias holds the mapping between IP and hostnames that will be injected as an entry in the
 /// pod's hosts file.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2202,6 +2271,7 @@ pub struct HostAlias {
     pub hostnames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// HostIP represents a single IP address allocated to the host.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2213,6 +2283,7 @@ pub struct HostIp {
 }
 /// Represents a host path mapped into a pod.
 /// Host path volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2233,6 +2304,7 @@ pub struct HostPathVolumeSource {
 /// ISCSIPersistentVolumeSource represents an ISCSI disk.
 /// ISCSI volumes can only be mounted as read/write once.
 /// ISCSI volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2293,6 +2365,7 @@ pub struct IscsiPersistentVolumeSource {
 /// Represents an ISCSI disk.
 /// ISCSI volumes can only be mounted as read/write once.
 /// ISCSI volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2351,6 +2424,7 @@ pub struct IscsiVolumeSource {
     pub initiator_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Maps a string key to a path within a volume.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2378,6 +2452,7 @@ pub struct KeyToPath {
 /// Lifecycle describes actions that the management system should take in response to container lifecycle
 /// events. For the PostStart and PreStop lifecycle handlers, management of the container blocks
 /// until the action is complete, unless the container process fails, in which case the handler is aborted.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2405,6 +2480,7 @@ pub struct Lifecycle {
 }
 /// LifecycleHandler defines a specific action that should be taken in a lifecycle
 /// hook. One and only one of the fields, except TCPSocket must be specified.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2426,6 +2502,7 @@ pub struct LifecycleHandler {
     pub tcp_socket: ::core::option::Option<TcpSocketAction>,
 }
 /// LimitRange sets resource usage limits for each kind of resource in a Namespace.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2445,6 +2522,7 @@ pub struct LimitRange {
     pub spec: ::core::option::Option<LimitRangeSpec>,
 }
 /// LimitRangeItem defines a min/max usage limit for any resource that matches on kind.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2490,6 +2568,7 @@ pub struct LimitRangeItem {
     >,
 }
 /// LimitRangeList is a list of LimitRange items.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2508,6 +2587,7 @@ pub struct LimitRangeList {
     pub items: ::prost::alloc::vec::Vec<LimitRange>,
 }
 /// LimitRangeSpec defines a min/max usage limit for resources that match on kind.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2518,6 +2598,7 @@ pub struct LimitRangeSpec {
     pub limits: ::prost::alloc::vec::Vec<LimitRangeItem>,
 }
 /// List holds a list of objects, which may not be known by the server.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2538,6 +2619,7 @@ pub struct List {
 }
 /// LoadBalancerIngress represents the status of a load-balancer ingress point:
 /// traffic intended for the service should be sent to an ingress point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2561,6 +2643,7 @@ pub struct LoadBalancerIngress {
     pub ports: ::prost::alloc::vec::Vec<PortStatus>,
 }
 /// LoadBalancerStatus represents the status of a load-balancer.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2575,6 +2658,7 @@ pub struct LoadBalancerStatus {
 /// LocalObjectReference contains enough information to let you locate the
 /// referenced object inside the same namespace.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2588,6 +2672,7 @@ pub struct LocalObjectReference {
     pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Local represents directly-attached storage with node affinity (Beta feature)
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2607,6 +2692,7 @@ pub struct LocalVolumeSource {
 }
 /// Represents an NFS mount that lasts the lifetime of a pod.
 /// NFS volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2629,6 +2715,7 @@ pub struct NfsVolumeSource {
 }
 /// Namespace provides a scope for Names.
 /// Use of multiple namespaces is optional.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2653,6 +2740,7 @@ pub struct Namespace {
     pub status: ::core::option::Option<NamespaceStatus>,
 }
 /// NamespaceCondition contains details about state of namespace.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2677,6 +2765,7 @@ pub struct NamespaceCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// NamespaceList is a list of Namespaces.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2695,6 +2784,7 @@ pub struct NamespaceList {
     pub items: ::prost::alloc::vec::Vec<Namespace>,
 }
 /// NamespaceSpec describes the attributes on a Namespace.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2707,6 +2797,7 @@ pub struct NamespaceSpec {
     pub finalizers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// NamespaceStatus is information about the current status of a Namespace.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2726,6 +2817,7 @@ pub struct NamespaceStatus {
 }
 /// Node is a worker node in Kubernetes.
 /// Each node will have a unique identifier in the cache (i.e. in etcd).
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2752,6 +2844,7 @@ pub struct Node {
     pub status: ::core::option::Option<NodeStatus>,
 }
 /// NodeAddress contains information for the node's address.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2765,6 +2858,7 @@ pub struct NodeAddress {
     pub address: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Node affinity is a group of node affinity scheduling rules.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2796,6 +2890,7 @@ pub struct NodeAffinity {
     >,
 }
 /// NodeCondition contains condition information for a node.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2830,6 +2925,7 @@ pub struct NodeCondition {
 }
 /// NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
 /// This API is deprecated since 1.22
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2840,6 +2936,7 @@ pub struct NodeConfigSource {
     pub config_map: ::core::option::Option<ConfigMapNodeConfigSource>,
 }
 /// NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2894,6 +2991,7 @@ pub struct NodeConfigStatus {
     pub error: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// NodeDaemonEndpoints lists ports opened by daemons running on the Node.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2905,6 +3003,7 @@ pub struct NodeDaemonEndpoints {
     pub kubelet_endpoint: ::core::option::Option<DaemonEndpoint>,
 }
 /// NodeList is the whole list of all Nodes which have been registered with master.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2922,6 +3021,7 @@ pub struct NodeList {
     pub items: ::prost::alloc::vec::Vec<Node>,
 }
 /// NodeProxyOptions is the query options to a Node's proxy call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2934,6 +3034,7 @@ pub struct NodeProxyOptions {
 }
 /// NodeResources is an object for conveying resource information about a node.
 /// see <https://kubernetes.io/docs/concepts/architecture/nodes/#capacity> for more details.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2950,6 +3051,7 @@ pub struct NodeResources {
 /// over a set of nodes; that is, it represents the OR of the selectors represented
 /// by the node selector terms.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2961,6 +3063,7 @@ pub struct NodeSelector {
 }
 /// A node selector requirement is a selector that contains values, a key, and an operator
 /// that relates the key and values.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -2986,6 +3089,7 @@ pub struct NodeSelectorRequirement {
 /// them are ANDed.
 /// The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3001,6 +3105,7 @@ pub struct NodeSelectorTerm {
     pub match_fields: ::prost::alloc::vec::Vec<NodeSelectorRequirement>,
 }
 /// NodeSpec describes the attributes that a node is created with.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3041,6 +3146,7 @@ pub struct NodeSpec {
     pub external_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// NodeStatus is information about the current status of a node.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3117,6 +3223,7 @@ pub struct NodeStatus {
     pub config: ::core::option::Option<NodeConfigStatus>,
 }
 /// NodeSystemInfo is a set of ids/uuids to uniquely identify the node.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3161,6 +3268,7 @@ pub struct NodeSystemInfo {
 }
 /// ObjectFieldSelector selects an APIVersioned field of an object.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3192,6 +3300,7 @@ pub struct ObjectFieldSelector {
 /// For example, ServiceReferences for admission registration: <https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533> .
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3241,6 +3350,7 @@ pub struct ObjectReference {
 /// PersistentVolume (PV) is a storage resource provisioned by an administrator.
 /// It is analogous to a node.
 /// More info: <https://kubernetes.io/docs/concepts/storage/persistent-volumes>
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3268,6 +3378,7 @@ pub struct PersistentVolume {
     pub status: ::core::option::Option<PersistentVolumeStatus>,
 }
 /// PersistentVolumeClaim is a user's request for and claim to a persistent volume
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3293,6 +3404,7 @@ pub struct PersistentVolumeClaim {
     pub status: ::core::option::Option<PersistentVolumeClaimStatus>,
 }
 /// PersistentVolumeClaimCondition contains details about state of pvc
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3326,6 +3438,7 @@ pub struct PersistentVolumeClaimCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PersistentVolumeClaimList is a list of PersistentVolumeClaim items.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3345,6 +3458,7 @@ pub struct PersistentVolumeClaimList {
 }
 /// PersistentVolumeClaimSpec describes the common attributes of storage devices
 /// and allows a Source for provider-specific attributes
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3422,6 +3536,7 @@ pub struct PersistentVolumeClaimSpec {
     pub data_source_ref: ::core::option::Option<TypedObjectReference>,
 }
 /// PersistentVolumeClaimStatus is the current status of a persistent volume claim.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3525,6 +3640,7 @@ pub struct PersistentVolumeClaimStatus {
 }
 /// PersistentVolumeClaimTemplate is used to produce
 /// PersistentVolumeClaim objects as part of an EphemeralVolumeSource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3550,6 +3666,7 @@ pub struct PersistentVolumeClaimTemplate {
 /// This volume finds the bound PV and mounts that volume for the pod. A
 /// PersistentVolumeClaimVolumeSource is, essentially, a wrapper around another
 /// type of volume that is owned by someone else (the system).
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3566,6 +3683,7 @@ pub struct PersistentVolumeClaimVolumeSource {
     pub read_only: ::core::option::Option<bool>,
 }
 /// PersistentVolumeList is a list of PersistentVolume items.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3585,6 +3703,7 @@ pub struct PersistentVolumeList {
 }
 /// PersistentVolumeSource is similar to VolumeSource but meant for the
 /// administrator who creates PVs. Exactly one of its members must be set.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3697,6 +3816,7 @@ pub struct PersistentVolumeSource {
     pub csi: ::core::option::Option<CsiPersistentVolumeSource>,
 }
 /// PersistentVolumeSpec is the specification of a persistent volume.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3759,6 +3879,7 @@ pub struct PersistentVolumeSpec {
     pub node_affinity: ::core::option::Option<VolumeNodeAffinity>,
 }
 /// PersistentVolumeStatus is the current status of a persistent volume.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3789,6 +3910,7 @@ pub struct PersistentVolumeStatus {
     >,
 }
 /// Represents a Photon Controller persistent disk resource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3805,6 +3927,7 @@ pub struct PhotonPersistentDiskVolumeSource {
 }
 /// Pod is a collection of containers that can run on a host. This resource is created
 /// by clients and scheduled onto hosts.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3832,6 +3955,7 @@ pub struct Pod {
     pub status: ::core::option::Option<PodStatus>,
 }
 /// Pod affinity is a group of inter pod affinity scheduling rules.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3870,6 +3994,7 @@ pub struct PodAffinity {
 /// where co-located is defined as running on a node whose value of
 /// the label with key <topologyKey> matches that of any node on which
 /// a pod of the set of pods is running
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3907,6 +4032,7 @@ pub struct PodAffinityTerm {
     >,
 }
 /// Pod anti affinity is a group of inter pod anti affinity scheduling rules.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3943,6 +4069,7 @@ pub struct PodAntiAffinity {
 /// ---
 /// TODO: merge w/ PodExecOptions below for stdin, stdout, etc
 /// and also when we cut V2, we should export a "StreamOptions" or somesuch that contains Stdin, Stdout, Stder and TTY
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3977,6 +4104,7 @@ pub struct PodAttachOptions {
     pub container: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PodCondition contains details for the current condition of this pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4014,6 +4142,7 @@ pub struct PodCondition {
 }
 /// PodDNSConfig defines the DNS parameters of a pod in addition to
 /// those generated from DNSPolicy.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4040,6 +4169,7 @@ pub struct PodDnsConfig {
     pub options: ::prost::alloc::vec::Vec<PodDnsConfigOption>,
 }
 /// PodDNSConfigOption defines DNS resolver options of a pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4056,6 +4186,7 @@ pub struct PodDnsConfigOption {
 /// ---
 /// TODO: This is largely identical to PodAttachOptions above, make sure they stay in sync and see about merging
 /// and also when we cut V2, we should export a "StreamOptions" or somesuch that contains Stdin, Stdout, Stder and TTY
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4089,6 +4220,7 @@ pub struct PodExecOptions {
     pub command: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// PodIP represents a single IP address allocated to the pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4099,6 +4231,7 @@ pub struct PodIp {
     pub ip: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PodList is a list of Pods.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4117,6 +4250,7 @@ pub struct PodList {
     pub items: ::prost::alloc::vec::Vec<Pod>,
 }
 /// PodLogOptions is the query options for a Pod's logs REST call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4177,6 +4311,7 @@ pub struct PodLogOptions {
     pub insecure_skip_tls_verify_backend: ::core::option::Option<bool>,
 }
 /// PodOS defines the OS parameters of a pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4195,6 +4330,7 @@ pub struct PodOs {
 /// ports (comma separated) to forward over.
 /// Port forwarding over SPDY does not use these options. It requires the port
 /// to be passed in the `port` header as part of request.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4207,6 +4343,7 @@ pub struct PodPortForwardOptions {
     pub ports: ::prost::alloc::vec::Vec<i32>,
 }
 /// PodProxyOptions is the query options to a Pod's proxy call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4218,6 +4355,7 @@ pub struct PodProxyOptions {
     pub path: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PodReadinessGate contains the reference to a pod condition
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4230,6 +4368,7 @@ pub struct PodReadinessGate {
 /// PodResourceClaim references exactly one ResourceClaim through a ClaimSource.
 /// It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
 /// Containers that need access to the ResourceClaim reference it with this name.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4246,6 +4385,7 @@ pub struct PodResourceClaim {
 /// PodResourceClaimStatus is stored in the PodStatus for each PodResourceClaim
 /// which references a ResourceClaimTemplate. It stores the generated name for
 /// the corresponding ResourceClaim.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4266,6 +4406,7 @@ pub struct PodResourceClaimStatus {
     pub resource_claim_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PodSchedulingGate is associated to a Pod to guard its scheduling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4279,6 +4420,7 @@ pub struct PodSchedulingGate {
 /// PodSecurityContext holds pod-level security attributes and common container settings.
 /// Some fields are also present in container.securityContext.  Field values of
 /// container.securityContext take precedence over field values of PodSecurityContext.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4374,6 +4516,7 @@ pub struct PodSecurityContext {
 }
 /// Describes the class of pods that should avoid this node.
 /// Exactly one field should be set.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4387,6 +4530,7 @@ pub struct PodSignature {
     >,
 }
 /// PodSpec is a description of a pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4732,6 +4876,7 @@ pub struct PodSpec {
 /// PodStatus represents information about the status of a pod. Status may trail the actual
 /// state of a system, especially if the node that hosts the pod cannot contact the control
 /// plane.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4859,6 +5004,7 @@ pub struct PodStatus {
     pub resource_claim_statuses: ::prost::alloc::vec::Vec<PodResourceClaimStatus>,
 }
 /// PodStatusResult is a wrapper for PodStatus returned by kubelet that can be encode/decoded
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4881,6 +5027,7 @@ pub struct PodStatusResult {
     pub status: ::core::option::Option<PodStatus>,
 }
 /// PodTemplate describes a template for creating copies of a predefined pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4900,6 +5047,7 @@ pub struct PodTemplate {
     pub template: ::core::option::Option<PodTemplateSpec>,
 }
 /// PodTemplateList is a list of PodTemplates.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4917,6 +5065,7 @@ pub struct PodTemplateList {
     pub items: ::prost::alloc::vec::Vec<PodTemplate>,
 }
 /// PodTemplateSpec describes the data a pod should have when created from a template
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4935,6 +5084,7 @@ pub struct PodTemplateSpec {
     #[prost(message, optional, tag = "2")]
     pub spec: ::core::option::Option<PodSpec>,
 }
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4963,6 +5113,7 @@ pub struct PortStatus {
     pub error: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// PortworxVolumeSource represents a Portworx volume resource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4984,6 +5135,7 @@ pub struct PortworxVolumeSource {
 }
 /// Preconditions must be fulfilled before an operation (update, delete, etc.) is carried out.
 /// +k8s:openapi-gen=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4995,6 +5147,7 @@ pub struct Preconditions {
     pub uid: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Describes a class of pods that should avoid this node.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5020,6 +5173,7 @@ pub struct PreferAvoidPodsEntry {
 }
 /// An empty preferred scheduling term matches all objects with implicit weight 0
 /// (i.e. it's a no-op). A null preferred scheduling term matches no objects (i.e. is also a no-op).
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5034,6 +5188,7 @@ pub struct PreferredSchedulingTerm {
 }
 /// Probe describes a health check to be performed against a container to determine whether it is
 /// alive or ready to receive traffic.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5084,6 +5239,7 @@ pub struct Probe {
 }
 /// ProbeHandler defines a specific action that should be taken in a probe.
 /// One and only one of the fields must be specified.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5107,6 +5263,7 @@ pub struct ProbeHandler {
     pub grpc: ::core::option::Option<GrpcAction>,
 }
 /// Represents a projected volume source
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5128,6 +5285,7 @@ pub struct ProjectedVolumeSource {
 }
 /// Represents a Quobyte mount that lasts the lifetime of a pod.
 /// Quobyte volumes do not support ownership management or SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5164,6 +5322,7 @@ pub struct QuobyteVolumeSource {
 }
 /// Represents a Rados Block Device mount that lasts the lifetime of a pod.
 /// RBD volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5219,6 +5378,7 @@ pub struct RbdPersistentVolumeSource {
 }
 /// Represents a Rados Block Device mount that lasts the lifetime of a pod.
 /// RBD volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5273,6 +5433,7 @@ pub struct RbdVolumeSource {
     pub read_only: ::core::option::Option<bool>,
 }
 /// RangeAllocation is not a public type.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5293,6 +5454,7 @@ pub struct RangeAllocation {
     pub data: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// ReplicationController represents the configuration of a replication controller.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5321,6 +5483,7 @@ pub struct ReplicationController {
     pub status: ::core::option::Option<ReplicationControllerStatus>,
 }
 /// ReplicationControllerCondition describes the state of a replication controller at a certain point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5348,6 +5511,7 @@ pub struct ReplicationControllerCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ReplicationControllerList is a collection of replication controllers.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5366,6 +5530,7 @@ pub struct ReplicationControllerList {
     pub items: ::prost::alloc::vec::Vec<ReplicationController>,
 }
 /// ReplicationControllerSpec is the specification of a replication controller.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5406,6 +5571,7 @@ pub struct ReplicationControllerSpec {
 }
 /// ReplicationControllerStatus represents the current status of a replication
 /// controller.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5439,6 +5605,7 @@ pub struct ReplicationControllerStatus {
     pub conditions: ::prost::alloc::vec::Vec<ReplicationControllerCondition>,
 }
 /// ResourceClaim references one entry in PodSpec.ResourceClaims.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5452,6 +5619,7 @@ pub struct ResourceClaim {
 }
 /// ResourceFieldSelector represents container resources (cpu, memory) and their output format
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5472,6 +5640,7 @@ pub struct ResourceFieldSelector {
     >,
 }
 /// ResourceQuota sets aggregate quota restrictions enforced per namespace
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5496,6 +5665,7 @@ pub struct ResourceQuota {
     pub status: ::core::option::Option<ResourceQuotaStatus>,
 }
 /// ResourceQuotaList is a list of ResourceQuota items.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5514,6 +5684,7 @@ pub struct ResourceQuotaList {
     pub items: ::prost::alloc::vec::Vec<ResourceQuota>,
 }
 /// ResourceQuotaSpec defines the desired hard limits to enforce for Quota.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5540,6 +5711,7 @@ pub struct ResourceQuotaSpec {
     pub scope_selector: ::core::option::Option<ScopeSelector>,
 }
 /// ResourceQuotaStatus defines the enforced hard limits and observed use.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5562,6 +5734,7 @@ pub struct ResourceQuotaStatus {
     >,
 }
 /// ResourceRequirements describes the compute resource requirements.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5601,6 +5774,7 @@ pub struct ResourceRequirements {
     pub claims: ::prost::alloc::vec::Vec<ResourceClaim>,
 }
 /// SELinuxOptions are the labels to be applied to the container
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5624,6 +5798,7 @@ pub struct SeLinuxOptions {
     pub level: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ScaleIOPersistentVolumeSource represents a persistent ScaleIO volume
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5674,6 +5849,7 @@ pub struct ScaleIoPersistentVolumeSource {
     pub read_only: ::core::option::Option<bool>,
 }
 /// ScaleIOVolumeSource represents a persistent ScaleIO volume
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5726,6 +5902,7 @@ pub struct ScaleIoVolumeSource {
 /// A scope selector represents the AND of the selectors represented
 /// by the scoped-resource selector requirements.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5738,6 +5915,7 @@ pub struct ScopeSelector {
 }
 /// A scoped-resource selector requirement is a selector that contains values, a scope name, and an operator
 /// that relates the scope name and values.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5761,6 +5939,7 @@ pub struct ScopedResourceSelectorRequirement {
 /// SeccompProfile defines a pod/container's seccomp profile settings.
 /// Only one profile source may be set.
 /// +union
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5785,6 +5964,7 @@ pub struct SeccompProfile {
 }
 /// Secret holds secret data of a certain type. The total bytes of the values in
 /// the Data field must be less than MaxSecretSize bytes.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5836,6 +6016,7 @@ pub struct Secret {
 ///
 /// The contents of the target Secret's Data field will represent the
 /// key-value pairs as environment variables.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5851,6 +6032,7 @@ pub struct SecretEnvSource {
 }
 /// SecretKeySelector selects a key of a Secret.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5868,6 +6050,7 @@ pub struct SecretKeySelector {
     pub optional: ::core::option::Option<bool>,
 }
 /// SecretList is a list of Secret.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5891,6 +6074,7 @@ pub struct SecretList {
 /// projected volume as files using the keys in the Data field as the file names.
 /// Note that this is identical to a secret volume source without the default
 /// mode.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5916,6 +6100,7 @@ pub struct SecretProjection {
 /// SecretReference represents a Secret Reference. It has enough information to retrieve secret
 /// in any namespace
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5935,6 +6120,7 @@ pub struct SecretReference {
 /// The contents of the target Secret's Data field will be presented in a volume
 /// as files using the keys in the Data field as the file names.
 /// Secret volumes support ownership management and SELinux relabeling.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5973,6 +6159,7 @@ pub struct SecretVolumeSource {
 /// SecurityContext holds security configuration that will be applied to a container.
 /// Some fields are present in both SecurityContext and PodSecurityContext.  When both
 /// are set, the values in SecurityContext take precedence.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6064,6 +6251,7 @@ pub struct SecurityContext {
     pub seccomp_profile: ::core::option::Option<SeccompProfile>,
 }
 /// SerializedReference is a reference to serialized object.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6077,6 +6265,7 @@ pub struct SerializedReference {
 /// Service is a named abstraction of software service (for example, mysql) consisting of local port
 /// (for example 3306) that the proxy listens on, and the selector that determines which pods
 /// will answer requests sent through the proxy.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6106,6 +6295,7 @@ pub struct Service {
 /// * a name, understood by users, and perhaps by peripheral systems, for an identity
 /// * a principal that can be authenticated and authorized
 /// * a set of secrets
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6142,6 +6332,7 @@ pub struct ServiceAccount {
     pub automount_service_account_token: ::core::option::Option<bool>,
 }
 /// ServiceAccountList is a list of ServiceAccount objects
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6163,6 +6354,7 @@ pub struct ServiceAccountList {
 /// volume. This projection can be used to insert a service account token into
 /// the pods runtime filesystem for use against APIs (Kubernetes API Server or
 /// otherwise).
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6190,6 +6382,7 @@ pub struct ServiceAccountTokenProjection {
     pub path: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ServiceList holds a list of services.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6207,6 +6400,7 @@ pub struct ServiceList {
     pub items: ::prost::alloc::vec::Vec<Service>,
 }
 /// ServicePort contains information on service's port.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6274,6 +6468,7 @@ pub struct ServicePort {
     pub node_port: ::core::option::Option<i32>,
 }
 /// ServiceProxyOptions is the query options to a Service's proxy call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6289,6 +6484,7 @@ pub struct ServiceProxyOptions {
     pub path: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ServiceSpec describes the attributes that a user creates on a service.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6531,6 +6727,7 @@ pub struct ServiceSpec {
     pub internal_traffic_policy: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ServiceStatus represents the current status of a service.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6553,6 +6750,7 @@ pub struct ServiceStatus {
     >,
 }
 /// SessionAffinityConfig represents the configurations of session affinity.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6564,6 +6762,7 @@ pub struct SessionAffinityConfig {
     pub client_ip: ::core::option::Option<ClientIpConfig>,
 }
 /// Represents a StorageOS persistent volume resource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6600,6 +6799,7 @@ pub struct StorageOsPersistentVolumeSource {
     pub secret_ref: ::core::option::Option<ObjectReference>,
 }
 /// Represents a StorageOS persistent volume resource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6636,6 +6836,7 @@ pub struct StorageOsVolumeSource {
     pub secret_ref: ::core::option::Option<LocalObjectReference>,
 }
 /// Sysctl defines a kernel parameter to be set
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6649,6 +6850,7 @@ pub struct Sysctl {
     pub value: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// TCPSocketAction describes an action based on opening a socket
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6668,6 +6870,7 @@ pub struct TcpSocketAction {
 }
 /// The node this Taint is attached to has the "effect" on
 /// any pod that does not tolerate the Taint.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6695,6 +6898,7 @@ pub struct Taint {
 }
 /// The pod this Toleration is attached to tolerates any taint that matches
 /// the triple <key,value,effect> using the matching operator <operator>.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6732,6 +6936,7 @@ pub struct Toleration {
 }
 /// A topology selector requirement is a selector that matches given label.
 /// This is an alpha feature and may change in the future.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6751,6 +6956,7 @@ pub struct TopologySelectorLabelRequirement {
 /// It provides a subset of functionality as NodeSelectorTerm.
 /// This is an alpha feature and may change in the future.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6764,6 +6970,7 @@ pub struct TopologySelectorTerm {
     >,
 }
 /// TopologySpreadConstraint specifies how to spread matching pods among the given topology.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6900,6 +7107,7 @@ pub struct TopologySpreadConstraint {
 /// TypedLocalObjectReference contains enough information to let you locate the
 /// typed referenced object inside the same namespace.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6918,6 +7126,7 @@ pub struct TypedLocalObjectReference {
     #[prost(string, optional, tag = "3")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6944,6 +7153,7 @@ pub struct TypedObjectReference {
     pub namespace: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Volume represents a named volume in a pod that may be accessed by any container in the pod.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6961,6 +7171,7 @@ pub struct Volume {
     pub volume_source: ::core::option::Option<VolumeSource>,
 }
 /// volumeDevice describes a mapping of a raw block device within a container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6974,6 +7185,7 @@ pub struct VolumeDevice {
     pub device_path: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// VolumeMount describes a mounting of a Volume within a container.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7012,6 +7224,7 @@ pub struct VolumeMount {
     pub sub_path_expr: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// VolumeNodeAffinity defines constraints that limit what nodes this volume can be accessed from.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7022,6 +7235,7 @@ pub struct VolumeNodeAffinity {
     pub required: ::core::option::Option<NodeSelector>,
 }
 /// Projection that may be projected along with other supported volume types
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7046,6 +7260,7 @@ pub struct VolumeProjection {
 }
 /// Represents the source of a volume to mount.
 /// Only one of its members may be specified.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7220,6 +7435,7 @@ pub struct VolumeSource {
     pub ephemeral: ::core::option::Option<EphemeralVolumeSource>,
 }
 /// Represents a vSphere volume resource.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7244,6 +7460,7 @@ pub struct VsphereVirtualDiskVolumeSource {
     pub storage_policy_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// The weights of all of the matched WeightedPodAffinityTerm fields are added per-node to find the most preferred node(s)
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7258,6 +7475,7 @@ pub struct WeightedPodAffinityTerm {
     pub pod_affinity_term: ::core::option::Option<PodAffinityTerm>,
 }
 /// WindowsSecurityContextOptions contain Windows-specific options and credentials.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
