@@ -1,13 +1,11 @@
 use super::Sign::{self, Minus, NoSign, Plus};
 use super::{BigInt, ToBigInt};
 
-use crate::std_alloc::Vec;
-#[cfg(has_try_from)]
 use crate::TryFromBigIntError;
 use crate::{BigUint, ParseBigIntError, ToBigUint};
 
+use alloc::vec::Vec;
 use core::cmp::Ordering::{Equal, Greater, Less};
-#[cfg(has_try_from)]
 use core::convert::TryFrom;
 use core::str::{self, FromStr};
 use num_traits::{FromPrimitive, Num, One, ToPrimitive, Zero};
@@ -27,8 +25,7 @@ impl Num for BigInt {
     /// Creates and initializes a [`BigInt`].
     #[inline]
     fn from_str_radix(mut s: &str, radix: u32) -> Result<BigInt, ParseBigIntError> {
-        let sign = if s.starts_with('-') {
-            let tail = &s[1..];
+        let sign = if let Some(tail) = s.strip_prefix('-') {
             if !tail.starts_with('+') {
                 s = tail
             }
@@ -52,7 +49,7 @@ impl ToPrimitive for BigInt {
                 let m: u64 = 1 << 63;
                 match n.cmp(&m) {
                     Less => Some(-(n as i64)),
-                    Equal => Some(core::i64::MIN),
+                    Equal => Some(i64::MIN),
                     Greater => None,
                 }
             }
@@ -69,7 +66,7 @@ impl ToPrimitive for BigInt {
                 let m: u128 = 1 << 127;
                 match n.cmp(&m) {
                     Less => Some(-(n as i128)),
-                    Equal => Some(core::i128::MIN),
+                    Equal => Some(i128::MIN),
                     Greater => None,
                 }
             }
@@ -109,7 +106,6 @@ impl ToPrimitive for BigInt {
 
 macro_rules! impl_try_from_bigint {
     ($T:ty, $to_ty:path) => {
-        #[cfg(has_try_from)]
         impl TryFrom<&BigInt> for $T {
             type Error = TryFromBigIntError<()>;
 
@@ -119,7 +115,6 @@ macro_rules! impl_try_from_bigint {
             }
         }
 
-        #[cfg(has_try_from)]
         impl TryFrom<BigInt> for $T {
             type Error = TryFromBigIntError<BigInt>;
 
@@ -183,7 +178,7 @@ impl From<i64> for BigInt {
         if n >= 0 {
             BigInt::from(n as u64)
         } else {
-            let u = core::u64::MAX - (n as u64) + 1;
+            let u = u64::MAX - (n as u64) + 1;
             BigInt {
                 sign: Minus,
                 data: BigUint::from(u),
@@ -198,7 +193,7 @@ impl From<i128> for BigInt {
         if n >= 0 {
             BigInt::from(n as u128)
         } else {
-            let u = core::u128::MAX - (n as u128) + 1;
+            let u = u128::MAX - (n as u128) + 1;
             BigInt {
                 sign: Minus,
                 data: BigUint::from(u),
@@ -232,7 +227,7 @@ impl From<u64> for BigInt {
                 data: BigUint::from(n),
             }
         } else {
-            BigInt::zero()
+            Self::ZERO
         }
     }
 }
@@ -246,7 +241,7 @@ impl From<u128> for BigInt {
                 data: BigUint::from(n),
             }
         } else {
-            BigInt::zero()
+            Self::ZERO
         }
     }
 }
@@ -271,7 +266,7 @@ impl From<BigUint> for BigInt {
     #[inline]
     fn from(n: BigUint) -> Self {
         if n.is_zero() {
-            BigInt::zero()
+            Self::ZERO
         } else {
             BigInt {
                 sign: Plus,
@@ -292,7 +287,7 @@ impl ToBigInt for BigUint {
     #[inline]
     fn to_bigint(&self) -> Option<BigInt> {
         if self.is_zero() {
-            Some(Zero::zero())
+            Some(BigInt::ZERO)
         } else {
             Some(BigInt {
                 sign: Plus,
@@ -307,13 +302,12 @@ impl ToBigUint for BigInt {
     fn to_biguint(&self) -> Option<BigUint> {
         match self.sign() {
             Plus => Some(self.data.clone()),
-            NoSign => Some(Zero::zero()),
+            NoSign => Some(BigUint::ZERO),
             Minus => None,
         }
     }
 }
 
-#[cfg(has_try_from)]
 impl TryFrom<&BigInt> for BigUint {
     type Error = TryFromBigIntError<()>;
 
@@ -325,7 +319,6 @@ impl TryFrom<&BigInt> for BigUint {
     }
 }
 
-#[cfg(has_try_from)]
 impl TryFrom<BigInt> for BigUint {
     type Error = TryFromBigIntError<BigInt>;
 
@@ -372,7 +365,7 @@ impl From<bool> for BigInt {
         if x {
             One::one()
         } else {
-            Zero::zero()
+            Self::ZERO
         }
     }
 }
@@ -382,7 +375,7 @@ pub(super) fn from_signed_bytes_be(digits: &[u8]) -> BigInt {
     let sign = match digits.first() {
         Some(v) if *v > 0x7f => Sign::Minus,
         Some(_) => Sign::Plus,
-        None => return BigInt::zero(),
+        None => return BigInt::ZERO,
     };
 
     if sign == Sign::Minus {
@@ -400,7 +393,7 @@ pub(super) fn from_signed_bytes_le(digits: &[u8]) -> BigInt {
     let sign = match digits.last() {
         Some(v) if *v > 0x7f => Sign::Minus,
         Some(_) => Sign::Plus,
-        None => return BigInt::zero(),
+        None => return BigInt::ZERO,
     };
 
     if sign == Sign::Minus {
