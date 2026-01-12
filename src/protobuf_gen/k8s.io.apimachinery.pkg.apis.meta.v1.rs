@@ -1,5 +1,6 @@
 /// APIGroup contains the name, the supported versions, and the preferred version
 /// of a group.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -31,6 +32,7 @@ pub struct ApiGroup {
 }
 /// APIGroupList is a list of APIGroup, to allow clients to discover the API at
 /// /apis.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -41,6 +43,7 @@ pub struct ApiGroupList {
     pub groups: ::prost::alloc::vec::Vec<ApiGroup>,
 }
 /// APIResource specifies the name of a resource and whether it is namespaced.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -92,6 +95,7 @@ pub struct ApiResource {
 /// APIResourceList is a list of APIResource, it is used to expose the name of the
 /// resources supported in a specific group and version, and if the resource
 /// is namespaced.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -109,6 +113,7 @@ pub struct ApiResourceList {
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -133,6 +138,7 @@ pub struct ApiVersions {
 /// FieldManager is required for apply requests.
 /// ApplyOptions is equivalent to PatchOptions. It is provided as a convenience with documentation
 /// that speaks specifically to how the options fields relate to apply.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -173,6 +179,7 @@ pub struct ApplyOptions {
 ///
 /// 	    // other fields
 /// 	}
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -231,6 +238,7 @@ pub struct Condition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// CreateOptions may be provided when creating an API object.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -272,6 +280,7 @@ pub struct CreateOptions {
     pub field_validation: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// DeleteOptions may be provided when deleting an API object.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -320,6 +329,7 @@ pub struct DeleteOptions {
 /// Duration is a wrapper around time.Duration which supports correct
 /// marshaling to YAML and JSON. In particular, it marshals into strings, which
 /// can be used as map keys in json.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -340,6 +350,7 @@ pub struct Duration {
 ///
 /// The exact format is defined in sigs.k8s.io/structured-merge-diff
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -350,6 +361,7 @@ pub struct FieldsV1 {
     pub raw: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// GetOptions is the standard query options to the standard REST get call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -368,6 +380,7 @@ pub struct GetOptions {
 /// concepts during lookup stages without having partially valid types
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -382,6 +395,7 @@ pub struct GroupKind {
 /// concepts during lookup stages without having partially valid types
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -395,6 +409,7 @@ pub struct GroupResource {
 /// GroupVersion contains the "group" and the "version", which uniquely identifies the API.
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -407,6 +422,7 @@ pub struct GroupVersion {
 }
 /// GroupVersion contains the "group/version" and "version" string of a version.
 /// It is made a struct to keep extensibility.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -424,6 +440,7 @@ pub struct GroupVersionForDiscovery {
 /// to avoid automatic coercion.  It doesn't use a GroupVersion to avoid custom marshalling
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -440,6 +457,7 @@ pub struct GroupVersionKind {
 /// to avoid automatic coercion.  It doesn't use a GroupVersion to avoid custom marshalling
 ///
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -456,6 +474,7 @@ pub struct GroupVersionResource {
 /// matchExpressions are ANDed. An empty label selector matches all objects. A null
 /// label selector matches no objects.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -477,6 +496,7 @@ pub struct LabelSelector {
 }
 /// A label selector requirement is a selector that contains values, a key, and an operator that
 /// relates the key and values.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -498,6 +518,7 @@ pub struct LabelSelectorRequirement {
     pub values: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// List holds a list of objects, which may not be known by the server.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -514,6 +535,7 @@ pub struct List {
 }
 /// ListMeta describes metadata that synthetic resources must have, including lists and
 /// various status objects. A resource may have only one of {ObjectMeta, ListMeta}.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -555,6 +577,7 @@ pub struct ListMeta {
     pub remaining_item_count: ::core::option::Option<i64>,
 }
 /// ListOptions is the query options to a standard REST list call.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -670,6 +693,7 @@ pub struct ListOptions {
 }
 /// ManagedFieldsEntry is a workflow-id, a FieldSet and the group version of the resource
 /// that the fieldset applies to.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -719,6 +743,7 @@ pub struct ManagedFieldsEntry {
 /// +protobuf.options.marshal=false
 /// +protobuf.as=Timestamp
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -738,6 +763,7 @@ pub struct MicroTime {
 }
 /// ObjectMeta is metadata that all persisted resources must have, which includes all objects
 /// users must create.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -911,6 +937,7 @@ pub struct ObjectMeta {
 /// object. An owning object must be in the same namespace as the dependent, or
 /// be cluster-scoped, so there is no namespace field.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -950,6 +977,7 @@ pub struct OwnerReference {
 /// PartialObjectMetadata is a generic representation of any object with ObjectMeta. It allows clients
 /// to get access to a particular ObjectMeta schema without knowing the details of the version.
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -963,6 +991,7 @@ pub struct PartialObjectMetadata {
 }
 /// PartialObjectMetadataList contains a list of objects containing only their metadata
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -978,6 +1007,7 @@ pub struct PartialObjectMetadataList {
     pub items: ::prost::alloc::vec::Vec<PartialObjectMetadata>,
 }
 /// Patch is provided to give a concrete name and type to the Kubernetes PATCH request body.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -985,6 +1015,7 @@ pub struct PartialObjectMetadataList {
 pub struct Patch {}
 /// PatchOptions may be provided when patching an API object.
 /// PatchOptions is meant to be a superset of UpdateOptions.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1035,6 +1066,7 @@ pub struct PatchOptions {
     pub field_validation: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Preconditions must be fulfilled before an operation (update, delete, etc.) is carried out.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1051,6 +1083,7 @@ pub struct Preconditions {
 }
 /// RootPaths lists the paths available at root.
 /// For example: "/healthz", "/apis".
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1061,6 +1094,7 @@ pub struct RootPaths {
     pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// ServerAddressByClientCIDR helps the client to determine the server address that they should use, depending on the clientCIDR that they match.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1075,6 +1109,7 @@ pub struct ServerAddressByClientCidr {
     pub server_address: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Status is a return value for calls that don't return other objects.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1116,6 +1151,7 @@ pub struct Status {
 }
 /// StatusCause provides more information about an api.Status failure, including
 /// cases when multiple errors are encountered.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1150,6 +1186,7 @@ pub struct StatusCause {
 /// must ignore fields that do not match the defined type of each attribute,
 /// and should assume that any attribute may be empty, invalid, or under
 /// defined.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1190,6 +1227,7 @@ pub struct StatusDetails {
 }
 /// TableOptions are used when a Table is requested by the caller.
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1209,6 +1247,7 @@ pub struct TableOptions {
 /// +protobuf.options.marshal=false
 /// +protobuf.as=Timestamp
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1229,6 +1268,7 @@ pub struct Time {
 /// Timestamp is a struct that is equivalent to Time, but intended for
 /// protobuf marshalling/unmarshalling. It is generated into a serialization
 /// that matches Time. Do not use in Go structs.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1251,6 +1291,7 @@ pub struct Timestamp {
 /// Structures that are versioned or persisted should inline TypeMeta.
 ///
 /// +k8s:deepcopy-gen=false
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1274,6 +1315,7 @@ pub struct TypeMeta {
 }
 /// UpdateOptions may be provided when updating an API object.
 /// All fields in UpdateOptions should also be present in PatchOptions.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1320,6 +1362,7 @@ pub struct UpdateOptions {
 /// +protobuf.options.(gogoproto.goproto_stringer)=false
 ///
 /// items, if empty, will result in an empty slice
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1333,6 +1376,7 @@ pub struct Verbs {
 /// +protobuf=true
 /// +k8s:deepcopy-gen=true
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]

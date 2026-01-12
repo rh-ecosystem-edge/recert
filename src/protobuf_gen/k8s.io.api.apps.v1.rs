@@ -7,6 +7,7 @@
 /// the DaemonSet and StatefulSet controllers for update and rollback, this object is beta. However,
 /// it may be subject to name and representation changes in future releases, and clients should not
 /// depend on its stability. It is primarily for internal use by controllers.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -29,6 +30,7 @@ pub struct ControllerRevision {
     pub revision: ::core::option::Option<i64>,
 }
 /// ControllerRevisionList is a resource containing a list of ControllerRevision objects.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -45,6 +47,7 @@ pub struct ControllerRevisionList {
     pub items: ::prost::alloc::vec::Vec<ControllerRevision>,
 }
 /// DaemonSet represents the configuration of a daemon set.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -72,6 +75,7 @@ pub struct DaemonSet {
     pub status: ::core::option::Option<DaemonSetStatus>,
 }
 /// DaemonSetCondition describes the state of a DaemonSet at a certain point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -99,6 +103,7 @@ pub struct DaemonSetCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// DaemonSetList is a collection of daemon sets.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -116,6 +121,7 @@ pub struct DaemonSetList {
     pub items: ::prost::alloc::vec::Vec<DaemonSet>,
 }
 /// DaemonSetSpec is the specification of a daemon set.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -156,6 +162,7 @@ pub struct DaemonSetSpec {
     pub revision_history_limit: ::core::option::Option<i32>,
 }
 /// DaemonSetStatus represents the current status of a daemon set.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -214,6 +221,7 @@ pub struct DaemonSetStatus {
     pub conditions: ::prost::alloc::vec::Vec<DaemonSetCondition>,
 }
 /// DaemonSetUpdateStrategy is a struct used to control the update strategy for a DaemonSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -233,6 +241,7 @@ pub struct DaemonSetUpdateStrategy {
     pub rolling_update: ::core::option::Option<RollingUpdateDaemonSet>,
 }
 /// Deployment enables declarative updates for Pods and ReplicaSets.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -255,6 +264,7 @@ pub struct Deployment {
     pub status: ::core::option::Option<DeploymentStatus>,
 }
 /// DeploymentCondition describes the state of a deployment at a certain point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -284,6 +294,7 @@ pub struct DeploymentCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// DeploymentList is a list of Deployments.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -300,6 +311,7 @@ pub struct DeploymentList {
     pub items: ::prost::alloc::vec::Vec<Deployment>,
 }
 /// DeploymentSpec is the specification of the desired behavior of the Deployment.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -351,6 +363,7 @@ pub struct DeploymentSpec {
     pub progress_deadline_seconds: ::core::option::Option<i32>,
 }
 /// DeploymentStatus is the most recently observed status of the Deployment.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -395,6 +408,7 @@ pub struct DeploymentStatus {
     pub collision_count: ::core::option::Option<i32>,
 }
 /// DeploymentStrategy describes how to replace existing pods with new ones.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -414,6 +428,7 @@ pub struct DeploymentStrategy {
     pub rolling_update: ::core::option::Option<RollingUpdateDeployment>,
 }
 /// ReplicaSet ensures that a specified number of pod replicas are running at any given time.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -443,6 +458,7 @@ pub struct ReplicaSet {
     pub status: ::core::option::Option<ReplicaSetStatus>,
 }
 /// ReplicaSetCondition describes the state of a replica set at a certain point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -470,6 +486,7 @@ pub struct ReplicaSetCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ReplicaSetList is a collection of ReplicaSets.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -488,6 +505,7 @@ pub struct ReplicaSetList {
     pub items: ::prost::alloc::vec::Vec<ReplicaSet>,
 }
 /// ReplicaSetSpec is the specification of a ReplicaSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -522,6 +540,7 @@ pub struct ReplicaSetSpec {
     pub template: ::core::option::Option<super::super::core::v1::PodTemplateSpec>,
 }
 /// ReplicaSetStatus represents the current status of a ReplicaSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -555,6 +574,7 @@ pub struct ReplicaSetStatus {
     pub conditions: ::prost::alloc::vec::Vec<ReplicaSetCondition>,
 }
 /// Spec to control the desired behavior of daemon set rolling update.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -604,6 +624,7 @@ pub struct RollingUpdateDaemonSet {
     >,
 }
 /// Spec to control the desired behavior of rolling update.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -642,6 +663,7 @@ pub struct RollingUpdateDeployment {
     >,
 }
 /// RollingUpdateStatefulSetStrategy is used to communicate parameter for RollingUpdateStatefulSetStrategyType.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -674,6 +696,7 @@ pub struct RollingUpdateStatefulSetStrategy {
 ///
 /// The StatefulSet guarantees that a given network identity will always
 /// map to the same storage identity.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -697,6 +720,7 @@ pub struct StatefulSet {
     pub status: ::core::option::Option<StatefulSetStatus>,
 }
 /// StatefulSetCondition describes the state of a statefulset at a certain point.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -724,6 +748,7 @@ pub struct StatefulSetCondition {
     pub message: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// StatefulSetList is a collection of StatefulSets.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -742,6 +767,7 @@ pub struct StatefulSetList {
 }
 /// StatefulSetOrdinals describes the policy used for replica ordinal assignment
 /// in this StatefulSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -761,6 +787,7 @@ pub struct StatefulSetOrdinals {
 }
 /// StatefulSetPersistentVolumeClaimRetentionPolicy describes the policy used for PVCs
 /// created from the StatefulSet VolumeClaimTemplates.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -781,6 +808,7 @@ pub struct StatefulSetPersistentVolumeClaimRetentionPolicy {
     pub when_scaled: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// A StatefulSetSpec is the specification of a StatefulSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -878,6 +906,7 @@ pub struct StatefulSetSpec {
     pub ordinals: ::core::option::Option<StatefulSetOrdinals>,
 }
 /// StatefulSetStatus represents the current state of a StatefulSet.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -930,6 +959,7 @@ pub struct StatefulSetStatus {
 /// StatefulSetUpdateStrategy indicates the strategy that the StatefulSet
 /// controller will use to perform updates. It includes any additional parameters
 /// necessary to perform the update for the indicated strategy.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]

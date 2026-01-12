@@ -12,6 +12,8 @@ fn main() -> Result<()> {
 fn generate_protobuf_code() -> Result<()> {
     let mut prost_build = prost_build::Config::new();
 
+    prost_build.type_attribute(".", "#[allow(dead_code)]");
+
     prost_build.type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]");
     prost_build.type_attribute(".", "#[serde(rename_all = \"camelCase\")]");
 
