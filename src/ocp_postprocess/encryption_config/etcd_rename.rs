@@ -169,6 +169,7 @@ async fn update_encryption_key(component: &str, etcd_client: &Arc<InMemoryK8sEtc
                             )
                             .context("could not find original name")?;
 
+                        let encoding = etcd_client.encoding_of(&key).await?;
                         etcd_client
                             .put(
                                 &(format!(
@@ -176,8 +177,10 @@ async fn update_encryption_key(component: &str, etcd_client: &Arc<InMemoryK8sEtc
                                     component, key_name
                                 )),
                                 serde_json::to_string(&secret).context("serializing value")?.as_bytes().to_vec(),
+                                Some(encoding),
                             )
-                            .await;
+                            .await
+                            .context("putting in etcd")?;
                         etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
                     }
                 }
