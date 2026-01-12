@@ -177,7 +177,8 @@ async fn update_encryption_key(component: &str, etcd_client: &Arc<InMemoryK8sEtc
                                 )),
                                 serde_json::to_string(&secret).context("serializing value")?.as_bytes().to_vec(),
                             )
-                            .await;
+                            .await
+                            .context("putting in etcd")?;
                         etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
                     }
                 }

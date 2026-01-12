@@ -63,9 +63,26 @@ k8s_type!(ValidatingWebhookConfigurationWithMeta, ValidatingWebhookConfiguration
 k8s_type!(MutatingWebhookConfigurationWithMeta, MutatingWebhookConfiguration);
 k8s_type!(OAuthClientWithMeta, OAuthClient);
 
-pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
+mod k8s_cbor;
+
+#[derive(Clone)]
+pub(crate) enum Encoding {
+    Protobuf,
+    Cbor,
+    Json,
+}
+
+pub(crate) async fn decode(data: &[u8]) -> Result<(Vec<u8>, Encoding)> {
     if !data.starts_with("k8s\x00".as_bytes()) {
-        return Ok(data.to_vec());
+        // k8s uses CBOR with the self-describing tag 55799, we can use its bytes to detect CBOR
+        if data.starts_with([0xd9, 0xd9, 0xf7].as_ref()) {
+            // It's CBOR, just convert to JSON
+            let json_value = k8s_cbor::k8s_cbor_bytes_to_json(data).context("converting CBOR to JSON")?;
+            return Ok((serde_json::to_vec(&json_value)?, Encoding::Cbor));
+        }
+
+        // Not CBOR, not protobuf, it's probably just raw JSON, return as-is
+        return Ok((data.to_vec(), Encoding::Json));
     }
 
     let data = &data[4..];
@@ -79,7 +96,7 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         .context("missing kind")?
         .as_str();
 
-    Ok(match kind {
+    let decoded_data = match kind {
         "Route" => serde_json::to_vec(&RouteWithMeta::try_from(unknown)?)?,
         "Deployment" => serde_json::to_vec(&DeploymentWithMeta::try_from(unknown)?)?,
         "ControllerRevision" => serde_json::to_vec(&ControllerRevisionWithMeta::try_from(unknown)?)?,
@@ -95,11 +112,20 @@ pub(crate) async fn decode(data: &[u8]) -> Result<Vec<u8>> {
         "MutatingWebhookConfiguration" => serde_json::to_vec(&MutatingWebhookConfigurationWithMeta::try_from(unknown)?)?,
         "OAuthClient" => serde_json::to_vec(&OAuthClientWithMeta::try_from(unknown)?)?,
         _ => bail!("unknown kind {}", kind),
-    })
+    };
+
+    Ok((decoded_data, Encoding::Protobuf))
 }
 
-pub(crate) async fn encode(data: &[u8]) -> Result<Vec<u8>> {
+pub(crate) async fn encode(data: &[u8], encoding: Encoding) -> Result<Vec<u8>> {
     let value: Value = serde_json::from_slice(data)?;
+
+    if matches!(encoding, Encoding::Cbor) {
+        return k8s_cbor::json_to_k8s_cbor_bytes(value).context("converting JSON to CBOR");
+    }
+
+    // If kind is a known protobuf kind, write it back as protobuf, otherwise return raw JSON
+    // TODO: Just look at the new encoding param?
     let kind = value
         .pointer("/kind")
         .context("missing kind")?
