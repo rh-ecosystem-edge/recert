@@ -1,8 +1,9 @@
 use super::{biguint_from_vec, BigUint};
 
 use crate::big_digit;
-use crate::std_alloc::{Cow, Vec};
 
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 use core::mem;
 use core::ops::{Shl, ShlAssign, Shr, ShrAssign};
 use num_traits::{PrimInt, Zero};
@@ -58,7 +59,7 @@ fn biguint_shr<T: PrimInt>(n: Cow<'_, BigUint>, shift: T) -> BigUint {
         return n.into_owned();
     }
     let bits = T::from(big_digit::BITS).unwrap();
-    let digits = (shift / bits).to_usize().unwrap_or(core::usize::MAX);
+    let digits = (shift / bits).to_usize().unwrap_or(usize::MAX);
     let shift = (shift % bits).to_u8().unwrap();
     biguint_shr2(n, digits, shift)
 }
@@ -135,7 +136,7 @@ macro_rules! impl_shift {
         impl ShlAssign<$rhs> for BigUint {
             #[inline]
             fn shl_assign(&mut self, rhs: $rhs) {
-                let n = mem::replace(self, BigUint::zero());
+                let n = mem::replace(self, Self::ZERO);
                 *self = n << rhs;
             }
         }
@@ -160,7 +161,7 @@ macro_rules! impl_shift {
         impl ShrAssign<$rhs> for BigUint {
             #[inline]
             fn shr_assign(&mut self, rhs: $rhs) {
-                let n = mem::replace(self, BigUint::zero());
+                let n = mem::replace(self, Self::ZERO);
                 *self = n >> rhs;
             }
         }
