@@ -724,7 +724,7 @@ fn collect_all_pairs_in_tree(pair: &Rc<RefCell<CertKeyPair>>, out: &mut HashSet<
     let signees = { pair.borrow().signees.clone() };
     for signee in signees {
         if let signee::Signee::CertKeyPair(child) = &signee {
-            collect_all_pairs_in_tree(&child, out, visited);
+            collect_all_pairs_in_tree(child, out, visited);
         }
     }
 }
