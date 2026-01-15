@@ -16,10 +16,6 @@ contentOrigin:
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:6fc28bcb6776e387d7a35a2056d9d2b985dc4e26031e98a2bd35a7137cd6fd71
-      #
     - repoid: ubi-9-for-$basearch-baseos-rpms
       name: Red Hat Universal Base Image 9 for $basearch - BaseOS (RPMs)
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os
@@ -30,10 +26,6 @@ contentOrigin:
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:6fc28bcb6776e387d7a35a2056d9d2b985dc4e26031e98a2bd35a7137cd6fd71
-      #
     - repoid: codeready-builder-for-ubi-9-$basearch-rpms
       name: Red Hat CodeReady Linux Builder for UBI 9 $basearch (RPMs)
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/codeready-builder/os/
@@ -44,9 +36,7 @@ contentOrigin:
       sslverifystatus: "1"
       metadata_expire: "86400"
       enabled_metadata: "1"
-      # This should match the RUNTIME_IMAGE in container_build_args.conf
-      # Mintmaker should keep these in sync automatically when it performs updates
-      varsFromImage: registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:6fc28bcb6776e387d7a35a2056d9d2b985dc4e26031e98a2bd35a7137cd6fd71
-      #
 packages:
   - openssh-clients
+context:
+  containerfile: Dockerfile.mintmaker
