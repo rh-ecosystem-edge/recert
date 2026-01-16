@@ -48,6 +48,7 @@
 /// +k8s:deepcopy-gen=true
 /// +protobuf=true
 /// +k8s:openapi-gen=true
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -75,6 +76,7 @@ pub struct RawExtension {
 /// +k8s:deepcopy-gen=false
 /// +protobuf=true
 /// +k8s:openapi-gen=true
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -97,6 +99,7 @@ pub struct TypeMeta {
 /// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 /// +protobuf=true
 /// +k8s:openapi-gen=true
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
