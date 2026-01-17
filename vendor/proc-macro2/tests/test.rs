@@ -1,11 +1,15 @@
 #![allow(
     clippy::assertions_on_result_states,
     clippy::items_after_statements,
+    clippy::needless_pass_by_value,
+    clippy::needless_raw_string_hashes,
     clippy::non_ascii_literal,
-    clippy::octal_escapes
+    clippy::octal_escapes,
+    clippy::uninlined_format_args
 )]
 
 use proc_macro2::{Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
+use std::ffi::CStr;
 use std::iter;
 use std::str::{self, FromStr};
 
@@ -96,12 +100,22 @@ fn lifetime_invalid() {
 
 #[test]
 fn literal_string() {
-    assert_eq!(Literal::string("foo").to_string(), "\"foo\"");
-    assert_eq!(Literal::string("\"").to_string(), "\"\\\"\"");
-    assert_eq!(Literal::string("didn't").to_string(), "\"didn't\"");
-    assert_eq!(
-        Literal::string("a\00b\07c\08d\0e\0").to_string(),
-        "\"a\\x000b\\x007c\\08d\\0e\\0\"",
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected.trim());
+    }
+
+    assert(Literal::string(""), r#"  ""  "#);
+    assert(Literal::string("aA"), r#"  "aA"  "#);
+    assert(Literal::string("\t"), r#"  "\t"  "#);
+    assert(Literal::string("❤"), r#"  "❤"  "#);
+    assert(Literal::string("'"), r#"  "'"  "#);
+    assert(Literal::string("\""), r#"  "\""  "#);
+    assert(Literal::string("\0"), r#"  "\0"  "#);
+    assert(Literal::string("\u{1}"), r#"  "\u{1}"  "#);
+    assert(
+        Literal::string("a\00b\07c\08d\0e\0"),
+        r#"  "a\x000b\x007c\08d\0e\0"  "#,
     );
 
     "\"\\\r\n    x\"".parse::<TokenStream>().unwrap();
@@ -132,16 +146,67 @@ fn literal_raw_string() {
         .unwrap_err();
 }
 
+#[cfg(procmacro2_semver_exempt)]
+#[test]
+fn literal_string_value() {
+    for string in ["", "...", "...\t...", "...\\...", "...\0...", "...\u{1}..."] {
+        assert_eq!(string, Literal::string(string).str_value().unwrap());
+        assert_eq!(
+            string,
+            format!("r\"{string}\"")
+                .parse::<Literal>()
+                .unwrap()
+                .str_value()
+                .unwrap(),
+        );
+        assert_eq!(
+            string,
+            format!("r##\"{string}\"##")
+                .parse::<Literal>()
+                .unwrap()
+                .str_value()
+                .unwrap(),
+        );
+    }
+}
+
+#[test]
+fn literal_byte_character() {
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected.trim());
+    }
+
+    assert(Literal::byte_character(b'a'), r#"  b'a'  "#);
+    assert(Literal::byte_character(b'\0'), r#"  b'\0'  "#);
+    assert(Literal::byte_character(b'\t'), r#"  b'\t'  "#);
+    assert(Literal::byte_character(b'\n'), r#"  b'\n'  "#);
+    assert(Literal::byte_character(b'\r'), r#"  b'\r'  "#);
+    assert(Literal::byte_character(b'\''), r#"  b'\''  "#);
+    assert(Literal::byte_character(b'\\'), r#"  b'\\'  "#);
+    assert(Literal::byte_character(b'\x1f'), r#"  b'\x1F'  "#);
+    assert(Literal::byte_character(b'"'), r#"  b'"'  "#);
+}
+
 #[test]
 fn literal_byte_string() {
-    assert_eq!(Literal::byte_string(b"").to_string(), "b\"\"");
-    assert_eq!(
-        Literal::byte_string(b"\0\t\n\r\"\\2\x10").to_string(),
-        "b\"\\0\\t\\n\\r\\\"\\\\2\\x10\"",
-    );
-    assert_eq!(
-        Literal::byte_string(b"a\00b\07c\08d\0e\0").to_string(),
-        "b\"a\\x000b\\x007c\\08d\\0e\\0\"",
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected.trim());
+    }
+
+    assert(Literal::byte_string(b""), r#"  b""  "#);
+    assert(Literal::byte_string(b"\0"), r#"  b"\0"  "#);
+    assert(Literal::byte_string(b"\t"), r#"  b"\t"  "#);
+    assert(Literal::byte_string(b"\n"), r#"  b"\n"  "#);
+    assert(Literal::byte_string(b"\r"), r#"  b"\r"  "#);
+    assert(Literal::byte_string(b"\""), r#"  b"\""  "#);
+    assert(Literal::byte_string(b"\\"), r#"  b"\\"  "#);
+    assert(Literal::byte_string(b"\x1f"), r#"  b"\x1F"  "#);
+    assert(Literal::byte_string(b"'"), r#"  b"'"  "#);
+    assert(
+        Literal::byte_string(b"a\00b\07c\08d\0e\0"),
+        r#"  b"a\x000b\x007c\08d\0e\0"  "#,
     );
 
     "b\"\\\r\n    x\"".parse::<TokenStream>().unwrap();
@@ -150,8 +215,79 @@ fn literal_byte_string() {
     "br\"\u{a0}\"".parse::<TokenStream>().unwrap_err();
 }
 
+#[cfg(procmacro2_semver_exempt)]
+#[test]
+fn literal_byte_string_value() {
+    for bytestr in [
+        &b""[..],
+        b"...",
+        b"...\t...",
+        b"...\\...",
+        b"...\0...",
+        b"...\xF0...",
+    ] {
+        assert_eq!(
+            bytestr,
+            Literal::byte_string(bytestr).byte_str_value().unwrap(),
+        );
+        if let Ok(string) = str::from_utf8(bytestr) {
+            assert_eq!(
+                bytestr,
+                format!("br\"{string}\"")
+                    .parse::<Literal>()
+                    .unwrap()
+                    .byte_str_value()
+                    .unwrap(),
+            );
+            assert_eq!(
+                bytestr,
+                format!("br##\"{string}\"##")
+                    .parse::<Literal>()
+                    .unwrap()
+                    .byte_str_value()
+                    .unwrap(),
+            );
+        }
+    }
+}
+
 #[test]
 fn literal_c_string() {
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected.trim());
+    }
+
+    assert(Literal::c_string(<&CStr>::default()), r#"  c""  "#);
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"aA\0").unwrap()),
+        r#"  c"aA"  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"aA\0").unwrap()),
+        r#"  c"aA"  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"\t\0").unwrap()),
+        r#"  c"\t"  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"\xE2\x9D\xA4\0").unwrap()),
+        r#"  c"❤"  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"'\0").unwrap()),
+        r#"  c"'"  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"\"\0").unwrap()),
+        r#"  c"\""  "#,
+    );
+    assert(
+        Literal::c_string(CStr::from_bytes_with_nul(b"\x7F\xFF\xFE\xCC\xB3\0").unwrap()),
+        r#"  c"\u{7f}\xFF\xFE\u{333}"  "#,
+    );
+
     let strings = r###"
         c"hello\x80我叫\u{1F980}"  // from the RFC
         cr"\"
@@ -186,51 +322,118 @@ fn literal_c_string() {
     }
 }
 
+#[cfg(procmacro2_semver_exempt)]
+#[test]
+fn literal_c_string_value() {
+    for cstr in [
+        c"",
+        c"...",
+        c"...\t...",
+        c"...\\...",
+        c"...\u{1}...",
+        c"...\xF0...",
+    ] {
+        assert_eq!(
+            cstr.to_bytes_with_nul(),
+            Literal::c_string(cstr).cstr_value().unwrap(),
+        );
+        if let Ok(string) = cstr.to_str() {
+            assert_eq!(
+                cstr.to_bytes_with_nul(),
+                format!("cr\"{string}\"")
+                    .parse::<Literal>()
+                    .unwrap()
+                    .cstr_value()
+                    .unwrap(),
+            );
+            assert_eq!(
+                cstr.to_bytes_with_nul(),
+                format!("cr##\"{string}\"##")
+                    .parse::<Literal>()
+                    .unwrap()
+                    .cstr_value()
+                    .unwrap(),
+            );
+        }
+    }
+}
+
 #[test]
 fn literal_character() {
-    assert_eq!(Literal::character('x').to_string(), "'x'");
-    assert_eq!(Literal::character('\'').to_string(), "'\\''");
-    assert_eq!(Literal::character('"').to_string(), "'\"'");
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected.trim());
+    }
+
+    assert(Literal::character('a'), r#"  'a'  "#);
+    assert(Literal::character('\t'), r#"  '\t'  "#);
+    assert(Literal::character('❤'), r#"  '❤'  "#);
+    assert(Literal::character('\''), r#"  '\''  "#);
+    assert(Literal::character('"'), r#"  '"'  "#);
+    assert(Literal::character('\0'), r#"  '\0'  "#);
+    assert(Literal::character('\u{1}'), r#"  '\u{1}'  "#);
 }
 
 #[test]
 fn literal_integer() {
-    assert_eq!(Literal::u8_suffixed(10).to_string(), "10u8");
-    assert_eq!(Literal::u16_suffixed(10).to_string(), "10u16");
-    assert_eq!(Literal::u32_suffixed(10).to_string(), "10u32");
-    assert_eq!(Literal::u64_suffixed(10).to_string(), "10u64");
-    assert_eq!(Literal::u128_suffixed(10).to_string(), "10u128");
-    assert_eq!(Literal::usize_suffixed(10).to_string(), "10usize");
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected);
+    }
 
-    assert_eq!(Literal::i8_suffixed(10).to_string(), "10i8");
-    assert_eq!(Literal::i16_suffixed(10).to_string(), "10i16");
-    assert_eq!(Literal::i32_suffixed(10).to_string(), "10i32");
-    assert_eq!(Literal::i64_suffixed(10).to_string(), "10i64");
-    assert_eq!(Literal::i128_suffixed(10).to_string(), "10i128");
-    assert_eq!(Literal::isize_suffixed(10).to_string(), "10isize");
+    assert(Literal::u8_suffixed(10), "10u8");
+    assert(Literal::u16_suffixed(10), "10u16");
+    assert(Literal::u32_suffixed(10), "10u32");
+    assert(Literal::u64_suffixed(10), "10u64");
+    assert(Literal::u128_suffixed(10), "10u128");
+    assert(Literal::usize_suffixed(10), "10usize");
 
-    assert_eq!(Literal::u8_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::u16_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::u32_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::u64_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::u128_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::usize_unsuffixed(10).to_string(), "10");
+    assert(Literal::i8_suffixed(10), "10i8");
+    assert(Literal::i16_suffixed(10), "10i16");
+    assert(Literal::i32_suffixed(10), "10i32");
+    assert(Literal::i64_suffixed(10), "10i64");
+    assert(Literal::i128_suffixed(10), "10i128");
+    assert(Literal::isize_suffixed(10), "10isize");
 
-    assert_eq!(Literal::i8_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::i16_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::i32_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::i64_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::i128_unsuffixed(10).to_string(), "10");
-    assert_eq!(Literal::isize_unsuffixed(10).to_string(), "10");
+    assert(Literal::u8_unsuffixed(10), "10");
+    assert(Literal::u16_unsuffixed(10), "10");
+    assert(Literal::u32_unsuffixed(10), "10");
+    assert(Literal::u64_unsuffixed(10), "10");
+    assert(Literal::u128_unsuffixed(10), "10");
+    assert(Literal::usize_unsuffixed(10), "10");
+
+    assert(Literal::i8_unsuffixed(10), "10");
+    assert(Literal::i16_unsuffixed(10), "10");
+    assert(Literal::i32_unsuffixed(10), "10");
+    assert(Literal::i64_unsuffixed(10), "10");
+    assert(Literal::i128_unsuffixed(10), "10");
+    assert(Literal::isize_unsuffixed(10), "10");
+
+    assert(Literal::i32_suffixed(-10), "-10i32");
+    assert(Literal::i32_unsuffixed(-10), "-10");
 }
 
 #[test]
 fn literal_float() {
-    assert_eq!(Literal::f32_suffixed(10.0).to_string(), "10f32");
-    assert_eq!(Literal::f64_suffixed(10.0).to_string(), "10f64");
+    #[track_caller]
+    fn assert(literal: Literal, expected: &str) {
+        assert_eq!(literal.to_string(), expected);
+    }
 
-    assert_eq!(Literal::f32_unsuffixed(10.0).to_string(), "10.0");
-    assert_eq!(Literal::f64_unsuffixed(10.0).to_string(), "10.0");
+    assert(Literal::f32_suffixed(10.0), "10f32");
+    assert(Literal::f32_suffixed(-10.0), "-10f32");
+    assert(Literal::f64_suffixed(10.0), "10f64");
+    assert(Literal::f64_suffixed(-10.0), "-10f64");
+
+    assert(Literal::f32_unsuffixed(10.0), "10.0");
+    assert(Literal::f32_unsuffixed(-10.0), "-10.0");
+    assert(Literal::f64_unsuffixed(10.0), "10.0");
+    assert(Literal::f64_unsuffixed(-10.0), "-10.0");
+
+    assert(
+        Literal::f64_unsuffixed(1e100),
+        "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0",
+    );
 }
 
 #[test]
@@ -248,9 +451,13 @@ fn literal_suffix() {
     assert_eq!(token_count("1._m"), 3);
     assert_eq!(token_count("\"\"s"), 1);
     assert_eq!(token_count("r\"\"r"), 1);
+    assert_eq!(token_count("r#\"\"#r"), 1);
     assert_eq!(token_count("b\"\"b"), 1);
     assert_eq!(token_count("br\"\"br"), 1);
-    assert_eq!(token_count("r#\"\"#r"), 1);
+    assert_eq!(token_count("br#\"\"#br"), 1);
+    assert_eq!(token_count("c\"\"c"), 1);
+    assert_eq!(token_count("cr\"\"cr"), 1);
+    assert_eq!(token_count("cr#\"\"#cr"), 1);
     assert_eq!(token_count("'c'c"), 1);
     assert_eq!(token_count("b'b'b"), 1);
     assert_eq!(token_count("0E"), 1);
@@ -344,6 +551,81 @@ fn source_text() {
 }
 
 #[test]
+fn lifetimes() {
+    let mut tokens = "'a 'static 'struct 'r#gen 'r#prefix#lifetime"
+        .parse::<TokenStream>()
+        .unwrap()
+        .into_iter();
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '\'' && punct.spacing() == Spacing::Joint
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "a",
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '\'' && punct.spacing() == Spacing::Joint
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "static",
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '\'' && punct.spacing() == Spacing::Joint
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "struct",
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '\'' && punct.spacing() == Spacing::Joint
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "r#gen",
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '\'' && punct.spacing() == Spacing::Joint
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "r#prefix",
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Punct(punct)) => {
+            punct.as_char() == '#' && punct.spacing() == Spacing::Alone
+        }
+        _ => false,
+    });
+    assert!(match tokens.next() {
+        Some(TokenTree::Ident(ident)) => ident == "lifetime",
+        _ => false,
+    });
+
+    "' a".parse::<TokenStream>().unwrap_err();
+    "' r#gen".parse::<TokenStream>().unwrap_err();
+    "' prefix#lifetime".parse::<TokenStream>().unwrap_err();
+    "'prefix#lifetime".parse::<TokenStream>().unwrap_err();
+    "'aa'bb".parse::<TokenStream>().unwrap_err();
+    "'r#gen'a".parse::<TokenStream>().unwrap_err();
+}
+
+#[test]
 fn roundtrip() {
     fn roundtrip(p: &str) {
         println!("parse: {}", p);
@@ -378,7 +660,7 @@ fn roundtrip() {
     roundtrip("'a");
     roundtrip("'_");
     roundtrip("'static");
-    roundtrip("'\\u{10__FFFF}'");
+    roundtrip(r"'\u{10__FFFF}'");
     roundtrip("\"\\u{10_F0FF__}foo\\u{1_0_0_0__}\"");
 }
 
@@ -401,6 +683,7 @@ fn fail() {
     fail("\"\\\r  \""); // backslash carriage return
     fail("'aa'aa");
     fail("br##\"\"#");
+    fail("cr##\"\"#");
     fail("\"\\\n\u{85}\r\"");
 }
 
@@ -430,7 +713,6 @@ testing 123
 }
 
 #[cfg(procmacro2_semver_exempt)]
-#[cfg(not(nightly))]
 #[test]
 fn default_span() {
     let start = Span::call_site().start();
@@ -439,9 +721,8 @@ fn default_span() {
     let end = Span::call_site().end();
     assert_eq!(end.line, 1);
     assert_eq!(end.column, 0);
-    let source_file = Span::call_site().source_file();
-    assert_eq!(source_file.path().to_string_lossy(), "<unspecified>");
-    assert!(!source_file.is_real());
+    assert_eq!(Span::call_site().file(), "<unspecified>");
+    assert!(Span::call_site().local_file().is_none());
 }
 
 #[cfg(procmacro2_semver_exempt)]
@@ -458,11 +739,8 @@ fn span_join() {
         .into_iter()
         .collect::<Vec<_>>();
 
-    assert!(source1[0].span().source_file() != source2[0].span().source_file());
-    assert_eq!(
-        source1[0].span().source_file(),
-        source1[1].span().source_file()
-    );
+    assert!(source1[0].span().file() != source2[0].span().file());
+    assert_eq!(source1[0].span().file(), source1[1].span().file());
 
     let joined1 = source1[0].span().join(source1[1].span());
     let joined2 = source1[0].span().join(source2[0].span());
@@ -476,10 +754,7 @@ fn span_join() {
     assert_eq!(end.line, 2);
     assert_eq!(end.column, 3);
 
-    assert_eq!(
-        joined1.unwrap().source_file(),
-        source1[0].span().source_file()
-    );
+    assert_eq!(joined1.unwrap().file(), source1[0].span().file());
 }
 
 #[test]
@@ -527,16 +802,40 @@ fn raw_identifier() {
 }
 
 #[test]
+fn test_display_ident() {
+    let ident = Ident::new("proc_macro", Span::call_site());
+    assert_eq!(format!("{ident}"), "proc_macro");
+    assert_eq!(format!("{ident:-^14}"), "proc_macro");
+
+    let ident = Ident::new_raw("proc_macro", Span::call_site());
+    assert_eq!(format!("{ident}"), "r#proc_macro");
+    assert_eq!(format!("{ident:-^14}"), "r#proc_macro");
+}
+
+#[test]
 fn test_debug_ident() {
     let ident = Ident::new("proc_macro", Span::call_site());
-
-    #[cfg(not(span_locations))]
-    let expected = "Ident(proc_macro)";
-
-    #[cfg(span_locations)]
-    let expected = "Ident { sym: proc_macro }";
-
+    let expected = if cfg!(span_locations) {
+        "Ident { sym: proc_macro }"
+    } else {
+        "Ident(proc_macro)"
+    };
     assert_eq!(expected, format!("{:?}", ident));
+
+    let ident = Ident::new_raw("proc_macro", Span::call_site());
+    let expected = if cfg!(span_locations) {
+        "Ident { sym: r#proc_macro }"
+    } else {
+        "Ident(r#proc_macro)"
+    };
+    assert_eq!(expected, format!("{:?}", ident));
+}
+
+#[test]
+fn test_display_tokenstream() {
+    let tts = TokenStream::from_str("[a + 1]").unwrap();
+    assert_eq!(format!("{tts}"), "[a + 1]");
+    assert_eq!(format!("{tts:-^5}"), "[a + 1]");
 }
 
 #[test]
@@ -756,4 +1055,40 @@ fn byte_order_mark() {
 
     let string = "foo\u{feff}";
     string.parse::<TokenStream>().unwrap_err();
+}
+
+#[cfg(span_locations)]
+fn create_span() -> proc_macro2::Span {
+    let tts: TokenStream = "1".parse().unwrap();
+    match tts.into_iter().next().unwrap() {
+        TokenTree::Literal(literal) => literal.span(),
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(span_locations)]
+#[test]
+fn test_invalidate_current_thread_spans() {
+    let actual = format!("{:#?}", create_span());
+    assert_eq!(actual, "bytes(1..2)");
+    let actual = format!("{:#?}", create_span());
+    assert_eq!(actual, "bytes(3..4)");
+
+    proc_macro2::extra::invalidate_current_thread_spans();
+
+    let actual = format!("{:#?}", create_span());
+    // Test that span offsets have been reset after the call
+    // to invalidate_current_thread_spans()
+    assert_eq!(actual, "bytes(1..2)");
+}
+
+#[cfg(span_locations)]
+#[test]
+#[should_panic(expected = "Invalid span with no related FileInfo!")]
+fn test_use_span_after_invalidation() {
+    let span = create_span();
+
+    proc_macro2::extra::invalidate_current_thread_spans();
+
+    span.source_text();
 }
