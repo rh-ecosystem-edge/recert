@@ -1,6 +1,7 @@
 /// LocalObjectReference contains enough information to let you locate the
 /// referenced object inside the same namespace.
 /// +structType=atomic
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -40,6 +41,7 @@ pub struct LocalObjectReference {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -61,6 +63,7 @@ pub struct Route {
     pub status: ::core::option::Option<RouteStatus>,
 }
 /// RouteHTTPHeader specifies configuration for setting or deleting an HTTP header.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -91,6 +94,7 @@ pub struct RouteHttpHeader {
 /// RouteHTTPHeaderActionUnion specifies an action to take on an HTTP header.
 /// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'Set' ?  has(self.set) : !has(self.set)",message="set is required when type is Set, and forbidden otherwise"
 /// +union
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -113,6 +117,7 @@ pub struct RouteHttpHeaderActionUnion {
     pub set: ::core::option::Option<RouteSetHttpHeader>,
 }
 /// RouteHTTPHeaderActions defines configuration for actions on HTTP request and response headers.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -168,6 +173,7 @@ pub struct RouteHttpHeaderActions {
     pub request: ::prost::alloc::vec::Vec<RouteHttpHeader>,
 }
 /// RouteHTTPHeaders defines policy for HTTP headers.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -202,6 +208,7 @@ pub struct RouteHttpHeaders {
     pub actions: ::core::option::Option<RouteHttpHeaderActions>,
 }
 /// RouteIngress holds information about the places where a route is exposed.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -228,6 +235,7 @@ pub struct RouteIngress {
 }
 /// RouteIngressCondition contains details for the current condition of this route on a particular
 /// router.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -258,6 +266,7 @@ pub struct RouteIngressCondition {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -274,6 +283,7 @@ pub struct RouteList {
     pub items: ::prost::alloc::vec::Vec<Route>,
 }
 /// RoutePort defines a port mapping from a router to an endpoint in the service endpoints.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -288,6 +298,7 @@ pub struct RoutePort {
     >,
 }
 /// RouteSetHTTPHeader specifies what value needs to be set on an HTTP header.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -325,6 +336,7 @@ pub struct RouteSetHttpHeader {
 /// terminate routes without explicit certificates, but custom hostnames usually must
 /// choose passthrough (send traffic directly to the backend via the TLS Server-Name-
 /// Indication field) or provide a certificate.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -399,6 +411,7 @@ pub struct RouteSpec {
 }
 /// RouteStatus provides relevant info about the status of a route, including which routers
 /// acknowledge it.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -412,6 +425,7 @@ pub struct RouteStatus {
 }
 /// RouteTargetReference specifies the target that resolve into endpoints. Only the 'Service'
 /// kind is allowed. Use 'weight' field to emphasize one over others.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -443,6 +457,7 @@ pub struct RouteTargetReference {
 /// allocated for a specific route.
 /// Caveat: This is WIP and will likely undergo modifications when sharding
 /// support is added.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -460,6 +475,7 @@ pub struct RouterShard {
 ///
 /// +kubebuilder:validation:XValidation:rule="has(self.termination) && has(self.insecureEdgeTerminationPolicy) ? !((self.termination=='passthrough') && (self.insecureEdgeTerminationPolicy=='Allow')) : true", message="cannot have both spec.tls.termination: passthrough and spec.tls.insecureEdgeTerminationPolicy: Allow"
 /// +openshift:validation:FeatureSetAwareXValidation:featureSet=TechPreviewNoUpgrade;CustomNoUpgrade,rule="!(has(self.certificate) && has(self.externalCertificate))", message="cannot have both spec.tls.certificate and spec.tls.externalCertificate"
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
