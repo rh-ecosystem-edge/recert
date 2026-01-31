@@ -1,0 +1,16 @@
+[package]
+name = "bcder"
+version = "0.7.3"
+edition = "2018"
+authors = ["The NLnet Labs RPKI Team <rpki-team@nlnetlabs.nl>"]
+description = "Handling of data encoded in BER, CER, and DER."
+documentation = "https://docs.rs/bcder/"
+repository = "https://github.com/nlnetlabs/bcder"
+keywords = ["ber", "cer", "der", "asn1", "decoding"]
+categories = ["encoding", "network-programming", "parsing"]
+license = "BSD-3-Clause"
+
+[dependencies]
+bytes       = "^1.0"
+smallvec    = "^1.1"
+

@@ -1,6 +1,12 @@
+[lib]
+path = "src/lib.rs"
+
 [package]
 authors = ["The wasm-bindgen Developers"]
-description = "Shared support between wasm-bindgen and wasm-bindgen cli, an internal\ndependency.\n"
+description = """
+Shared support between wasm-bindgen and wasm-bindgen cli, an internal
+dependency.
+"""
 documentation = "https://docs.rs/wasm-bindgen-shared"
 edition = "2018"
 homepage = "https://rustwasm.github.io/wasm-bindgen/"

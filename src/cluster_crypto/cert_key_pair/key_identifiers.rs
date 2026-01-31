@@ -3,6 +3,7 @@ use bcder::Oid;
 use der::{asn1::OctetString, Decode, Encode};
 use num_bigint::Sign;
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
 use simple_asn1::ASN1Block;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -30,9 +31,18 @@ pub(crate) struct HashableSerialNumber(pub(crate) Vec<u8>);
 
 #[derive(EnumIter, Copy, Clone, Debug)]
 pub(crate) enum SubjectKeyIdentifierMethod {
+    /// Subject key identifier calculated according to method (1) in RFC 7083:
+    /// https://datatracker.ietf.org/doc/html/rfc7093#section-2. Recent versions of golang
+    /// (probably 1.25 - see https://github.com/golang/go/issues/71746) use it and consequently
+    /// OCP.
+    ///
+    /// It applies for all key types, as it doesn't decode the DER formatted key, it looks at the
+    /// raw asn.1 BIT STRING
+    RFC7093,
+
     /// Subject key identifier calculated according to method (1) in RFC 5280:
-    /// https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.2 This is the default method
-    /// used by openssl and golang (golang since June 2020).
+    /// https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.2 This is the old default
+    /// method used by openssl and golang (golang since June 2020).
     ///
     /// It applies for all key types, as it doesn't decode the DER formatted key, it looks at the
     /// raw asn.1 BIT STRING
@@ -56,6 +66,13 @@ fn calculate_skid(tbs_certificate: &rfc5280::TbsCertificate, method: SubjectKeyI
             let skid = hasher.finalize();
             let new_skid_extension = SubjectKeyIdentifier(x509_cert::der::asn1::OctetString::new(&*skid)?);
 
+            Ok(new_skid_extension)
+        }
+        SubjectKeyIdentifierMethod::RFC7093 => {
+            let mut hasher = Sha256::new();
+            hasher.update(tbs_certificate.subject_public_key_info.subject_public_key.octet_bytes());
+            let skid = hasher.finalize().as_slice()[0..20].to_vec();
+            let new_skid_extension = SubjectKeyIdentifier(x509_cert::der::asn1::OctetString::new(&*skid)?);
             Ok(new_skid_extension)
         }
         SubjectKeyIdentifierMethod::LibraryGoSha1 => {

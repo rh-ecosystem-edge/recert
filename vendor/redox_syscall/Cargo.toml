@@ -10,7 +10,7 @@ version = "1.0.0"
 rustc-dep-of-std = ["core", "bitflags/rustc-dep-of-std"]
 
 [lib]
-name = "syscall"
+path = "src/lib.rs"
 
 [package]
 authors = ["Jeremy Soller <jackpot51@gmail.com>"]

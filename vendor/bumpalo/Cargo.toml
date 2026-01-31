@@ -2,6 +2,7 @@
 default-features = false
 optional = true
 version = "0.2.8"
+
 [dev-dependencies.criterion]
 version = "0.3.6"
 
@@ -19,7 +20,6 @@ default = []
 std = []
 
 [lib]
-bench = false
 path = "src/lib.rs"
 
 [package]
@@ -35,5 +35,6 @@ readme = "README.md"
 repository = "https://github.com/fitzgen/bumpalo"
 rust-version = "1.60.0"
 version = "3.14.0"
+
 [package.metadata.docs.rs]
 all-features = true
