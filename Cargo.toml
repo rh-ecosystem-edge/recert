@@ -60,6 +60,7 @@ aes-gcm = "0.10.3"
 dyn-clone = "1.0.17"
 hex = "0.4.3"
 serde_with = { version = "3.11.0", features = ["base64"] }
+ciborium = "0.2.2"
 
 [build-dependencies]
 prost-build = "0.12.1"
