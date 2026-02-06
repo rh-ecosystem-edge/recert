@@ -40,7 +40,7 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         .into_iter()
         .chain(image_trusted_certs)
         .chain(ocp_trusted_certs)
-        .chain(ccm_trusted_certs)
+        // .chain(ccm_trusted_certs)
         .join("\n");
 
     Ok(ExternalCerts(
