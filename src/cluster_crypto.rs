@@ -9,7 +9,10 @@ use self::{
     locations::Locations,
 };
 use crate::{
-    cluster_crypto::cert_key_pair::{SerialNumberEdits, SkidEdits},
+    cluster_crypto::{
+        cert_key_pair::{SerialNumberEdits, SkidEdits},
+        scanning::ExternalCerts,
+    },
     cnsanreplace::CnSanReplaceRules,
     config::CryptoCustomizations,
     k8s_etcd::InMemoryK8sEtcd,
@@ -78,6 +81,10 @@ pub(crate) struct ClusterCryptoObjects {
     /// public_to_private) and populate this list of pairs.
     #[serde(serialize_with = "serialize_only_root_pairs")]
     pub(crate) cert_key_pairs: Vec<Rc<RefCell<CertKeyPair>>>,
+
+    // External certs that should not be modified. This is here pretty much only so that it appears
+    // in the summary serialization.
+    pub(crate) external_certs: Option<ExternalCerts>,
 }
 
 fn serialize_only_root_pairs<S>(pairs: &[Rc<RefCell<CertKeyPair>>], serializer: S) -> Result<S::Ok, S::Error>
@@ -114,6 +121,7 @@ impl ClusterCryptoObjects {
             distributed_jwts: HashMap::new(),
             public_to_private: HashMap::new(),
             cert_key_pairs: Vec::new(),
+            external_certs: None,
         }
     }
 
