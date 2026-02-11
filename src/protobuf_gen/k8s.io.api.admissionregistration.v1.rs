@@ -1,4 +1,5 @@
 /// MatchCondition represents a condition which must by fulfilled for a request to be sent to a webhook.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -32,6 +33,7 @@ pub struct MatchCondition {
     pub expression: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// MutatingWebhook describes an admission webhook and the resources and operations it applies to.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -211,6 +213,7 @@ pub struct MutatingWebhook {
     pub match_conditions: ::prost::alloc::vec::Vec<MatchCondition>,
 }
 /// MutatingWebhookConfiguration describes the configuration of and admission webhook that accept or reject and may change the object.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -230,6 +233,7 @@ pub struct MutatingWebhookConfiguration {
     pub webhooks: ::prost::alloc::vec::Vec<MutatingWebhook>,
 }
 /// MutatingWebhookConfigurationList is a list of MutatingWebhookConfiguration.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -248,6 +252,7 @@ pub struct MutatingWebhookConfigurationList {
 }
 /// Rule is a tuple of APIGroups, APIVersion, and Resources.It is recommended
 /// to make sure that all the tuple expansions are valid.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -298,6 +303,7 @@ pub struct Rule {
 }
 /// RuleWithOperations is a tuple of Operations and Resources. It is recommended to make
 /// sure that all the tuple expansions are valid.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -316,6 +322,7 @@ pub struct RuleWithOperations {
     pub rule: ::core::option::Option<Rule>,
 }
 /// ServiceReference holds a reference to Service.legacy.k8s.io
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -342,6 +349,7 @@ pub struct ServiceReference {
     pub port: ::core::option::Option<i32>,
 }
 /// ValidatingWebhook describes an admission webhook and the resources and operations it applies to.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -503,6 +511,7 @@ pub struct ValidatingWebhook {
     pub match_conditions: ::prost::alloc::vec::Vec<MatchCondition>,
 }
 /// ValidatingWebhookConfiguration describes the configuration of and admission webhook that accept or reject and object without changing it.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -522,6 +531,7 @@ pub struct ValidatingWebhookConfiguration {
     pub webhooks: ::prost::alloc::vec::Vec<ValidatingWebhook>,
 }
 /// ValidatingWebhookConfigurationList is a list of ValidatingWebhookConfiguration.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -540,6 +550,7 @@ pub struct ValidatingWebhookConfigurationList {
 }
 /// WebhookClientConfig contains the information to make a TLS
 /// connection with the webhook
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
