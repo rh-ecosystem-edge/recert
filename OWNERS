@@ -22,6 +22,7 @@ filters:
     labels:
       - downstream-change-needed
     reviewers:
+      - by2waysprojects
       - rauhersu
   "renovate.json":
     approvers:
