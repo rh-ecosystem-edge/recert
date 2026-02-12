@@ -119,7 +119,9 @@ async fn recertify(
         ExternalCerts::empty()
     };
 
-    log::info!("Discovered {} external certificates to ignore", external_certs.len());
+    log::info!("Discovered {} certificates that should be considered external and ignored", external_certs.len());
+
+    cluster_crypto.external_certs = Some(external_certs.clone());
 
     // We want to scan the etcd and the filesystem in parallel to generating RSA keys as both take
     // a long time and are independent
