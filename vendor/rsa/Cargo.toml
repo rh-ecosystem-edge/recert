@@ -13,11 +13,17 @@
 edition = "2021"
 rust-version = "1.65"
 name = "rsa"
-version = "0.9.3"
+version = "0.9.10"
 authors = [
     "RustCrypto Developers",
     "dignifiedquire <dignifiedquire@gmail.com>",
 ]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Pure Rust RSA implementation"
 documentation = "https://docs.rs/rsa"
 readme = "README.md"
@@ -44,11 +50,56 @@ rustdoc-args = [
     "docsrs",
 ]
 
-[profile.dev]
-opt-level = 2
+[features]
+default = [
+    "std",
+    "pem",
+    "u64_digit",
+]
+getrandom = ["rand_core/getrandom"]
+hazmat = []
+nightly = ["num-bigint/nightly"]
+pem = [
+    "pkcs1/pem",
+    "pkcs8/pem",
+]
+pkcs5 = ["pkcs8/encryption"]
+serde = [
+    "dep:serde",
+    "num-bigint/serde",
+]
+std = [
+    "digest/std",
+    "pkcs1/std",
+    "pkcs8/std",
+    "rand_core/std",
+    "signature/std",
+]
+u64_digit = ["num-bigint/u64_digit"]
+
+[lib]
+name = "rsa"
+path = "src/lib.rs"
+
+[[test]]
+name = "pkcs1"
+path = "tests/pkcs1.rs"
+
+[[test]]
+name = "pkcs1v15"
+path = "tests/pkcs1v15.rs"
+
+[[test]]
+name = "pkcs8"
+path = "tests/pkcs8.rs"
+
+[[test]]
+name = "proptests"
+path = "tests/proptests.rs"
 
 [[bench]]
 name = "key"
+path = "benches/key.rs"
 
 [dependencies.const-oid]
 version = "0.9"
@@ -63,7 +114,7 @@ features = [
 default-features = false
 
 [dependencies.num-bigint]
-version = "0.8.2"
+version = "0.8.6"
 features = [
     "i128",
     "prime",
@@ -117,7 +168,7 @@ optional = true
 default-features = false
 
 [dependencies.signature]
-version = "2"
+version = ">2.0, <2.3"
 features = [
     "alloc",
     "digest",
@@ -126,7 +177,7 @@ features = [
 default-features = false
 
 [dependencies.spki]
-version = "0.7.2"
+version = "0.7.3"
 features = ["alloc"]
 default-features = false
 
@@ -179,29 +230,5 @@ version = "0.10.7"
 features = ["oid"]
 default-features = false
 
-[features]
-default = [
-    "std",
-    "pem",
-    "u64_digit",
-]
-getrandom = ["rand_core/getrandom"]
-hazmat = []
-nightly = ["num-bigint/nightly"]
-pem = [
-    "pkcs1/pem",
-    "pkcs8/pem",
-]
-pkcs5 = ["pkcs8/encryption"]
-serde = [
-    "dep:serde",
-    "num-bigint/serde",
-]
-std = [
-    "digest/std",
-    "pkcs1/std",
-    "pkcs8/std",
-    "rand_core/std",
-    "signature/std",
-]
-u64_digit = ["num-bigint/u64_digit"]
+[profile.dev]
+opt-level = 2

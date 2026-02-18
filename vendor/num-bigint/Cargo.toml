@@ -10,13 +10,12 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.60"
 name = "num-bigint"
-version = "0.4.4"
+version = "0.4.6"
 authors = ["The Rust Project Developers"]
-build = "build.rs"
 exclude = [
-    "/bors.toml",
     "/ci/*",
     "/.github/*",
 ]
@@ -45,6 +44,10 @@ features = [
     "quickcheck",
     "arbitrary",
 ]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
 
 [[bench]]
 name = "bigint"
@@ -68,12 +71,12 @@ optional = true
 default-features = false
 
 [dependencies.num-integer]
-version = "0.1.42"
+version = "0.1.46"
 features = ["i128"]
 default-features = false
 
 [dependencies.num-traits]
-version = "0.2.16"
+version = "0.2.18"
 features = ["i128"]
 default-features = false
 
@@ -92,11 +95,12 @@ version = "1.0"
 optional = true
 default-features = false
 
-[build-dependencies.autocfg]
-version = "1"
-
 [features]
+arbitrary = ["dep:arbitrary"]
 default = ["std"]
+quickcheck = ["dep:quickcheck"]
+rand = ["dep:rand"]
+serde = ["dep:serde"]
 std = [
     "num-integer/std",
     "num-traits/std",
