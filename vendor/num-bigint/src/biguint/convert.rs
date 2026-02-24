@@ -4,17 +4,15 @@
 use super::{biguint_from_vec, BigUint, ToBigUint};
 
 use super::addition::add2;
-use super::division::div_rem_digit;
+use super::division::{div_rem_digit, FAST_DIV_WIDE};
 use super::multiplication::mac_with_carry;
 
 use crate::big_digit::{self, BigDigit};
-use crate::std_alloc::Vec;
 use crate::ParseBigIntError;
-#[cfg(has_try_from)]
 use crate::TryFromBigIntError;
 
+use alloc::vec::Vec;
 use core::cmp::Ordering::{Equal, Greater, Less};
-#[cfg(has_try_from)]
 use core::convert::TryFrom;
 use core::mem;
 use core::str::FromStr;
@@ -71,7 +69,7 @@ fn from_inexact_bitwise_digits_le(v: &[u8], bits: u8) -> BigUint {
     let total_bits = (v.len() as u64).saturating_mul(bits.into());
     let big_digits = Integer::div_ceil(&total_bits, &big_digit::BITS.into())
         .to_usize()
-        .unwrap_or(core::usize::MAX);
+        .unwrap_or(usize::MAX);
     let mut data = Vec::with_capacity(big_digits);
 
     let mut d = 0;
@@ -121,7 +119,7 @@ fn from_radix_digits_be(v: &[u8], radix: u32) -> BigUint {
 
     let mut data = Vec::with_capacity(big_digits.to_usize().unwrap_or(0));
 
-    let (base, power) = get_radix_base(radix, big_digit::BITS);
+    let (base, power) = get_radix_base(radix);
     let radix = radix as BigDigit;
 
     let r = v.len() % power;
@@ -161,7 +159,7 @@ pub(super) fn from_radix_be(buf: &[u8], radix: u32) -> Option<BigUint> {
     );
 
     if buf.is_empty() {
-        return Some(Zero::zero());
+        return Some(BigUint::ZERO);
     }
 
     if radix != 256 && buf.iter().any(|&b| b >= radix as u8) {
@@ -192,7 +190,7 @@ pub(super) fn from_radix_le(buf: &[u8], radix: u32) -> Option<BigUint> {
     );
 
     if buf.is_empty() {
-        return Some(Zero::zero());
+        return Some(BigUint::ZERO);
     }
 
     if radix != 256 && buf.iter().any(|&b| b >= radix as u8) {
@@ -223,8 +221,7 @@ impl Num for BigUint {
     fn from_str_radix(s: &str, radix: u32) -> Result<BigUint, ParseBigIntError> {
         assert!(2 <= radix && radix <= 36, "The radix must be within 2...36");
         let mut s = s;
-        if s.starts_with('+') {
-            let tail = &s[1..];
+        if let Some(tail) = s.strip_prefix('+') {
             if !tail.starts_with('+') {
                 s = tail
             }
@@ -247,7 +244,7 @@ impl Num for BigUint {
                 b'a'..=b'z' => b - b'a' + 10,
                 b'A'..=b'Z' => b - b'A' + 10,
                 b'_' => continue,
-                _ => core::u8::MAX,
+                _ => u8::MAX,
             };
             if d < radix as u8 {
                 v.push(d);
@@ -374,8 +371,8 @@ impl ToPrimitive for BigUint {
         let mantissa = high_bits_to_u64(self);
         let exponent = self.bits() - u64::from(fls(mantissa));
 
-        if exponent > core::f32::MAX_EXP as u64 {
-            Some(core::f32::INFINITY)
+        if exponent > f32::MAX_EXP as u64 {
+            Some(f32::INFINITY)
         } else {
             Some((mantissa as f32) * 2.0f32.powi(exponent as i32))
         }
@@ -386,8 +383,8 @@ impl ToPrimitive for BigUint {
         let mantissa = high_bits_to_u64(self);
         let exponent = self.bits() - u64::from(fls(mantissa));
 
-        if exponent > core::f64::MAX_EXP as u64 {
-            Some(core::f64::INFINITY)
+        if exponent > f64::MAX_EXP as u64 {
+            Some(f64::INFINITY)
         } else {
             Some((mantissa as f64) * 2.0f64.powi(exponent as i32))
         }
@@ -396,7 +393,6 @@ impl ToPrimitive for BigUint {
 
 macro_rules! impl_try_from_biguint {
     ($T:ty, $to_ty:path) => {
-        #[cfg(has_try_from)]
         impl TryFrom<&BigUint> for $T {
             type Error = TryFromBigIntError<()>;
 
@@ -406,7 +402,6 @@ macro_rules! impl_try_from_biguint {
             }
         }
 
-        #[cfg(has_try_from)]
         impl TryFrom<BigUint> for $T {
             type Error = TryFromBigIntError<BigUint>;
 
@@ -473,7 +468,7 @@ impl FromPrimitive for BigUint {
 
         // handle 0.x, -0.x
         if n.is_zero() {
-            return Some(BigUint::zero());
+            return Some(Self::ZERO);
         }
 
         let (mantissa, exponent, sign) = FloatCore::integer_decode(n);
@@ -495,7 +490,7 @@ impl FromPrimitive for BigUint {
 impl From<u64> for BigUint {
     #[inline]
     fn from(mut n: u64) -> Self {
-        let mut ret: BigUint = Zero::zero();
+        let mut ret: BigUint = Self::ZERO;
 
         while n != 0 {
             ret.data.push(n as BigDigit);
@@ -510,7 +505,7 @@ impl From<u64> for BigUint {
 impl From<u128> for BigUint {
     #[inline]
     fn from(mut n: u128) -> Self {
-        let mut ret: BigUint = Zero::zero();
+        let mut ret: BigUint = Self::ZERO;
 
         while n != 0 {
             ret.data.push(n as BigDigit);
@@ -539,7 +534,6 @@ impl_biguint_from_uint!(usize);
 
 macro_rules! impl_biguint_try_from_int {
     ($T:ty, $from_ty:path) => {
-        #[cfg(has_try_from)]
         impl TryFrom<$T> for BigUint {
             type Error = TryFromBigIntError<()>;
 
@@ -598,7 +592,7 @@ impl From<bool> for BigUint {
         if x {
             One::one()
         } else {
-            Zero::zero()
+            Self::ZERO
         }
     }
 }
@@ -612,7 +606,7 @@ pub(super) fn to_bitwise_digits_le(u: &BigUint, bits: u8) -> Vec<u8> {
     let digits_per_big_digit = big_digit::BITS / bits;
     let digits = Integer::div_ceil(&u.bits(), &u64::from(bits))
         .to_usize()
-        .unwrap_or(core::usize::MAX);
+        .unwrap_or(usize::MAX);
     let mut res = Vec::with_capacity(digits);
 
     for mut r in u.data[..last_i].iter().cloned() {
@@ -638,7 +632,7 @@ fn to_inexact_bitwise_digits_le(u: &BigUint, bits: u8) -> Vec<u8> {
     let mask: BigDigit = (1 << bits) - 1;
     let digits = Integer::div_ceil(&u.bits(), &u64::from(bits))
         .to_usize()
-        .unwrap_or(core::usize::MAX);
+        .unwrap_or(usize::MAX);
     let mut res = Vec::with_capacity(digits);
 
     let mut r = 0;
@@ -693,7 +687,13 @@ pub(super) fn to_radix_digits_le(u: &BigUint, radix: u32) -> Vec<u8> {
 
     let mut digits = u.clone();
 
-    let (base, power) = get_radix_base(radix, big_digit::HALF_BITS);
+    // X86 DIV can quickly divide by a full digit, otherwise we choose a divisor
+    // that's suitable for `div_half` to avoid slow `DoubleBigDigit` division.
+    let (base, power) = if FAST_DIV_WIDE {
+        get_radix_base(radix)
+    } else {
+        get_half_radix_base(radix)
+    };
     let radix = radix as BigDigit;
 
     // For very large numbers, the O(n²) loop of repeated `div_rem_digit` dominates the
@@ -701,8 +701,8 @@ pub(super) fn to_radix_digits_le(u: &BigUint, radix: u32) -> Vec<u8> {
     // The threshold for this was chosen by anecdotal performance measurements to
     // approximate where this starts to make a noticeable difference.
     if digits.data.len() >= 64 {
-        let mut big_base = BigUint::from(base * base);
-        let mut big_power = 2usize;
+        let mut big_base = BigUint::from(base);
+        let mut big_power = 1usize;
 
         // Choose a target base length near √n.
         let target_len = digits.data.len().sqrt();
@@ -788,33 +788,79 @@ pub(crate) fn to_str_radix_reversed(u: &BigUint, radix: u32) -> Vec<u8> {
     res
 }
 
-/// Returns the greatest power of the radix for the given bit size
+/// Returns the greatest power of the radix for the `BigDigit` bit size
 #[inline]
-fn get_radix_base(radix: u32, bits: u8) -> (BigDigit, usize) {
-    mod gen {
-        include! { concat!(env!("OUT_DIR"), "/radix_bases.rs") }
+fn get_radix_base(radix: u32) -> (BigDigit, usize) {
+    static BASES: [(BigDigit, usize); 257] = generate_radix_bases(big_digit::MAX);
+    debug_assert!(!radix.is_power_of_two());
+    debug_assert!((3..256).contains(&radix));
+    BASES[radix as usize]
+}
+
+/// Returns the greatest power of the radix for half the `BigDigit` bit size
+#[inline]
+fn get_half_radix_base(radix: u32) -> (BigDigit, usize) {
+    static BASES: [(BigDigit, usize); 257] = generate_radix_bases(big_digit::HALF);
+    debug_assert!(!radix.is_power_of_two());
+    debug_assert!((3..256).contains(&radix));
+    BASES[radix as usize]
+}
+
+/// Generate tables of the greatest power of each radix that is less that the given maximum. These
+/// are returned from `get_radix_base` to batch the multiplication/division of radix conversions on
+/// full `BigUint` values, operating on primitive integers as much as possible.
+///
+/// e.g. BASES_16[3] = (59049, 10) // 3¹⁰ fits in u16, but 3¹¹ is too big
+///      BASES_32[3] = (3486784401, 20)
+///      BASES_64[3] = (12157665459056928801, 40)
+///
+/// Powers of two are not included, just zeroed, as they're implemented with shifts.
+const fn generate_radix_bases(max: BigDigit) -> [(BigDigit, usize); 257] {
+    let mut bases = [(0, 0); 257];
+
+    let mut radix: BigDigit = 3;
+    while radix < 256 {
+        if !radix.is_power_of_two() {
+            let mut power = 1;
+            let mut base = radix;
+
+            while let Some(b) = base.checked_mul(radix) {
+                if b > max {
+                    break;
+                }
+                base = b;
+                power += 1;
+            }
+            bases[radix as usize] = (base, power)
+        }
+        radix += 1;
     }
 
-    debug_assert!(
-        2 <= radix && radix <= 256,
-        "The radix must be within 2...256"
-    );
-    debug_assert!(!radix.is_power_of_two());
-    debug_assert!(bits <= big_digit::BITS);
+    bases
+}
 
-    match bits {
-        16 => {
-            let (base, power) = gen::BASES_16[radix as usize];
-            (base as BigDigit, power)
+#[test]
+fn test_radix_bases() {
+    for radix in 3u32..256 {
+        if !radix.is_power_of_two() {
+            let (base, power) = get_radix_base(radix);
+            let radix = BigDigit::from(radix);
+            let power = u32::try_from(power).unwrap();
+            assert_eq!(base, radix.pow(power));
+            assert!(radix.checked_pow(power + 1).is_none());
         }
-        32 => {
-            let (base, power) = gen::BASES_32[radix as usize];
-            (base as BigDigit, power)
+    }
+}
+
+#[test]
+fn test_half_radix_bases() {
+    for radix in 3u32..256 {
+        if !radix.is_power_of_two() {
+            let (base, power) = get_half_radix_base(radix);
+            let radix = BigDigit::from(radix);
+            let power = u32::try_from(power).unwrap();
+            assert_eq!(base, radix.pow(power));
+            assert!(radix.pow(power + 1) > big_digit::HALF);
         }
-        64 => {
-            let (base, power) = gen::BASES_64[radix as usize];
-            (base as BigDigit, power)
-        }
-        _ => panic!("Invalid bigdigit size"),
     }
 }

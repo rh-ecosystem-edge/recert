@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.65"
 name = "spki"
-version = "0.7.2"
+version = "0.7.3"
 authors = ["RustCrypto Developers"]
 description = """
 X.509 Subject Public Key Info (RFC5280) describing public keys as well as their

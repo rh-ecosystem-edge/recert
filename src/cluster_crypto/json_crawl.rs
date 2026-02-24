@@ -289,6 +289,8 @@ fn process_data_url_value(value: &Value) -> Result<Option<String>> {
         let url = data_url::DataUrl::process(string_value).ok().context("dataurl failed processing")?;
 
         let (decoded, _fragment) = url.decode_to_vec().ok().context("non-unicode dataurl")?;
+
+        #[allow(clippy::manual_ok_err)]
         if let Ok(decoded) = String::from_utf8(decoded) {
             Some(decoded)
         } else {

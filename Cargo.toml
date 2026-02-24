@@ -19,7 +19,7 @@ base64 = "0.21.0"
 pem = "3.0.2"
 x509-certificate = "0.21.0"
 lazy_static = "1.4.0"
-rsa = "0.9.0"
+rsa = "0.9.10"
 pkcs1 = "0.7.5"
 bytes = "1.4.0"
 etcd-client = { version = "0.12.1" }
