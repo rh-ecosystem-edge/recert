@@ -20,6 +20,15 @@
 //!                 ~~~~^ ~~~~^ ~~~~
 //! ```
 
+use crate::drops::{NoDrop, TrivialDrop};
+#[cfg(feature = "parsing")]
+use crate::error::Result;
+#[cfg(feature = "parsing")]
+use crate::parse::{Parse, ParseStream};
+#[cfg(feature = "parsing")]
+use crate::token::Token;
+#[cfg(all(feature = "fold", any(feature = "full", feature = "derive")))]
+use std::collections::VecDeque;
 #[cfg(feature = "extra-traits")]
 use std::fmt::{self, Debug};
 #[cfg(feature = "extra-traits")]
@@ -30,12 +39,6 @@ use std::ops::{Index, IndexMut};
 use std::option;
 use std::slice;
 use std::vec;
-
-use crate::drops::{NoDrop, TrivialDrop};
-#[cfg(feature = "parsing")]
-use crate::parse::{Parse, ParseStream, Result};
-#[cfg(feature = "parsing")]
-use crate::token::Token;
 
 /// **A punctuated sequence of syntax tree nodes of type `T` separated by
 /// punctuation of type `P`.**
@@ -89,6 +92,29 @@ impl<T, P> Punctuated<T, P> {
     /// Mutably borrows the last element in this sequence.
     pub fn last_mut(&mut self) -> Option<&mut T> {
         self.iter_mut().next_back()
+    }
+
+    /// Borrows the element at the given index.
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if let Some((value, _punct)) = self.inner.get(index) {
+            Some(value)
+        } else if index == self.inner.len() {
+            self.last.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Mutably borrows the element at the given index.
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        let inner_len = self.inner.len();
+        if let Some((value, _punct)) = self.inner.get_mut(index) {
+            Some(value)
+        } else if index == inner_len {
+            self.last.as_deref_mut()
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator over borrowed syntax tree nodes of type `&T`.
@@ -262,7 +288,7 @@ impl<T, P> Punctuated<T, P> {
     /// Parsing continues until the end of this parse stream. The entire content
     /// of this parse stream must consist of `T` and `P`.
     #[cfg(feature = "parsing")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     pub fn parse_terminated(input: ParseStream) -> Result<Self>
     where
         T: Parse,
@@ -280,10 +306,10 @@ impl<T, P> Punctuated<T, P> {
     ///
     /// [`parse_terminated`]: Punctuated::parse_terminated
     #[cfg(feature = "parsing")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
-    pub fn parse_terminated_with(
-        input: ParseStream,
-        parser: fn(ParseStream) -> Result<T>,
+    #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
+    pub fn parse_terminated_with<'a>(
+        input: ParseStream<'a>,
+        parser: fn(ParseStream<'a>) -> Result<T>,
     ) -> Result<Self>
     where
         P: Parse,
@@ -314,7 +340,7 @@ impl<T, P> Punctuated<T, P> {
     /// is not followed by a `P`, even if there are remaining tokens in the
     /// stream.
     #[cfg(feature = "parsing")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     pub fn parse_separated_nonempty(input: ParseStream) -> Result<Self>
     where
         T: Parse,
@@ -332,10 +358,10 @@ impl<T, P> Punctuated<T, P> {
     ///
     /// [`parse_separated_nonempty`]: Punctuated::parse_separated_nonempty
     #[cfg(feature = "parsing")]
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
-    pub fn parse_separated_nonempty_with(
-        input: ParseStream,
-        parser: fn(ParseStream) -> Result<T>,
+    #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
+    pub fn parse_separated_nonempty_with<'a>(
+        input: ParseStream<'a>,
+        parser: fn(ParseStream<'a>) -> Result<T>,
     ) -> Result<Self>
     where
         P: Token + Parse,
@@ -357,7 +383,7 @@ impl<T, P> Punctuated<T, P> {
 }
 
 #[cfg(feature = "clone-impls")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
 impl<T, P> Clone for Punctuated<T, P>
 where
     T: Clone,
@@ -377,7 +403,7 @@ where
 }
 
 #[cfg(feature = "extra-traits")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl<T, P> Eq for Punctuated<T, P>
 where
     T: Eq,
@@ -386,7 +412,7 @@ where
 }
 
 #[cfg(feature = "extra-traits")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl<T, P> PartialEq for Punctuated<T, P>
 where
     T: PartialEq,
@@ -399,7 +425,7 @@ where
 }
 
 #[cfg(feature = "extra-traits")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl<T, P> Hash for Punctuated<T, P>
 where
     T: Hash,
@@ -413,7 +439,7 @@ where
 }
 
 #[cfg(feature = "extra-traits")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "extra-traits")))]
 impl<T: Debug, P: Debug> Debug for Punctuated<T, P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut list = f.debug_list();
@@ -477,7 +503,7 @@ where
     let mut nomore = false;
     for pair in i {
         if nomore {
-            panic!("Punctuated extended with items after a Pair::End");
+            panic!("punctuated extended with items after a Pair::End");
         }
         match pair {
             Pair::Punctuated(a, b) => punctuated.inner.push((a, b)),
@@ -495,8 +521,13 @@ impl<T, P> IntoIterator for Punctuated<T, P> {
 
     fn into_iter(self) -> Self::IntoIter {
         let mut elements = Vec::with_capacity(self.len());
-        elements.extend(self.inner.into_iter().map(|pair| pair.0));
-        elements.extend(self.last.map(|t| *t));
+
+        for (t, _) in self.inner {
+            elements.push(t);
+        }
+        if let Some(t) = self.last {
+            elements.push(*t);
+        }
 
         IntoIter {
             inner: elements.into_iter(),
@@ -1006,7 +1037,7 @@ impl<T, P> Pair<T, P> {
 }
 
 #[cfg(feature = "clone-impls")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
 impl<T, P> Pair<&T, &P> {
     pub fn cloned(self) -> Pair<T, P>
     where
@@ -1021,7 +1052,7 @@ impl<T, P> Pair<&T, &P> {
 }
 
 #[cfg(feature = "clone-impls")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
 impl<T, P> Clone for Pair<T, P>
 where
     T: Clone,
@@ -1036,7 +1067,7 @@ where
 }
 
 #[cfg(feature = "clone-impls")]
-#[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "clone-impls")))]
 impl<T, P> Copy for Pair<T, P>
 where
     T: Copy,
@@ -1048,7 +1079,7 @@ impl<T, P> Index<usize> for Punctuated<T, P> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
-        if index == self.len() - 1 {
+        if index.checked_add(1) == Some(self.len()) {
             match &self.last {
                 Some(t) => t,
                 None => &self.inner[index].0,
@@ -1061,7 +1092,7 @@ impl<T, P> Index<usize> for Punctuated<T, P> {
 
 impl<T, P> IndexMut<usize> for Punctuated<T, P> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        if index == self.len() - 1 {
+        if index.checked_add(1) == Some(self.len()) {
             match &mut self.last {
                 Some(t) => t,
                 None => &mut self.inner[index].0,
@@ -1072,13 +1103,43 @@ impl<T, P> IndexMut<usize> for Punctuated<T, P> {
     }
 }
 
+#[cfg(all(feature = "fold", any(feature = "full", feature = "derive")))]
+pub(crate) fn fold<T, P, V, F>(
+    punctuated: Punctuated<T, P>,
+    fold: &mut V,
+    mut f: F,
+) -> Punctuated<T, P>
+where
+    V: ?Sized,
+    F: FnMut(&mut V, T) -> T,
+{
+    let Punctuated { inner, last } = punctuated;
+
+    // Convert into VecDeque to prevent needing to allocate a new Vec<(T, P)>
+    // for the folded elements.
+    let mut inner = VecDeque::from(inner);
+    for _ in 0..inner.len() {
+        if let Some((t, p)) = inner.pop_front() {
+            inner.push_back((f(fold, t), p));
+        }
+    }
+
+    Punctuated {
+        inner: Vec::from(inner),
+        last: match last {
+            Some(t) => Some(Box::new(f(fold, *t))),
+            None => None,
+        },
+    }
+}
+
 #[cfg(feature = "printing")]
 mod printing {
-    use super::*;
+    use crate::punctuated::{Pair, Punctuated};
     use proc_macro2::TokenStream;
-    use quote::{ToTokens, TokenStreamExt};
+    use quote::{ToTokens, TokenStreamExt as _};
 
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "printing")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
     impl<T, P> ToTokens for Punctuated<T, P>
     where
         T: ToTokens,
@@ -1089,7 +1150,7 @@ mod printing {
         }
     }
 
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "printing")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "printing")))]
     impl<T, P> ToTokens for Pair<T, P>
     where
         T: ToTokens,

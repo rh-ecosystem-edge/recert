@@ -96,7 +96,8 @@ impl DistributedPrivateKey {
                 .as_bytes()
                 .to_vec(),
             )
-            .await;
+            .await
+            .context("putting in etcd")?;
 
         Ok(())
     }

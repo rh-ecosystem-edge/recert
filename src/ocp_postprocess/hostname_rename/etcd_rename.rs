@@ -227,7 +227,8 @@ pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, origina
                             &(format!("/kubernetes.io/secrets/openshift-etcd/{new_secret_name}")),
                             serde_json::to_string(&etcd_value).context("serializing value")?.as_bytes().to_vec(),
                         )
-                        .await;
+                        .await
+                        .context("putting in etcd")?;
 
                     etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
 
