@@ -1,6 +1,6 @@
 # The rust version is pinned to prevent unexpected breakages due to rust changes.
 FROM rust:1.87 AS chef
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --version 0.1.75
 WORKDIR /app
 
 FROM chef AS planner
