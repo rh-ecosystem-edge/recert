@@ -4,6 +4,7 @@ use crate::{
         scanning::{self, ExternalCerts},
         ClusterCryptoObjects,
     },
+    cnsanreplace::CnSanReplaceRules,
     config::{ClusterCustomizations, CryptoCustomizations, EncryptionCustomizations, RecertConfig},
     encrypt::ResourceTransformers,
     k8s_etcd::InMemoryK8sEtcd,
@@ -45,6 +46,7 @@ pub(crate) async fn run(recert_config: &RecertConfig, cluster_crypto: &mut Clust
         Arc::clone(&in_memory_etcd_client),
         cluster_crypto,
         &recert_config.cluster_customizations,
+        &recert_config.crypto_customizations.cn_san_replace_rules,
         encryption_customizations,
         recert_config.regenerate_server_ssh_keys.as_deref(),
         recert_config.dry_run,
@@ -157,10 +159,12 @@ async fn fill_keys() -> Result<(RunTime, rsa_key_pool::RsaKeyPool)> {
     Ok((RunTime::since_start(start_time), pool))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize(
     in_memory_etcd_client: Arc<InMemoryK8sEtcd>,
     cluster_crypto: &mut ClusterCryptoObjects,
     cluster_customizations: &ClusterCustomizations,
+    cn_san_replace_rules: &CnSanReplaceRules,
     encryption_customizations: Option<EncryptionCustomizations>,
     regenerate_server_ssh_keys: Option<&Path>,
     dry_run: bool,
@@ -179,7 +183,7 @@ async fn finalize(
 
     let start = std::time::Instant::now();
     if in_memory_etcd_client.etcd_client.is_some() {
-        ocp_postprocess(&in_memory_etcd_client, cluster_customizations)
+        ocp_postprocess(&in_memory_etcd_client, cluster_customizations, cn_san_replace_rules)
             .await
             .context("performing ocp specific post-processing")?;
 

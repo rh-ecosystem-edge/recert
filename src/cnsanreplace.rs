@@ -41,6 +41,10 @@ impl CnSanReplace {
 pub(crate) struct CnSanReplaceRules(pub Vec<CnSanReplace>);
 
 impl CnSanReplaceRules {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub(crate) fn replace(&self, input: &str) -> String {
         let mut output = input.to_string();
 
