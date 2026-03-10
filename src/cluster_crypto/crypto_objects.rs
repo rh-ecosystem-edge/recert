@@ -16,6 +16,7 @@ use std::{
 };
 use x509_certificate::InMemorySigningKeyPair;
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoObject {
     PrivateKey(PrivateKey, PublicKey),
     PublicKey(PublicKey),
