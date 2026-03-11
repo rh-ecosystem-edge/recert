@@ -424,7 +424,7 @@ impl RecertConfig {
             "dry_run and etcd_defrag are mutually exclusive"
         );
         ensure!(
-            !(recert_config.crypto_customizations.ip_change_only && recert_config.crypto_customizations.cn_san_replace_rules.0.is_empty()),
+            !(recert_config.crypto_customizations.ip_change_only && recert_config.crypto_customizations.cn_san_replace_rules.is_empty()),
             "ip-change-only requires at least one cn_san_replace rule"
         );
 

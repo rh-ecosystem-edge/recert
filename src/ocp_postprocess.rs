@@ -4,6 +4,7 @@ use self::{
 };
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
+    cnsanreplace::CnSanReplaceRules,
     config::{path::ConfigPath, ClusterCustomizations},
     file_utils::{self, read_file_to_string},
     k8s_etcd::{self, get_etcd_json, put_etcd_yaml},
@@ -23,6 +24,7 @@ use std::{
 
 pub(crate) mod additional_trust_bundle;
 mod arguments;
+mod cert_manager_rename;
 pub(crate) mod chrony_config;
 pub(crate) mod cluster_domain_rename;
 pub(crate) mod encryption_config;
@@ -41,6 +43,7 @@ pub mod rename_utils;
 pub(crate) async fn ocp_postprocess(
     in_memory_etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_customizations: &ClusterCustomizations,
+    cn_san_replace_rules: &CnSanReplaceRules,
 ) -> Result<()> {
     fix_olm_secret_hash_annotation(in_memory_etcd_client)
         .await
@@ -59,6 +62,10 @@ pub(crate) async fn ocp_postprocess(
         .context("syncing webhook authenticators")?;
 
     run_cluster_customizations(cluster_customizations, in_memory_etcd_client).await?;
+
+    cert_manager_rename::fix_cert_manager_certificates(in_memory_etcd_client, cn_san_replace_rules)
+        .await
+        .context("fixing cert-manager certificate specs")?;
 
     // When OpenShift pods/containers start, CVO is still stuck on its last known status and it
     // takes a couple of minutes for it to update its status to the current cluster conditions. When
@@ -1050,3 +1057,4 @@ pub(crate) async fn chrony_config_rename(
 
     Ok(())
 }
+
