@@ -293,6 +293,10 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: Extern
             .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
             // JWT tokens can be found in files named "token"
             .chain(file_utils::globvec(dir, "**/token")?.into_iter())
+            // Skip empty-dir volumes, they contain no meaningful crypto and should just be
+            // deleted. But they sometimes contain leftover crypto that trips up recert because it
+            // doesn't actually belong to the cluster
+            .filter(|path| !path.to_string_lossy().contains("kubernetes.io~empty-dir"))
             .map(|file_path| tokio::spawn(scan_filesystem_file(file_path.clone(), external_certs.clone())))
             .collect::<Vec<_>>(),
     )
