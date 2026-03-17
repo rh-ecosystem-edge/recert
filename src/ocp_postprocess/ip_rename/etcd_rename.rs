@@ -126,7 +126,7 @@ fn fix_storage_config(config: &mut Value, original_ip: &str, ip: &str) -> Result
     let expected_url = format!("https://{original_ip_formatted}:2379");
 
     // Only replace if the original IP is found in the URLs
-    let contains_original = current_urls.iter().any(|url| url.as_str().map_or(false, |s| s == expected_url));
+    let contains_original = current_urls.iter().any(|url| url.as_str().is_some_and(|s| s == expected_url));
 
     if contains_original {
         let new_ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };

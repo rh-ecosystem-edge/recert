@@ -1,4 +1,5 @@
 /// ClusterRoleScopeRestriction describes restrictions on cluster role scopes
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -23,6 +24,7 @@ pub struct ClusterRoleScopeRestriction {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -68,6 +70,7 @@ pub struct OAuthAccessToken {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -87,6 +90,7 @@ pub struct OAuthAccessTokenList {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -131,6 +135,7 @@ pub struct OAuthAuthorizeToken {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -150,6 +155,7 @@ pub struct OAuthAuthorizeTokenList {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -210,6 +216,7 @@ pub struct OAuthClient {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -239,6 +246,7 @@ pub struct OAuthClientAuthorization {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -258,6 +266,7 @@ pub struct OAuthClientAuthorizationList {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -277,6 +286,7 @@ pub struct OAuthClientList {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -293,6 +303,7 @@ pub struct OAuthRedirectReference {
     pub reference: ::core::option::Option<RedirectReference>,
 }
 /// RedirectReference specifies the target in the current namespace that resolves into redirect URIs.  Only the 'Route' kind is currently allowed.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -309,6 +320,7 @@ pub struct RedirectReference {
     pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// ScopeRestriction describe one restriction on scopes.  Exactly one option must be non-nil.
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -324,6 +336,7 @@ pub struct ScopeRestriction {
 /// UserOAuthAccessToken is a virtual resource to mirror OAuthAccessTokens to
 /// the user the access token was issued for
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -370,6 +383,7 @@ pub struct UserOAuthAccessToken {
 ///
 /// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 /// +openshift:compatibility-gen:level=1
+#[allow(dead_code)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(clippy::derive_partial_eq_without_eq)]
