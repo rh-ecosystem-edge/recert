@@ -1,12 +1,19 @@
-#![allow(clippy::uninlined_format_args)]
+#![allow(
+    clippy::elidable_lifetime_names,
+    clippy::needless_lifetimes,
+    clippy::uninlined_format_args
+)]
 
 #[macro_use]
-mod macros;
+mod snapshot;
+
+mod debug;
 
 use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
-use quote::quote;
+use quote::{quote, ToTokens as _};
 use syn::parse::Parser;
-use syn::{Item, Pat, Stmt};
+use syn::punctuated::Punctuated;
+use syn::{parse_quote, token, Item, Pat, PatTuple, Stmt, Token};
 
 #[test]
 fn test_pat_ident() {
@@ -47,10 +54,10 @@ fn test_leading_vert() {
 #[test]
 fn test_group() {
     let group = Group::new(Delimiter::None, quote!(Some(_)));
-    let tokens = TokenStream::from_iter(vec![TokenTree::Group(group)]);
+    let tokens = TokenStream::from_iter([TokenTree::Group(group)]);
     let pat = Pat::parse_single.parse2(tokens).unwrap();
 
-    snapshot!(pat, @r###"
+    snapshot!(pat, @r#"
     Pat::TupleStruct {
         path: Path {
             segments: [
@@ -63,7 +70,7 @@ fn test_group() {
             Pat::Wild,
         ],
     }
-    "###);
+    "#);
 }
 
 #[test]
@@ -94,4 +101,58 @@ fn test_ranges() {
     Pat::parse_single.parse_str("[_, (lo..), _]").unwrap();
     Pat::parse_single.parse_str("[_, (..=hi), _]").unwrap();
     Pat::parse_single.parse_str("[_, lo..=hi, _]").unwrap();
+}
+
+#[test]
+fn test_tuple_comma() {
+    let mut expr = PatTuple {
+        attrs: Vec::new(),
+        paren_token: token::Paren::default(),
+        elems: Punctuated::new(),
+    };
+    snapshot!(expr.to_token_stream() as Pat, @"Pat::Tuple");
+
+    expr.elems.push_value(parse_quote!(_));
+    // Must not parse to Pat::Paren
+    snapshot!(expr.to_token_stream() as Pat, @r#"
+    Pat::Tuple {
+        elems: [
+            Pat::Wild,
+            Token![,],
+        ],
+    }
+    "#);
+
+    expr.elems.push_punct(<Token![,]>::default());
+    snapshot!(expr.to_token_stream() as Pat, @r#"
+    Pat::Tuple {
+        elems: [
+            Pat::Wild,
+            Token![,],
+        ],
+    }
+    "#);
+
+    expr.elems.push_value(parse_quote!(_));
+    snapshot!(expr.to_token_stream() as Pat, @r#"
+    Pat::Tuple {
+        elems: [
+            Pat::Wild,
+            Token![,],
+            Pat::Wild,
+        ],
+    }
+    "#);
+
+    expr.elems.push_punct(<Token![,]>::default());
+    snapshot!(expr.to_token_stream() as Pat, @r#"
+    Pat::Tuple {
+        elems: [
+            Pat::Wild,
+            Token![,],
+            Pat::Wild,
+            Token![,],
+        ],
+    }
+    "#);
 }
