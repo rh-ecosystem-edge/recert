@@ -86,7 +86,8 @@ impl DistributedJwt {
                 &k8slocation.resource_location.as_etcd_key(),
                 serde_json::to_string(&resource)?.as_bytes().to_vec(),
             )
-            .await;
+            .await
+            .context("putting in etcd")?;
 
         Ok(())
     }
