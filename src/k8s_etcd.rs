@@ -3,6 +3,7 @@ use crate::encrypt::ResourceTransformers;
 use crate::etcd_encoding;
 use anyhow::{bail, ensure, Context, Result};
 use etcd_client::{Client as EtcdClient, GetOptions};
+use etcd_encoding::Encoding;
 use futures_util::future::join_all;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -22,7 +23,7 @@ pub(crate) struct EtcdResult {
 /// have to go through etcd for every single edit.
 pub(crate) struct InMemoryK8sEtcd {
     pub(crate) etcd_client: Option<Arc<EtcdClient>>,
-    etcd_keyvalue_hashmap: Mutex<HashMap<String, Vec<u8>>>,
+    etcd_keyvalue_hashmap: Mutex<HashMap<String, (Encoding, Vec<u8>)>>,
     edited: Mutex<HashMap<String, Vec<u8>>>,
     deleted_keys: Mutex<HashSet<String>>,
     decrypt_resource_transformers: Option<ResourceTransformers>,
@@ -105,10 +106,10 @@ impl InMemoryK8sEtcd {
                 continue;
             }
             let key = key.clone();
-            let value = value.clone();
+            let (encoding, value) = value.clone();
             let etcd_client = Arc::clone(etcd_client);
 
-            let mut value = etcd_encoding::encode(value.as_slice()).await.context("encoding value")?;
+            let mut value = etcd_encoding::encode(value.as_slice(), encoding).await.context("encoding value")?;
 
             if let Some(resource_transformers) = &self.encrypt_resource_transformers {
                 // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L172
@@ -184,7 +185,7 @@ impl InMemoryK8sEtcd {
 
         {
             let hashmap = self.etcd_keyvalue_hashmap.lock().await;
-            if let Some(value) = hashmap.get(&key) {
+            if let Some((_encoding, value)) = hashmap.get(&key) {
                 result.value.clone_from(value);
                 return Ok(Some(result));
             }
@@ -195,7 +196,7 @@ impl InMemoryK8sEtcd {
         if let Some(value) = get_result.kvs().first() {
             let raw_etcd_value = value.value();
 
-            let mut decoded_value = etcd_encoding::decode(raw_etcd_value).await.context("decoding value")?;
+            let (mut decoded_value, mut encoding) = etcd_encoding::decode(raw_etcd_value).await.context("decoding value")?;
 
             if let Some(resource_transformers) = &self.decrypt_resource_transformers {
                 // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L110
@@ -209,7 +210,7 @@ impl InMemoryK8sEtcd {
                                 .decrypt(key.to_string(), raw_etcd_value.to_vec())
                                 .await
                                 .context("decrypting etcd value")?;
-                            decoded_value = etcd_encoding::decode(&plaintext_value).await.context("decoding value")?;
+                            (decoded_value, encoding) = etcd_encoding::decode(&plaintext_value).await.context("decoding value")?;
                             break;
                         }
                     }
@@ -219,7 +220,7 @@ impl InMemoryK8sEtcd {
             self.etcd_keyvalue_hashmap
                 .lock()
                 .await
-                .insert(key.to_string(), decoded_value.clone());
+                .insert(key.to_string(), (encoding, decoded_value.clone()));
 
             result.value = decoded_value;
             return Ok(Some(result));
@@ -228,10 +229,18 @@ impl InMemoryK8sEtcd {
         Ok(None)
     }
 
-    pub(crate) async fn put(&self, key: &str, value: Vec<u8>) {
-        self.etcd_keyvalue_hashmap.lock().await.insert(key.to_string(), value.clone());
+    pub(crate) async fn put(&self, key: &str, value: Vec<u8>) -> Result<()> {
+        let mut hashmap = self.etcd_keyvalue_hashmap.lock().await;
+
+        // Only put if the key already exists in the cache, preserving the encoding
+        let (encoding, _) = hashmap.get(key).context(format!("key '{}' not found in cache", key))?;
+        let encoding = encoding.clone(); // Clone the encoding
+        hashmap.insert(key.to_string(), (encoding, value.clone()));
+        drop(hashmap); // Release the lock early
+
         self.deleted_keys.lock().await.remove(key);
         self.edited.lock().await.insert(key.to_string(), value);
+        Ok(())
     }
 
     pub(crate) async fn list_keys(&self, resource_kind: &str) -> Result<Vec<String>> {
@@ -337,6 +346,7 @@ pub(crate) async fn get_etcd_json(client: &InMemoryK8sEtcd, k8slocation: &K8sRes
 pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sResourceLocation, value: Value) -> Result<()> {
     client
         .put(&k8slocation.as_etcd_key(), serde_json::to_string(&value)?.as_bytes().into())
-        .await;
+        .await
+        .context("putting in etcd")?;
     Ok(())
 }
