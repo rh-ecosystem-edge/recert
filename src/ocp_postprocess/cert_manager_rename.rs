@@ -1,8 +1,4 @@
-use crate::{
-    cnsanreplace::CnSanReplaceRules,
-    k8s_etcd::InMemoryK8sEtcd,
-    ocp_postprocess::delete_all,
-};
+use crate::{cnsanreplace::CnSanReplaceRules, k8s_etcd::InMemoryK8sEtcd, ocp_postprocess::delete_all};
 use anyhow::{Context, Result};
 use futures_util::future::join_all;
 use std::sync::Arc;
@@ -30,13 +26,11 @@ pub(crate) async fn fix_cert_manager_certificates(
             .with_context(|| format!("getting cert-manager certificate {}", key))?
             .with_context(|| format!("cert-manager certificate {} disappeared", key))?;
 
-        let mut value: serde_json::Value = serde_json::from_slice(&etcd_result.value)
-            .with_context(|| format!("parsing cert-manager certificate {}", key))?;
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&etcd_result.value).with_context(|| format!("parsing cert-manager certificate {}", key))?;
 
         if apply_cn_san_replace_to_certificate(&mut value, cn_san_replace_rules) {
-            etcd_client
-                .put(&key, serde_json::to_string(&value)?.as_bytes().into())
-                .await;
+            etcd_client.put(&key, serde_json::to_string(&value)?.as_bytes().into()).await;
         }
 
         Ok(())
@@ -58,10 +52,7 @@ pub(crate) async fn fix_cert_manager_certificates(
 
 /// Apply CN/SAN replacement rules to a cert-manager Certificate CR JSON value.
 /// Updates spec.commonName and spec.dnsNames fields. Returns true if any modifications were made.
-fn apply_cn_san_replace_to_certificate(
-    value: &mut serde_json::Value,
-    cn_san_replace_rules: &CnSanReplaceRules,
-) -> bool {
+fn apply_cn_san_replace_to_certificate(value: &mut serde_json::Value, cn_san_replace_rules: &CnSanReplaceRules) -> bool {
     let mut modified = false;
 
     // Fix spec.commonName
@@ -141,15 +132,9 @@ mod tests {
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
 
         assert!(modified);
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
         // dnsNames should be unchanged
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(),
-            "other.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(), "other.example.com");
     }
 
     #[test]
@@ -161,19 +146,10 @@ mod tests {
 
         assert!(modified);
         // commonName should be unchanged
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "other.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "other.example.com");
         // First dnsName should be replaced, second unchanged
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(),
-            "alt.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(), "target.example.com");
+        assert_eq!(cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(), "alt.example.com");
     }
 
     #[test]
@@ -184,18 +160,9 @@ mod tests {
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
 
         assert!(modified);
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(),
-            "other.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
+        assert_eq!(cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(), "target.example.com");
+        assert_eq!(cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(), "other.example.com");
     }
 
     #[test]
@@ -214,10 +181,7 @@ mod tests {
     fn test_exact_match_only() {
         // CnSanReplaceRules::replace() does exact string matching, not substring
         let rules = make_rules(&[("seed.example.com", "target.example.com")]);
-        let mut cert = make_certificate(
-            "prefix.seed.example.com",
-            &["sub.seed.example.com", "seed.example.com.suffix"],
-        );
+        let mut cert = make_certificate("prefix.seed.example.com", &["sub.seed.example.com", "seed.example.com.suffix"]);
         let original = cert.clone();
 
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
@@ -232,26 +196,17 @@ mod tests {
             ("seed.example.com", "target.example.com"),
             ("api.seed.cluster.local", "api.target.cluster.local"),
         ]);
-        let mut cert = make_certificate(
-            "seed.example.com",
-            &["api.seed.cluster.local", "other.example.com"],
-        );
+        let mut cert = make_certificate("seed.example.com", &["api.seed.cluster.local", "other.example.com"]);
 
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
 
         assert!(modified);
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
         assert_eq!(
             cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(),
             "api.target.cluster.local"
         );
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(),
-            "other.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/dnsNames/1").unwrap().as_str().unwrap(), "other.example.com");
     }
 
     #[test]
@@ -270,10 +225,7 @@ mod tests {
 
         assert!(modified);
         assert!(cert.pointer("/spec/commonName").is_none());
-        assert_eq!(
-            cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/dnsNames/0").unwrap().as_str().unwrap(), "target.example.com");
     }
 
     #[test]
@@ -291,10 +243,7 @@ mod tests {
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
 
         assert!(modified);
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
         assert!(cert.pointer("/spec/dnsNames").is_none());
     }
 
@@ -306,10 +255,7 @@ mod tests {
         let modified = apply_cn_san_replace_to_certificate(&mut cert, &rules);
 
         assert!(modified);
-        assert_eq!(
-            cert.pointer("/spec/commonName").unwrap().as_str().unwrap(),
-            "target.example.com"
-        );
+        assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
     }
 
     #[test]
