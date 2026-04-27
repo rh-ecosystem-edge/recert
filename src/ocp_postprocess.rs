@@ -1057,4 +1057,3 @@ pub(crate) async fn chrony_config_rename(
 
     Ok(())
 }
-
