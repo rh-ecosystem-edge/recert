@@ -24,10 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [1.56.0, stable, beta]
+        rust: [1.80.0, stable, beta]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust}}
@@ -51,12 +51,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
       - name: Enable type layout randomization
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout\ --cfg=randomize_layout >> $GITHUB_ENV
+      - run: cargo check
+        env:
+          RUSTFLAGS: --cfg procmacro2_nightly_testing ${{env.RUSTFLAGS}}
       - run: cargo test
       - run: cargo test --no-default-features
       - run: cargo test --no-default-features --test features -- --ignored make_sure_no_proc_macro # run the ignored test to make sure the `proc-macro` feature is disabled
@@ -73,7 +76,52 @@ jobs:
       - name: RUSTFLAGS='-Z allow-features=' cargo test
         run: cargo test
         env:
-          RUSTFLAGS: -Z allow-features= ${{env.RUSTFLAGS}}
+          RUSTFLAGS: -Z allow-features= --cfg procmacro2_backtrace ${{env.RUSTFLAGS}}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cargo.lock
+          path: Cargo.lock
+        continue-on-error: true
+
+  layout:
+    name: Layout
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - run: cargo test --test test_size
+      - run: cargo test --test test_size --features span-locations
+      - run: cargo test --test test_size --no-default-features
+      - run: cargo test --test test_size --no-default-features --features span-locations
+
+  msrv:
+    name: Rust 1.60.0
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.60.0
+        with:
+          components: rust-src
+      - run: cargo check
+      - run: cargo check --no-default-features
+      - run: cargo check --features span-locations
+      - name: RUSTFLAGS='--cfg procmacro2_semver_exempt' cargo check
+        run: cargo check
+        env:
+          RUSTFLAGS: --cfg procmacro2_semver_exempt ${{env.RUSTFLAGS}}
+      - name: RUSTFLAGS='--cfg procmacro2_semver_exempt' cargo check --no-default-features
+        run: cargo check --no-default-features
+        env:
+          RUSTFLAGS: --cfg procmacro2_semver_exempt ${{env.RUSTFLAGS}}
 
   minimal:
     name: Minimal versions
@@ -82,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo generate-lockfile -Z minimal-versions
       - run: cargo check --locked
@@ -94,11 +142,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           target: wasm32-unknown-unknown
           components: rust-src
+      - name: Ignore WebAssembly linker warning
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Alinker_messages >> $GITHUB_ENV
       - run: cargo test --target wasm32-unknown-unknown --no-run
 
   fuzz:
@@ -108,7 +158,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
@@ -117,7 +167,12 @@ jobs:
       - run: cargo check --no-default-features --features afl
         working-directory: fuzz
       - uses: dtolnay/install@honggfuzz
-      - run: sudo apt-get install binutils-dev libunwind-dev
+      - name: Run apt install binutils-dev libunwind-dev
+        run: |
+          sudo sed -i 's/^update_initramfs=yes$/update_initramfs=no/' /etc/initramfs-tools/update-initramfs.conf
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update
+          sudo apt-get install binutils-dev libunwind-dev
       - run: cargo hfuzz build --no-default-features --features honggfuzz
         working-directory: fuzz
 
@@ -130,7 +185,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -Dwarnings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
@@ -143,7 +198,7 @@ jobs:
     if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy, rust-src
@@ -157,7 +212,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@miri
       - run: cargo miri setup
       - run: cargo miri test
@@ -170,7 +225,8 @@ jobs:
     if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
       - uses: dtolnay/install@cargo-outdated
       - run: cargo outdated --workspace --exit-code 1
       - run: cargo outdated --manifest-path fuzz/Cargo.toml --exit-code 1
