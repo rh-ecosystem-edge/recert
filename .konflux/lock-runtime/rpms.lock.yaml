@@ -81,20 +81,20 @@ arches:
     name: libutempter
     evr: 1.2.1-6.el9
     sourcerpm: libutempter-1.2.1-6.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-8.7p1-48.el9_7.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-8.7p1-49.el9_7.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
-    size: 475180
-    checksum: sha256:f9167df3110f931cded7e8500f501d1c0693bfbdc9cf92a77cde95f07a47f3c2
+    size: 475908
+    checksum: sha256:a859879d3067c54a6a0d213a3e8d6293d09cab06a69f5d242bb22c5a2b3c2ee4
     name: openssh
-    evr: 8.7p1-48.el9_7
-    sourcerpm: openssh-8.7p1-48.el9_7.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-clients-8.7p1-48.el9_7.x86_64.rpm
+    evr: 8.7p1-49.el9_7
+    sourcerpm: openssh-8.7p1-49.el9_7.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-clients-8.7p1-49.el9_7.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
-    size: 735877
-    checksum: sha256:32685f9fc5a8b89d35da65d808f79530b49dba570ad2f3a5e26dba29324c9845
+    size: 737400
+    checksum: sha256:e69818f7a450a92dc507243bdff7a7bf33143ed3fcfdc80da7d54a519a784e6c
     name: openssh-clients
-    evr: 8.7p1-48.el9_7
-    sourcerpm: openssh-8.7p1-48.el9_7.src.rpm
+    evr: 8.7p1-49.el9_7
+    sourcerpm: openssh-8.7p1-49.el9_7.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssl-3.5.1-7.el9_7.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 1565197
