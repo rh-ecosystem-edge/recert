@@ -1,5 +1,8 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "github>konflux-ci/mintmaker-presets:refresh-rpm-lockfiles"
+    ],
     "automergeStrategy": "rebase",
     "automergeType": "pr",
     "customManagers": [
@@ -21,23 +24,14 @@
         "packageRules": [
             {
                 "addLabels": [
-                    "approved",
-                    "lgtm"
+                    "allow-automatic-merge"
                 ],
                 "additionalBranchPrefix": "telco5g-konflux-",
-                "autoApprove": true,
-                "automerge": true,
-                "matchFileNames": [
-                    "telco5g-konflux/**"
+                "matchPackageNames": [
+                    "https://github.com/openshift-kni/telco5g-konflux.git"
                 ],
                 "schedule": [
                     "at any time"
-                ]
-            },
-            {
-                "additionalBranchPrefix": "telco5g-konflux-",
-                "matchFileNames": [
-                    "telco5g-konflux/**"
                 ]
             }
         ]
@@ -48,11 +42,8 @@
     "packageRules": [
         {
             "addLabels": [
-                "approved",
-                "lgtm"
+                "allow-automatic-merge"
             ],
-            "autoApprove": true,
-            "automerge": true,
             "enabled": true,
             "ignoreTests": false,
             "includePaths": [
@@ -64,7 +55,6 @@
             "matchUpdateTypes": [
                 "digest"
             ],
-            "platformAutomerge": true,
             "schedule": [
                 "at any time"
             ]
@@ -79,6 +69,9 @@
     "prConcurrentLimit": 0,
     "pruneBranchAfterAutomerge": true,
     "tekton": {
+        "addLabels": [
+            "allow-automatic-merge"
+        ],
         "enabled": true,
         "ignoreTests": false,
         "includePaths": [
