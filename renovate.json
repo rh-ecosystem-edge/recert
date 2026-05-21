@@ -60,6 +60,14 @@
             ]
         },
         {
+            "addLabels": [
+                "allow-automatic-merge"
+            ],
+            "matchManagers": [
+                "rpm-lockfile"
+            ]
+        },
+        {
             "enabled": false,
             "matchUpdateTypes": [
                 "minor"
