@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 cd "$SCRIPT_DIR"
 
-RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.22.0-ec.0-x86_64
+RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:5.0.0-ec.0-x86_64
 BACKUP_IMAGE=${1:-quay.io/otuchfel/ostbackup:seed}
 AUTH_FILE=${AUTH_FILE:-~/seed-pull-secret}
 

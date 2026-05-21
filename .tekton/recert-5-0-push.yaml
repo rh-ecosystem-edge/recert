@@ -17,7 +17,7 @@ metadata:
         '.konflux/lock-build/***'.pathChanged() ||
         '.konflux/lock-runtime/***'.pathChanged() ||
         '.tekton/build-pipeline.yaml'.pathChanged() ||
-        '.tekton/recert-4-22-push.yaml'.pathChanged() ||
+        '.tekton/recert-5-0-push.yaml'.pathChanged() ||
         'build.rs'.pathChanged() ||
         'Cargo.lock'.pathChanged() ||
         'Cargo.toml'.pathChanged() ||
@@ -37,10 +37,10 @@ metadata:
       )
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: lifecycle-agent-4-22
-    appstudio.openshift.io/component: recert-4-22
+    appstudio.openshift.io/application: lifecycle-agent-5-0
+    appstudio.openshift.io/component: recert-5-0
     pipelines.appstudio.openshift.io/type: build
-  name: recert-4-22-on-push
+  name: recert-5-0-on-push
   namespace: telco-5g-tenant
 spec:
   params:
@@ -49,7 +49,7 @@ spec:
     - name: revision
       value: '{{revision}}'
     - name: output-image
-      value: quay.io/redhat-user-workloads/telco-5g-tenant/recert-4-22:{{revision}}
+      value: quay.io/redhat-user-workloads/telco-5g-tenant/recert-5-0:{{revision}}
     - name: build-platforms
       value:
         - linux/x86_64
@@ -76,7 +76,7 @@ spec:
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
-    serviceAccountName: build-pipeline-recert-4-22
+    serviceAccountName: build-pipeline-recert-5-0
   workspaces:
     - name: git-auth
       secret:
