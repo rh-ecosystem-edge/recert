@@ -424,6 +424,9 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
             r#"${NODE_{hostname_safe}_ETCD_NAME""#,
         ),
         ("${NODE_{original_hostname_safe}_IP", "${NODE_{hostname_safe}_IP"),
+        ("NODE_{original_hostname_safe}_ETCD_URL_HOST", "NODE_{hostname_safe}_ETCD_URL_HOST"),
+        ("NODE_{original_hostname_safe}_ETCD_NAME", "NODE_{hostname_safe}_ETCD_NAME"),
+        ("NODE_{original_hostname_safe}_IP", "NODE_{hostname_safe}_IP"),
         (
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
@@ -517,25 +520,8 @@ pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, host
 }
 
 fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
-    'hostname_args_replace: {
-        let args = container
-            .pointer_mut("/command")
-            .context("command not found")?
-            .as_array_mut()
-            .context("command not an array")?;
-
-        ensure!(!args.is_empty(), "expected at least one arg in etcd static pod container");
-
-        let shell_arg = args
-            .iter_mut()
-            .find_map(|arg| arg.as_str()?.starts_with("#!/bin/sh\n").then_some(arg));
-
-        let shell_arg = match shell_arg {
-            None => break 'hostname_args_replace,
-            Some(shell_arg) => shell_arg,
-        };
-
-        for (pattern, replacement) in [
+    {
+        let patterns = [
             ("NODE_{original_hostname_safe}_ETCD_URL_HOST", "NODE_{hostname_safe}_ETCD_URL_HOST"),
             ("NODE_{original_hostname_safe}_ETCD_NAME", "NODE_{hostname_safe}_ETCD_NAME"),
             ("NODE_{original_hostname_safe}_IP", "NODE_{hostname_safe}_IP"),
@@ -564,22 +550,39 @@ fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str,
                 "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
                 "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
             ),
-        ] {
-            let pattern = pattern
-                .replace("{original_hostname}", original_hostname)
-                .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+        ];
 
-            let replacement = replacement
-                .replace("{hostname}", hostname)
-                .replace("{hostname_safe}", &env_var_safe(hostname));
+        ensure!(
+            container
+                .pointer("/command")
+                .and_then(|c| c.as_array())
+                .map_or(false, |a| !a.is_empty()),
+            "expected at least one arg in etcd static pod container"
+        );
 
-            *shell_arg = serde_json::Value::String(
-                shell_arg
-                    .as_str()
-                    .context("arg not string")?
-                    .replace(&pattern, &replacement)
-                    .to_string(),
-            );
+        for field in ["/command", "/args"] {
+            let Some(values) = container.pointer_mut(field).and_then(|v| v.as_array_mut()) else {
+                continue;
+            };
+
+            for arg in values.iter_mut() {
+                let Some(arg_str) = arg.as_str() else { continue };
+                let mut replaced = arg_str.to_string();
+
+                for (pattern, replacement) in &patterns {
+                    let pattern = pattern
+                        .replace("{original_hostname}", original_hostname)
+                        .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
+
+                    let replacement = replacement
+                        .replace("{hostname}", hostname)
+                        .replace("{hostname_safe}", &env_var_safe(hostname));
+
+                    replaced = replaced.replace(&pattern, &replacement);
+                }
+
+                *arg = serde_json::Value::String(replaced);
+            }
         }
     }
 
