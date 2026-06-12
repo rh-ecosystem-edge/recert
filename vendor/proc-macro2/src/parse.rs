@@ -1,5 +1,5 @@
 use crate::fallback::{
-    is_ident_continue, is_ident_start, Group, LexError, Literal, Span, TokenStream,
+    self, is_ident_continue, is_ident_start, Group, Ident, LexError, Literal, Span, TokenStream,
     TokenStreamBuilder,
 };
 use crate::{Delimiter, Punct, Spacing, TokenTree};
@@ -8,13 +8,13 @@ use core::str::{Bytes, CharIndices, Chars};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub(crate) struct Cursor<'a> {
-    pub rest: &'a str,
+    pub(crate) rest: &'a str,
     #[cfg(span_locations)]
-    pub off: u32,
+    pub(crate) off: u32,
 }
 
 impl<'a> Cursor<'a> {
-    pub fn advance(&self, bytes: usize) -> Cursor<'a> {
+    pub(crate) fn advance(&self, bytes: usize) -> Cursor<'a> {
         let (_front, rest) = self.rest.split_at(bytes);
         Cursor {
             rest,
@@ -23,22 +23,22 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub fn starts_with(&self, s: &str) -> bool {
+    pub(crate) fn starts_with(&self, s: &str) -> bool {
         self.rest.starts_with(s)
     }
 
-    pub fn starts_with_char(&self, ch: char) -> bool {
+    pub(crate) fn starts_with_char(&self, ch: char) -> bool {
         self.rest.starts_with(ch)
     }
 
-    pub fn starts_with_fn<Pattern>(&self, f: Pattern) -> bool
+    pub(crate) fn starts_with_fn<Pattern>(&self, f: Pattern) -> bool
     where
         Pattern: FnMut(char) -> bool,
     {
         self.rest.starts_with(f)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.rest.is_empty()
     }
 
@@ -300,7 +300,8 @@ fn ident_any(input: Cursor) -> PResult<crate::Ident> {
     let (rest, sym) = ident_not_raw(rest)?;
 
     if !raw {
-        let ident = crate::Ident::new(sym, crate::Span::call_site());
+        let ident =
+            crate::Ident::_new_fallback(Ident::new_unchecked(sym, fallback::Span::call_site()));
         return Ok((rest, ident));
     }
 
@@ -309,7 +310,8 @@ fn ident_any(input: Cursor) -> PResult<crate::Ident> {
         _ => {}
     }
 
-    let ident = crate::Ident::_new_raw(sym, crate::Span::call_site());
+    let ident =
+        crate::Ident::_new_fallback(Ident::new_raw_unchecked(sym, fallback::Span::call_site()));
     Ok((rest, ident))
 }
 
@@ -855,7 +857,7 @@ fn digits(mut input: Cursor) -> Result<Cursor, Reject> {
                 continue;
             }
             _ => break,
-        };
+        }
         len += 1;
         empty = false;
     }
@@ -869,7 +871,10 @@ fn digits(mut input: Cursor) -> Result<Cursor, Reject> {
 fn punct(input: Cursor) -> PResult<Punct> {
     let (rest, ch) = punct_char(input)?;
     if ch == '\'' {
-        if ident_any(rest)?.0.starts_with_char('\'') {
+        let (after_lifetime, _ident) = ident_any(rest)?;
+        if after_lifetime.starts_with_char('\'')
+            || (after_lifetime.starts_with_char('#') && !rest.starts_with("r#"))
+        {
             Err(Reject)
         } else {
             Ok((rest, Punct::new('\'', Spacing::Joint)))
@@ -908,12 +913,13 @@ fn doc_comment<'a>(input: Cursor<'a>, trees: &mut TokenStreamBuilder) -> PResult
     #[cfg(span_locations)]
     let lo = input.off;
     let (rest, (comment, inner)) = doc_comment_contents(input)?;
-    let span = crate::Span::_new_fallback(Span {
+    let fallback_span = Span {
         #[cfg(span_locations)]
         lo,
         #[cfg(span_locations)]
         hi: rest.off,
-    });
+    };
+    let span = crate::Span::_new_fallback(fallback_span);
 
     let mut scan_for_bare_cr = comment;
     while let Some(cr) = scan_for_bare_cr.find('\r') {
@@ -934,10 +940,10 @@ fn doc_comment<'a>(input: Cursor<'a>, trees: &mut TokenStreamBuilder) -> PResult
         trees.push_token_from_parser(TokenTree::Punct(bang));
     }
 
-    let doc_ident = crate::Ident::new("doc", span);
+    let doc_ident = crate::Ident::_new_fallback(Ident::new_unchecked("doc", fallback_span));
     let mut equal = Punct::new('=', Spacing::Alone);
     equal.set_span(span);
-    let mut literal = crate::Literal::string(comment);
+    let mut literal = crate::Literal::_new_fallback(Literal::string(comment));
     literal.set_span(span);
     let mut bracketed = TokenStreamBuilder::with_capacity(3);
     bracketed.push_token_from_parser(TokenTree::Ident(doc_ident));
