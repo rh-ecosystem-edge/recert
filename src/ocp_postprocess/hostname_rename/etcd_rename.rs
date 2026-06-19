@@ -248,12 +248,7 @@ pub(crate) async fn fix_etcd_pod(etcd_client: &Arc<InMemoryK8sEtcd>, original_ho
             .list_keys("configmaps/openshift-etcd/etcd-pod")
             .await?
             .into_iter()
-            .chain(
-                etcd_client
-                    .list_keys("configmaps/openshift-etcd/restore-etcd-pod")
-                    .await?
-                    .into_iter(),
-            )
+            .chain(etcd_client.list_keys("configmaps/openshift-etcd/restore-etcd-pod").await?)
             .map(|key| async move {
                 let etcd_result = etcd_client
                     .get(key.clone())

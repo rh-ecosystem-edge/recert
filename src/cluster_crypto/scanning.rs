@@ -275,24 +275,24 @@ pub(crate) async fn scan_filesystem_directory(dir: &Path, external_certs: Extern
         file_utils::globvec(dir, "**/*.pem")?
             .into_iter()
             // Other classic PEM extensions
-            .chain(file_utils::globvec(dir, "**/*.crt")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/*.key")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/*.pub")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/*.crt")?)
+            .chain(file_utils::globvec(dir, "**/*.key")?)
+            .chain(file_utils::globvec(dir, "**/*.pub")?)
             // Also scan for the .mcdorig versions of the above files, which are sometimes created
             // by machine-config-daemon
-            .chain(file_utils::globvec(dir, "**/*.crt.mcdorig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/*.key.mcdorig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/*.pub.mcdorig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/*.crt.mcdorig")?)
+            .chain(file_utils::globvec(dir, "**/*.key.mcdorig")?)
+            .chain(file_utils::globvec(dir, "**/*.pub.mcdorig")?)
             // A file-system copy of machineconfig objects found in /etc/machine-config-daemon/currentconfig
-            .chain(file_utils::globvec(dir, "**/currentconfig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/currentconfig")?)
             // A file used by MCS
-            .chain(file_utils::globvec(dir, "**/mcs-machine-config-content.json")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/mcs-machine-config-content.json")?)
             // The various names for kubeconfig files
-            .chain(file_utils::globvec(dir, "**/*kubeconfig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/*kubeconfig")?)
+            .chain(file_utils::globvec(dir, "**/kubeconfig")?)
+            .chain(file_utils::globvec(dir, "**/kubeConfig")?)
             // JWT tokens can be found in files named "token"
-            .chain(file_utils::globvec(dir, "**/token")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/token")?)
             // Skip empty-dir volumes, they contain no meaningful crypto and should just be
             // deleted. But they sometimes contain leftover crypto that trips up recert because it
             // doesn't actually belong to the cluster

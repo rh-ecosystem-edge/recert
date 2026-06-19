@@ -12,7 +12,7 @@ pub(crate) async fn fix_filesystem_kcm_pods(generated_infra_id: &str, dir: &Path
     join_all(
         file_utils::globvec(dir, "**/kube-controller-manager-pod.yaml")?
             .into_iter()
-            .chain(file_utils::globvec(dir, "**/kube-controller-manager-pod/pod.yaml")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/kube-controller-manager-pod/pod.yaml")?)
             .map(|file_path| {
                 let kcm_pod_path = file_path.clone();
                 let generated_infra_id = generated_infra_id.to_string();
@@ -229,8 +229,8 @@ pub(crate) async fn fix_filesystem_kubeconfigs(cluster_name: &str, cluster_domai
     join_all(
         file_utils::globvec(dir, "**/*kubeconfig")?
             .into_iter()
-            .chain(file_utils::globvec(dir, "**/kubeconfig")?.into_iter())
-            .chain(file_utils::globvec(dir, "**/kubeConfig")?.into_iter())
+            .chain(file_utils::globvec(dir, "**/kubeconfig")?)
+            .chain(file_utils::globvec(dir, "**/kubeConfig")?)
             // dedup to avoid races
             .collect::<HashSet<_>>()
             .into_iter()

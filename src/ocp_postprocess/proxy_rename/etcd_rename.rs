@@ -151,13 +151,13 @@ pub(crate) async fn fix_containers(etcd_client: &InMemoryK8sEtcd, proxy: &Proxy)
             .list_keys("deployments/")
             .await?
             .into_iter()
-            .chain(etcd_client.list_keys("statefulsets/").await?.into_iter())
-            .chain(etcd_client.list_keys("daemonsets/").await?.into_iter())
-            .chain(etcd_client.list_keys("jobs/").await?.into_iter())
-            .chain(etcd_client.list_keys("cronjobs/").await?.into_iter())
-            .chain(etcd_client.list_keys("monitoring.coreos.com/alertmanagers/").await?.into_iter())
-            .chain(etcd_client.list_keys("monitoring.coreos.com/prometheuses/").await?.into_iter())
-            .chain(etcd_client.list_keys("controllerrevisions/").await?.into_iter())
+            .chain(etcd_client.list_keys("statefulsets/").await?)
+            .chain(etcd_client.list_keys("daemonsets/").await?)
+            .chain(etcd_client.list_keys("jobs/").await?)
+            .chain(etcd_client.list_keys("cronjobs/").await?)
+            .chain(etcd_client.list_keys("monitoring.coreos.com/alertmanagers/").await?)
+            .chain(etcd_client.list_keys("monitoring.coreos.com/prometheuses/").await?)
+            .chain(etcd_client.list_keys("controllerrevisions/").await?)
             .map(|key| async move {
                 let etcd_result = etcd_client
                     .get(key.clone())
@@ -345,8 +345,7 @@ pub(crate) async fn fix_configmap_pods(etcd_client: &InMemoryK8sEtcd, proxy: &Pr
             .chain(
                 etcd_client
                     .list_keys("configmaps/openshift-kube-controller-manager/kube-controller-manager-pod")
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
             .map(|key| async move {
                 let etcd_result = etcd_client
