@@ -356,8 +356,10 @@ impl CertKeyPair {
                 )?
                 .as_bytes()
                 .to_vec(),
+                None,
             )
-            .await;
+            .await
+            .context("putting in etcd")?;
 
         Ok(())
     }

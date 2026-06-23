@@ -30,7 +30,10 @@ pub(crate) async fn fix_cert_manager_certificates(
             serde_json::from_slice(&etcd_result.value).with_context(|| format!("parsing cert-manager certificate {}", key))?;
 
         if apply_cn_san_replace_to_certificate(&mut value, cn_san_replace_rules) {
-            etcd_client.put(&key, serde_json::to_string(&value)?.as_bytes().into()).await;
+            etcd_client
+                .put(&key, serde_json::to_string(&value)?.as_bytes().into(), None)
+                .await
+                .context("putting in etcd")?;
         }
 
         Ok(())
