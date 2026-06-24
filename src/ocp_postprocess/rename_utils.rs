@@ -556,7 +556,7 @@ fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str,
             container
                 .pointer("/command")
                 .and_then(|c| c.as_array())
-                .map_or(false, |a| !a.is_empty()),
+                .is_some_and(|a| !a.is_empty()),
             "expected at least one arg in etcd static pod container"
         );
 

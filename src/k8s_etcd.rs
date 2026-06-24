@@ -266,7 +266,7 @@ impl InMemoryK8sEtcd {
 
         let kubernetes_keys = self.get_keys_with_prefix(etcd_client, "/kubernetes.io", resource_kind).await?;
         let openshift_keys = self.get_keys_with_prefix(etcd_client, "/openshift.io", resource_kind).await?;
-        let mut keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys.into_iter()).collect();
+        let mut keys: Vec<_> = kubernetes_keys.into_iter().chain(openshift_keys).collect();
 
         // Filter out keys that are marked as deleted in our cache.
         let deleted = self.deleted_keys.lock().await;

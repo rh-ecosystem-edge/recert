@@ -20,8 +20,7 @@ async fn update_encryption_config(namespace: &str, etcd_client: &Arc<InMemoryK8s
             .chain(
                 etcd_client
                     .list_keys(&format!("secrets/openshift-config-managed/encryption-config-{}", namespace).to_string())
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
             .map(|key| async move {
                 let etcd_result = etcd_client

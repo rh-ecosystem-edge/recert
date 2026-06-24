@@ -36,21 +36,18 @@ pub(crate) async fn delete_resources(etcd_client: &Arc<InMemoryK8sEtcd>) -> Resu
             .chain(
                 etcd_client
                     .list_keys("controlplane.operator.openshift.io/podnetworkconnectivitychecks/")
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
             .chain(
                 etcd_client
                     .list_keys("configmaps/openshift-kube-controller-manager/cluster-policy-controller-lock")
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
-            .chain(etcd_client.list_keys("apiserver.openshift.io/apirequestcounts/").await?.into_iter())
+            .chain(etcd_client.list_keys("apiserver.openshift.io/apirequestcounts/").await?)
             .chain(
                 etcd_client
                     .list_keys("operator.openshift.io/ingresscontrollers/openshift-ingress-operator/default")
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
             .map(|key| async move {
                 etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
@@ -1011,8 +1008,7 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
             .chain(
                 etcd_client
                     .list_keys("configmaps/openshift-kube-scheduler/scheduler-kubeconfig")
-                    .await?
-                    .into_iter(),
+                    .await?,
             )
             .map(|key| async move {
                 let etcd_result = etcd_client
