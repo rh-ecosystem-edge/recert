@@ -67,6 +67,7 @@ prost-build = "0.12.1"
 
 [features]
 generate = []
+insecure_dev_only_unredacted_summary = []
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [package.metadata.vendor-filter]
