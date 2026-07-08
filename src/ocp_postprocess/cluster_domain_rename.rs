@@ -104,6 +104,9 @@ async fn fix_etcd_resources(
     )
     .await
     .context("fixing router-certs")?;
+    etcd_rename::fix_ingresscontroller_status_domain(etcd_client, cluster_domain)
+        .await
+        .context("fixing IngressController status domain")?;
     etcd_rename::fix_loadbalancer_serving_certkey(etcd_client, cluster_domain, "api", "external-loadbalancer-serving-certkey")
         .await
         .context("fixing external-loadbalancer-serving-certkey")?;
