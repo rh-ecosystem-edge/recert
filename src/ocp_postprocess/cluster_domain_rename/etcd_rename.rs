@@ -44,11 +44,6 @@ pub(crate) async fn delete_resources(etcd_client: &Arc<InMemoryK8sEtcd>) -> Resu
                     .await?,
             )
             .chain(etcd_client.list_keys("apiserver.openshift.io/apirequestcounts/").await?)
-            .chain(
-                etcd_client
-                    .list_keys("operator.openshift.io/ingresscontrollers/openshift-ingress-operator/default")
-                    .await?,
-            )
             .map(|key| async move {
                 etcd_client.delete(&key).await.context(format!("deleting {}", key))?;
                 Ok(())
@@ -158,6 +153,34 @@ pub(crate) async fn fix_router_certs(
     put_etcd_yaml(etcd_client, &k8s_resource_location, secret).await?;
     Ok(())
 }
+
+/// Update the IngressController CR's status.domain to the new cluster domain.
+/// Without this, the Ingress Operator reads the stale seed domain from
+/// status.domain, unpublishes the router certs, and regenerates them for the
+/// wrong domain — breaking the authentication operator's cert chain.
+pub(crate) async fn fix_ingresscontroller_status_domain(etcd_client: &Arc<InMemoryK8sEtcd>, cluster_domain: &str) -> Result<()> {
+    let k8s_resource_location = K8sResourceLocation::new(
+        Some("openshift-ingress-operator"),
+        "IngressController",
+        "default",
+        "operator.openshift.io/v1",
+    );
+    let mut ic = get_etcd_json(etcd_client, &k8s_resource_location)
+        .await?
+        .context("IngressController default not found")?;
+
+    let status = ic
+        .pointer_mut("/status")
+        .context("no /status in IngressController")?
+        .as_object_mut()
+        .context("status not an object")?;
+
+    status.insert("domain".to_string(), serde_json::Value::String(format!("apps.{}", cluster_domain)));
+
+    put_etcd_yaml(etcd_client, &k8s_resource_location, ic).await?;
+    Ok(())
+}
+
 
 pub(crate) async fn fix_oauth_client(
     etcd_client: &Arc<InMemoryK8sEtcd>,
