@@ -1,5 +1,5 @@
 use super::keys::PublicKey;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcder::Oid;
 use der::Decode;
@@ -74,15 +74,17 @@ impl TryFrom<&CapturedX509Certificate> for Certificate {
         Ok(Certificate {
             issuer: cert.issuer_name().user_friendly_str().unwrap_or("undecodable".to_string()),
             subject: cert.subject_name().user_friendly_str().unwrap_or("undecodable".to_string()),
-            public_key: match cert.key_algorithm().context("failed to get cert key algorithm")? {
-                x509_certificate::KeyAlgorithm::Rsa => PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(
-                    cert.to_public_key_der().context("parsing public key")?.as_bytes(),
-                )),
-                x509_certificate::KeyAlgorithm::Ecdsa(_) => {
-                    PublicKey::from_ec_cert_bytes(&bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes()))
-                        .context("converting EC key bytes")?
+            public_key: {
+                let algo = cert.key_algorithm().context("failed to get cert key algorithm")?;
+                match &algo {
+                    x509_certificate::KeyAlgorithm::Rsa => PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(
+                        cert.to_public_key_der().context("parsing public key")?.as_bytes(),
+                    )),
+                    _ => {
+                        let cert_bytes = bytes::Bytes::copy_from_slice(cert.encode_pem().as_bytes());
+                        PublicKey::from_cert_bytes(&cert_bytes, &algo).context("converting public key bytes")?
+                    }
                 }
-                x509_certificate::KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
             },
             cert: cert.clone(),
             sans: {

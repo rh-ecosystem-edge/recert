@@ -5,7 +5,7 @@ use std::{io::Write, process::Command};
 use x509_certificate::InMemorySigningKeyPair;
 
 pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
-    if let PublicKey::Ec(_) = public_key {
+    if let PublicKey::Ec(_) | PublicKey::Ed25519(_) = public_key {
         return Ok(false);
     };
 
@@ -85,7 +85,7 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
             bail!("ecdsa unsupported");
         }
         InMemorySigningKeyPair::Ed25519(_) => {
-            bail!("ed unsupported");
+            bail!("Ed25519 (EdDSA) JWT signing not supported — OCP uses RS256");
         }
         InMemorySigningKeyPair::Rsa(_rsa_key_pair, _bytes) => (
             private_key.jwt_key_id().context("calculating key id")?,
