@@ -181,7 +181,6 @@ pub(crate) async fn fix_ingresscontroller_status_domain(etcd_client: &Arc<InMemo
     Ok(())
 }
 
-
 pub(crate) async fn fix_oauth_client(
     etcd_client: &Arc<InMemoryK8sEtcd>,
     cluster_domain: &str,
