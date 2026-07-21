@@ -221,7 +221,7 @@ pub(crate) fn pubkey_pem_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+pub(crate) fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
     let mut child = StdCommand::new("openssl")
         .args(["pkcs8", "-topk8", "-nocrypt"])
         .stdin(Stdio::piped())
@@ -270,27 +270,38 @@ pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> 
     let mut temp_file = tempfile::NamedTempFile::new()?;
     temp_file.write_all(tbs_der)?;
 
+    let digest_flag = match &signing_key.in_memory_signing_key_pair {
+        InMemorySigningKeyPair::Ecdsa(_, EcdsaCurve::Secp384r1, _) => "-sha384",
+        InMemorySigningKeyPair::Ecdsa(_, EcdsaCurve::Secp256r1, _) | InMemorySigningKeyPair::Rsa(_, _) => "-sha256",
+        InMemorySigningKeyPair::Ed25519(_) => bail!("Ed25519 must use pkeyutl, not dgst"),
+    };
+
+    let temp_path = temp_file.path().to_str().context("getting temp file path")?;
+    let args: Vec<&str> = vec!["dgst", digest_flag, "-sign", "/dev/stdin", temp_path];
+
     let mut command = StdCommand::new("openssl")
-        .args([
-            "dgst",
-            "-sha256",
-            "-sign",
-            "/dev/stdin",
-            temp_file.path().to_str().context("getting temp file path")?,
-        ])
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
-        .context("openssl dgst")?;
+        .context("openssl sign")?;
 
     command
         .stdin
         .take()
-        .context("getting openssl dgst stdin")?
+        .context("getting openssl stdin")?
         .write_all(signing_key.pkcs8_pem.as_slice())
-        .context("writing to openssl dgst stdin")?;
+        .context("writing to openssl stdin")?;
 
-    Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
+    let output = command.wait_with_output().context("waiting for openssl sign")?;
+    ensure!(
+        output.status.success(),
+        "openssl sign failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(output.stdout)
 }
 
 pub(crate) fn sha256(data: &[u8]) -> Result<Vec<u8>> {
@@ -354,6 +365,8 @@ pub(crate) fn ensure_openssl_version() -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod test {
     #[test]
     fn test_kid() {
@@ -451,18 +464,144 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
         */
     }
 
-    #[test]
-    fn test_key_from_pem_ec_sec1() {
+    use std::io::Write;
+
+    fn generate_ec_sec1_pem(curve: &str) -> String {
         let output = std::process::Command::new("openssl")
-            .args(["ecparam", "-name", "prime256v1", "-genkey", "-noout"])
+            .args(["ecparam", "-name", curve, "-genkey", "-noout"])
             .output()
             .expect("failed to generate EC key");
         assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap()
+    }
 
-        let sec1_pem = String::from_utf8(output.stdout).unwrap();
+    fn sign_and_verify(signing_key: &super::SigningKey, verify_digest: &str) -> bool {
+        let data = b"test data to sign for verification";
+        let signature = super::sign(signing_key, data).expect("sign should succeed");
+        assert!(!signature.is_empty());
+
+        let pkcs8_der = pem::parse(&signing_key.pkcs8_pem).unwrap();
+        let pubkey_pem = super::pubkey_pem_from_pkcs8_der(pkcs8_der.contents()).unwrap();
+
+        let mut pub_file = tempfile::NamedTempFile::new().unwrap();
+        pub_file.write_all(&pubkey_pem).unwrap();
+
+        let mut sig_file = tempfile::NamedTempFile::new().unwrap();
+        sig_file.write_all(&signature).unwrap();
+
+        let mut data_file = tempfile::NamedTempFile::new().unwrap();
+        data_file.write_all(data).unwrap();
+
+        std::process::Command::new("openssl")
+            .args([
+                "dgst",
+                verify_digest,
+                "-verify",
+                pub_file.path().to_str().unwrap(),
+                "-signature",
+                sig_file.path().to_str().unwrap(),
+                data_file.path().to_str().unwrap(),
+            ])
+            .output()
+            .expect("openssl verify failed")
+            .status
+            .success()
+    }
+
+    fn assert_key_from_pem_ec_sec1(curve: &str) {
+        let sec1_pem = generate_ec_sec1_pem(curve);
         assert!(sec1_pem.contains("BEGIN EC PRIVATE KEY"));
 
         let signing_key = super::key_from_pem(&sec1_pem).expect("key_from_pem should accept SEC1 EC keys");
         assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+    }
+
+    fn assert_key_from_pem_ec_pkcs8(curve: &str) {
+        let sec1_pem = generate_ec_sec1_pem(curve);
+        let pkcs8_pem = super::ec_sec1_to_pkcs8_pem(&sec1_pem).expect("conversion failed");
+        assert!(pkcs8_pem.contains("BEGIN PRIVATE KEY"));
+
+        let signing_key = super::key_from_pem(&pkcs8_pem).expect("key_from_pem should accept PKCS#8 EC keys");
+        assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+    }
+
+    fn assert_ec_sec1_to_pkcs8_pem_direct(curve: &str) {
+        let sec1_pem = generate_ec_sec1_pem(curve);
+        let pkcs8_pem = super::ec_sec1_to_pkcs8_pem(&sec1_pem).expect("ec_sec1_to_pkcs8_pem failed");
+        assert!(pkcs8_pem.contains("BEGIN PRIVATE KEY"));
+        assert!(!pkcs8_pem.contains("BEGIN EC PRIVATE KEY"));
+    }
+
+    #[test]
+    fn test_key_from_pem_ec_sec1() {
+        assert_key_from_pem_ec_sec1("prime256v1");
+    }
+
+    #[test]
+    fn test_key_from_pem_ec_sec1_p384() {
+        assert_key_from_pem_ec_sec1("secp384r1");
+    }
+
+    #[test]
+    fn test_key_from_pem_ec_pkcs8_p256() {
+        assert_key_from_pem_ec_pkcs8("prime256v1");
+    }
+
+    #[test]
+    fn test_key_from_pem_ec_pkcs8_p384() {
+        assert_key_from_pem_ec_pkcs8("secp384r1");
+    }
+
+    #[test]
+    fn test_sign_ec_p256() {
+        let key = super::key_from_pem(&generate_ec_sec1_pem("prime256v1")).unwrap();
+        assert!(sign_and_verify(&key, "-sha256"));
+    }
+
+    #[test]
+    fn test_sign_ec_p384() {
+        let key = super::key_from_pem(&generate_ec_sec1_pem("secp384r1")).unwrap();
+        assert!(sign_and_verify(&key, "-sha384"));
+    }
+
+    #[test]
+    fn test_sign_ec_p384_fails_sha256_verify() {
+        let key = super::key_from_pem(&generate_ec_sec1_pem("secp384r1")).unwrap();
+        assert!(!sign_and_verify(&key, "-sha256"), "P-384 signature must NOT verify under SHA-256");
+    }
+
+    #[test]
+    fn test_sign_rsa() {
+        let key = super::generate_rsa_key(2048).expect("generate_rsa_key failed");
+        assert!(sign_and_verify(&key, "-sha256"));
+    }
+
+    #[test]
+    fn test_ec_sec1_to_pkcs8_pem_p256() {
+        assert_ec_sec1_to_pkcs8_pem_direct("prime256v1");
+    }
+
+    #[test]
+    fn test_ec_sec1_to_pkcs8_pem_p384() {
+        assert_ec_sec1_to_pkcs8_pem_direct("secp384r1");
+    }
+
+    #[test]
+    fn test_ec_sec1_to_pkcs8_pem_garbage() {
+        let result = super::ec_sec1_to_pkcs8_pem("not a valid PEM");
+        assert!(result.is_err(), "garbage input should produce an error");
+    }
+
+    #[test]
+    fn test_key_from_pem_unknown_tag() {
+        let pem = "-----BEGIN UNKNOWN KEY-----\nABC=\n-----END UNKNOWN KEY-----\n";
+        let result = super::key_from_pem(pem);
+        assert!(result.is_err(), "unknown PEM tag should produce an error");
+    }
+
+    #[test]
+    fn test_pubkey_pem_from_pkcs8_der_garbage() {
+        let result = super::pubkey_pem_from_pkcs8_der(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert!(result.is_err(), "garbage DER should produce an error");
     }
 }

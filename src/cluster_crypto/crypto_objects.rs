@@ -8,12 +8,7 @@ use super::{
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
-use p256::SecretKey;
 use pkcs1::DecodeRsaPrivateKey;
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
 use x509_certificate::InMemorySigningKeyPair;
 
 #[allow(clippy::large_enum_variant)]
@@ -204,31 +199,9 @@ pub(crate) fn process_pem_rsa_private_key(pem: &pem::Pem) -> Result<Option<Crypt
 
 /// Given an EC private key PEM, record it in the appropriate data structures.
 pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
-    // First convert to pkcs#8 by shelling out to openssl pkcs8 -topk8 -nocrypt:
-    let mut command = Command::new("openssl")
-        .arg("pkcs8")
-        .arg("-topk8")
-        .arg("-nocrypt")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    command
-        .stdin
-        .take()
-        .context("failed to take openssl stdin pipe")?
-        .write_all(pem.to_string().as_bytes())?;
-
-    let output = command.wait_with_output()?;
-    let pem = pem::parse(output.stdout)?;
-
-    let key = pem.to_string().parse::<SecretKey>()?;
-    let public_key = key.public_key();
-
-    let private_part = PrivateKey::Ec(Bytes::copy_from_slice(pem.contents()));
-    let public_part = PublicKey::Ec(Bytes::copy_from_slice(public_key.to_string().as_bytes()));
-
-    Ok(Some((private_part, public_part).into()))
+    let pkcs8_pem_str = super::crypto_utils::ec_sec1_to_pkcs8_pem(&pem.to_string()).context("converting SEC1 to PKCS#8")?;
+    let pkcs8_pem = pem::parse(pkcs8_pem_str)?;
+    process_pem_private_key(&pkcs8_pem)
 }
 
 /// Given a certificate PEM, record it in the appropriate data structures.
@@ -256,8 +229,10 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn generate_ec_pkcs8_pem(curve: &str) -> Vec<u8> {
         let ecparam = Command::new("openssl")
@@ -266,23 +241,20 @@ mod tests {
             .expect("failed to run openssl ecparam");
         assert!(ecparam.status.success(), "ecparam failed");
 
-        let mut child = Command::new("openssl")
-            .args(["pkcs8", "-topk8", "-nocrypt"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("failed to spawn openssl pkcs8");
+        let sec1_pem = String::from_utf8(ecparam.stdout).expect("not UTF-8");
+        crate::cluster_crypto::crypto_utils::ec_sec1_to_pkcs8_pem(&sec1_pem)
+            .expect("SEC1 to PKCS#8 conversion failed")
+            .into_bytes()
+    }
 
-        child.stdin.take().unwrap().write_all(&ecparam.stdout).unwrap();
-
-        let output = child.wait_with_output().expect("pkcs8 conversion failed");
-        assert!(
-            output.status.success(),
-            "pkcs8 conversion failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        output.stdout
+    fn assert_is_ec_public_key_pem(public_key: &PublicKey) {
+        match public_key {
+            PublicKey::Ec(pem_bytes) => {
+                let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");
+                assert_eq!(pub_pem.tag(), "PUBLIC KEY");
+            }
+            _ => panic!("expected PublicKey::Ec"),
+        }
     }
 
     fn assert_ec_private_key_round_trips(curve: &str) {
@@ -301,13 +273,7 @@ mod tests {
                     }
                     _ => panic!("expected PrivateKey::Ec"),
                 }
-                match &public_key {
-                    PublicKey::Ec(pem_bytes) => {
-                        let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");
-                        assert_eq!(pub_pem.tag(), "PUBLIC KEY");
-                    }
-                    _ => panic!("expected PublicKey::Ec"),
-                }
+                assert_is_ec_public_key_pem(&public_key);
             }
             _ => panic!("expected CryptoObject::PrivateKey"),
         }
@@ -343,5 +309,123 @@ mod tests {
             }
             _ => panic!("expected CryptoObject::PrivateKey"),
         }
+    }
+
+    fn assert_public_key_from_ec_private_key(curve: &str) {
+        let pkcs8_pem_bytes = generate_ec_pkcs8_pem(curve);
+        let parsed = pem::parse(&pkcs8_pem_bytes).expect("failed to parse PEM");
+        let private_key = PrivateKey::Ec(bytes::Bytes::copy_from_slice(parsed.contents()));
+
+        let public_key = PublicKey::try_from(&private_key).expect("PublicKey::try_from should succeed");
+        assert_is_ec_public_key_pem(&public_key);
+    }
+
+    #[test]
+    fn test_public_key_from_ec_p256_private_key() {
+        assert_public_key_from_ec_private_key("prime256v1");
+    }
+
+    #[test]
+    fn test_public_key_from_ec_p384_private_key() {
+        assert_public_key_from_ec_private_key("secp384r1");
+    }
+
+    fn assert_sec1_ec_key_round_trips(curve: &str) {
+        let output = Command::new("openssl")
+            .args(["ecparam", "-name", curve, "-genkey", "-noout"])
+            .output()
+            .expect("failed to generate EC key");
+        assert!(output.status.success());
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        assert_eq!(parsed.tag(), "EC PRIVATE KEY");
+
+        let result = process_pem_ec_private_key(&parsed).expect("process_pem_ec_private_key failed");
+        let crypto_obj = result.expect("expected Some(CryptoObject)");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, public_key) => {
+                assert!(matches!(private_key, PrivateKey::Ec(_)), "expected PrivateKey::Ec");
+                assert_is_ec_public_key_pem(&public_key);
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_ec_private_key_sec1_p256() {
+        assert_sec1_ec_key_round_trips("prime256v1");
+    }
+
+    #[test]
+    fn test_process_pem_ec_private_key_sec1_p384() {
+        assert_sec1_ec_key_round_trips("secp384r1");
+    }
+
+    #[test]
+    fn test_process_pem_private_key_corrupted_pkcs8() {
+        let garbage = pem::Pem::new("PRIVATE KEY", vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = process_pem_private_key(&garbage);
+        assert!(result.is_err(), "corrupted PKCS#8 DER should produce an error");
+    }
+
+    #[test]
+    fn test_public_key_try_from_rsa() {
+        let output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"])
+            .output()
+            .expect("failed to generate RSA key");
+        assert!(output.status.success());
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        let result = process_pem_private_key(&parsed).expect("process failed");
+        let crypto_obj = result.expect("expected Some");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, _) => {
+                assert!(matches!(private_key, PrivateKey::Rsa(_)));
+                let public_key = PublicKey::try_from(&private_key).expect("PublicKey::try_from should succeed for RSA");
+                assert!(matches!(public_key, PublicKey::Rsa(_)));
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_ec_private_key_corrupted_sec1() {
+        let garbage = pem::Pem::new("EC PRIVATE KEY", vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = process_pem_ec_private_key(&garbage);
+        assert!(result.is_err(), "corrupted SEC1 DER should produce an error");
+    }
+
+    #[test]
+    fn test_process_pem_bundle_mixed_ec_rsa() {
+        let ec_pem_bytes = generate_ec_pkcs8_pem("prime256v1");
+        let rsa_output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"])
+            .output()
+            .expect("failed to generate RSA key");
+        assert!(rsa_output.status.success());
+
+        let mut bundle = String::from_utf8(ec_pem_bytes).expect("EC PEM not UTF-8");
+        bundle.push_str(&String::from_utf8(rsa_output.stdout).expect("RSA PEM not UTF-8"));
+
+        let pems = pem::parse_many(&bundle).expect("failed to parse bundle");
+        assert_eq!(pems.len(), 2);
+
+        let mut found_ec = false;
+        let mut found_rsa = false;
+        for p in &pems {
+            let result = process_single_pem(p, &super::super::scanning::ExternalCerts::empty())
+                .expect("process_single_pem failed")
+                .expect("expected Some");
+            match result {
+                CryptoObject::PrivateKey(PrivateKey::Ec(_), _) => found_ec = true,
+                CryptoObject::PrivateKey(PrivateKey::Rsa(_), _) => found_rsa = true,
+                _ => panic!("unexpected CryptoObject variant"),
+            }
+        }
+        assert!(found_ec, "should find EC key in bundle");
+        assert!(found_rsa, "should find RSA key in bundle");
     }
 }
