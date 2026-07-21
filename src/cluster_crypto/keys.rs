@@ -40,7 +40,7 @@ impl Serialize for PrivateKey {
                         .unwrap_or("failed to serialize RSA private key".to_string().into()),
                 ),
             ),
-            Self::Ec(ec_bytes) => serializer.serialize_str(&pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()).to_string()),
+            Self::Ec(ec_bytes) => serializer.serialize_str(&pem::Pem::new("PRIVATE KEY", ec_bytes.as_ref()).to_string()),
         }
     }
 }
@@ -76,7 +76,7 @@ impl PrivateKey {
     pub(crate) fn pem(&self) -> Result<pem::Pem> {
         Ok(match &self {
             PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
-            PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
+            PrivateKey::Ec(ec_bytes) => pem::Pem::new("PRIVATE KEY", ec_bytes.as_ref()),
         })
     }
 }
