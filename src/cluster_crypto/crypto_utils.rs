@@ -196,13 +196,65 @@ pub(crate) fn key_from_file(path: &Path) -> Result<SigningKey> {
     key_from_pem(&String::from_utf8(data).context("converting private key file to utf8")?)
 }
 
+pub(crate) fn pubkey_pem_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Vec<u8>> {
+    let mut child = StdCommand::new("openssl")
+        .args(["pkey", "-inform", "DER", "-pubout"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl pkey")?;
+
+    child
+        .stdin
+        .take()
+        .context("failed to take openssl stdin pipe")?
+        .write_all(pkcs8_der)?;
+
+    let output = child.wait_with_output().context("waiting for openssl pkey")?;
+    ensure!(
+        output.status.success(),
+        "openssl pkey -pubout failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(output.stdout)
+}
+
+fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+    let mut child = StdCommand::new("openssl")
+        .args(["pkcs8", "-topk8", "-nocrypt"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl pkcs8")?;
+
+    child
+        .stdin
+        .take()
+        .context("failed to take openssl stdin pipe")?
+        .write_all(sec1_pem.as_bytes())?;
+
+    let output = child.wait_with_output().context("waiting for openssl pkcs8")?;
+    ensure!(
+        output.status.success(),
+        "openssl pkcs8 -topk8 failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).context("openssl pkcs8 output not valid UTF-8")
+}
+
 pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
     let parsed_pem = pem::parse(pem.as_bytes()).context("parsing private key file")?;
     let pem_tag = parsed_pem.tag();
 
     match pem_tag {
         "RSA PRIVATE KEY" => rsa_key_from_pkcs1_pem(pem).context("RSA key from PKCS#1"),
-        "EC PRIVATE KEY" => bail!("loading non PKCS#8 EC private keys is not yet supported"),
+        "EC PRIVATE KEY" => ec_sec1_to_pkcs8_pem(pem)
+            .and_then(|pkcs8| key_from_pkcs8_pem(&pkcs8))
+            .context("EC key from SEC1"),
         "PRIVATE KEY" => key_from_pkcs8_pem(pem).context("key from PKCS#8"),
         _ => bail!("unknown private key format"),
     }
@@ -397,5 +449,20 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
             fmt.Println(keyID)
         }
         */
+    }
+
+    #[test]
+    fn test_key_from_pem_ec_sec1() {
+        let output = std::process::Command::new("openssl")
+            .args(["ecparam", "-name", "prime256v1", "-genkey", "-noout"])
+            .output()
+            .expect("failed to generate EC key");
+        assert!(output.status.success());
+
+        let sec1_pem = String::from_utf8(output.stdout).unwrap();
+        assert!(sec1_pem.contains("BEGIN EC PRIVATE KEY"));
+
+        let signing_key = super::key_from_pem(&sec1_pem).expect("key_from_pem should accept SEC1 EC keys");
+        assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
     }
 }
