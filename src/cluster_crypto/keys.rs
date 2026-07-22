@@ -4,7 +4,6 @@ use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
-use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
 use rsa::RsaPrivateKey;
 use serde::Serialize;
 use std::{
@@ -112,10 +111,8 @@ impl TryFrom<&PrivateKey> for PublicKey {
                 private_key.to_public_key().to_public_key_der()?.as_bytes(),
             )),
             PrivateKey::Ec(ec_bytes) => {
-                let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, ec_bytes, &ring::rand::SystemRandom::new())
-                    .ok()
-                    .context("failed to make pair from pkcs8")?;
-                PublicKey::Ec(Bytes::copy_from_slice(pair.public_key().as_ref()))
+                let pubkey_pem = super::crypto_utils::pubkey_pem_from_pkcs8_der(ec_bytes)?;
+                PublicKey::Ec(pubkey_pem.into())
             }
         })
     }
