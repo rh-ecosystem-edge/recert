@@ -165,18 +165,24 @@ pub(crate) fn process_single_pem(pem: &pem::Pem, external_certs: &ExternalCerts)
 }
 
 fn process_pem_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
-    let pair = InMemorySigningKeyPair::from_pkcs8_der(pem.contents())?;
+    let pkcs8_der = pem.contents().to_vec();
+    let pair = super::crypto_utils::signing_key_pair_from_pkcs8_der(&pkcs8_der)?;
 
     Ok(match pair {
-        InMemorySigningKeyPair::Ecdsa(_, _, pkcs8_der) => {
-            let pubkey_pem = super::crypto_utils::pubkey_pem_from_pkcs8_der(&pkcs8_der).context("extracting EC public key")?;
+        InMemorySigningKeyPair::Ecdsa(_, _, ecdsa_pkcs8_der) => {
+            let pubkey_pem = super::crypto_utils::pubkey_pem_from_pkcs8_der(&ecdsa_pkcs8_der).context("extracting EC public key")?;
 
-            let private_part = PrivateKey::Ec(Bytes::from(pkcs8_der));
+            let private_part = PrivateKey::Ec(Bytes::from(ecdsa_pkcs8_der));
             let public_part = PublicKey::Ec(pubkey_pem.into());
 
             Some((private_part, public_part).into())
         }
-        InMemorySigningKeyPair::Ed25519(_) => bail!("private ed25519 pkcs8 unsupported"),
+        InMemorySigningKeyPair::Ed25519(_) => {
+            let private_part = PrivateKey::Ed25519(Bytes::from(pkcs8_der));
+            let public_part = PublicKey::try_from(&private_part)?;
+
+            Some((private_part, public_part).into())
+        }
         InMemorySigningKeyPair::Rsa(_, bytes) => {
             let rsa_private_key = rsa::RsaPrivateKey::from_pkcs1_der(&bytes)?;
 
@@ -247,9 +253,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -
     match hashable_cert.cert.key_algorithm().context("failed to get cert key algorithm")? {
         x509_certificate::KeyAlgorithm::Rsa => {}
         x509_certificate::KeyAlgorithm::Ecdsa(_) => {}
-        x509_certificate::KeyAlgorithm::Ed25519 => {
-            bail!("ed25519 certs unsupported");
-        }
+        x509_certificate::KeyAlgorithm::Ed25519 => {}
     }
 
     Ok(Some(CryptoObject::from(hashable_cert)))
@@ -324,6 +328,40 @@ mod tests {
     }
 
     #[test]
+    fn test_process_pem_private_key_ed25519_pkcs8() {
+        let output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519"])
+            .output()
+            .expect("failed to generate Ed25519 key");
+        assert!(output.status.success(), "openssl genpkey Ed25519 failed");
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        assert_eq!(parsed.tag(), "PRIVATE KEY");
+
+        let result = process_pem_private_key(&parsed).expect("process_pem_private_key failed");
+        let crypto_obj = result.expect("expected Some(CryptoObject)");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, public_key) => {
+                match &private_key {
+                    PrivateKey::Ed25519(bytes) => {
+                        assert_eq!(bytes.as_ref(), parsed.contents(), "stored bytes should be PKCS#8 DER");
+                    }
+                    _ => panic!("expected PrivateKey::Ed25519"),
+                }
+                match &public_key {
+                    PublicKey::Ed25519(pem_bytes) => {
+                        let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");
+                        assert_eq!(pub_pem.tag(), "PUBLIC KEY");
+                    }
+                    _ => panic!("expected PublicKey::Ed25519"),
+                }
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
     fn test_process_pem_private_key_rsa_pkcs8_still_works() {
         let output = Command::new("openssl")
             .args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"])
@@ -343,5 +381,111 @@ mod tests {
             }
             _ => panic!("expected CryptoObject::PrivateKey"),
         }
+    }
+
+    fn generate_ed25519_self_signed_cert() -> Vec<u8> {
+        let key_output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519"])
+            .output()
+            .expect("failed to generate Ed25519 key");
+        assert!(key_output.status.success());
+
+        let mut key_file = tempfile::NamedTempFile::new().unwrap();
+        key_file.write_all(&key_output.stdout).unwrap();
+
+        let cert_output = Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-key",
+                key_file.path().to_str().unwrap(),
+                "-subj",
+                "/CN=ed25519-test",
+                "-days",
+                "1",
+            ])
+            .output()
+            .expect("failed to generate self-signed Ed25519 cert");
+        assert!(
+            cert_output.status.success(),
+            "openssl req failed: {}",
+            String::from_utf8_lossy(&cert_output.stderr)
+        );
+        cert_output.stdout
+    }
+
+    #[test]
+    fn test_process_pem_cert_ed25519() {
+        let cert_pem = generate_ed25519_self_signed_cert();
+        let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
+        assert_eq!(parsed.tag(), "CERTIFICATE");
+
+        let result = process_pem_cert(&parsed, &super::super::scanning::ExternalCerts::empty());
+        assert!(result.is_ok(), "process_pem_cert should accept Ed25519 certs: {:?}", result.err());
+        assert!(result.unwrap().is_some(), "should return Some(CryptoObject)");
+    }
+
+    #[test]
+    fn test_certificate_try_from_ed25519() {
+        let cert_pem = generate_ed25519_self_signed_cert();
+        let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
+        let x509 = x509_certificate::CapturedX509Certificate::from_der(parsed.contents()).expect("failed to parse DER");
+
+        let cert = certificate::Certificate::try_from(&x509);
+        assert!(cert.is_ok(), "Certificate::try_from should work for Ed25519: {:?}", cert.err());
+
+        let cert = cert.unwrap();
+        assert!(matches!(cert.public_key, PublicKey::Ed25519(_)), "expected PublicKey::Ed25519");
+    }
+
+    #[test]
+    fn test_ed25519_private_key_pem_round_trip() {
+        let output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519"])
+            .output()
+            .expect("failed to generate Ed25519 key");
+        assert!(output.status.success());
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        let result = process_pem_private_key(&parsed).expect("process failed");
+        let crypto_obj = result.expect("expected Some");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, public_key) => {
+                let priv_pem = private_key.pem().expect("PrivateKey::pem() should succeed");
+                assert_eq!(priv_pem.tag(), "PRIVATE KEY");
+                assert_eq!(priv_pem.contents(), parsed.contents());
+
+                let pub_pem = public_key.pem().expect("PublicKey::pem() should succeed");
+                assert_eq!(pub_pem.tag(), "PUBLIC KEY");
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_private_key_corrupted_der() {
+        let garbage = pem::Pem::new("PRIVATE KEY", vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = process_pem_private_key(&garbage);
+        assert!(result.is_err(), "corrupted DER should produce an error");
+    }
+
+    #[test]
+    fn test_try_from_in_memory_signing_key_pair_bails_on_ed25519() {
+        let output = Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519"])
+            .output()
+            .expect("failed to generate Ed25519 key");
+        assert!(output.status.success());
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        let pair = crate::cluster_crypto::crypto_utils::signing_key_pair_from_pkcs8_der(parsed.contents()).expect("failed to parse key");
+
+        let result = PrivateKey::try_from(&pair);
+        assert!(result.is_err(), "TryFrom should bail for Ed25519");
+        assert!(
+            result.unwrap_err().to_string().contains("Ed25519"),
+            "error message should mention Ed25519"
+        );
     }
 }

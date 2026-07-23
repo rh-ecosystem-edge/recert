@@ -1,4 +1,5 @@
 use super::certificate;
+use super::keys::PrivateKey;
 use anyhow::ensure;
 use anyhow::{bail, Context, Result};
 use base64::{
@@ -16,6 +17,49 @@ use std::process::Command as StdCommand;
 use std::process::Stdio;
 use tokio::process::Command;
 use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair, KeyAlgorithm, Sign};
+
+// The vendored x509-certificate uses ring 0.16 whose Ed25519KeyPair::from_pkcs8 requires
+// PKCS#8 v2 with the public key present. OpenSSL generates v0 without it. We use ring 0.17
+// (our direct dep) to parse the key, extract the public key, and construct a v2 DER that
+// ring 0.16 accepts.
+fn ed25519_pkcs8_to_v2(der: &[u8]) -> Result<Vec<u8>> {
+    use ring::signature::KeyPair;
+    let pair =
+        ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(der).map_err(|e| anyhow::anyhow!("not an Ed25519 key: {:?}", e))?;
+    let public_key = pair.public_key().as_ref();
+
+    // Ed25519 PKCS#8 has a fixed-length canonical encoding (RFC 8410). The 32-byte private
+    // key seed is always at DER offset 16: 2 (SEQUENCE header) + 3 (INTEGER version) +
+    // 7 (AlgorithmIdentifier with OID 1.3.101.112) + 2+2 (nested OCTET STRING headers).
+    ensure!(der.len() >= 48, "Ed25519 PKCS#8 DER too short");
+    let privkey = &der[16..48];
+
+    // Construct PKCS#8 v2 (85 bytes): SEQUENCE { INTEGER 1, AlgId { OID ed25519 },
+    // OCTET STRING { OCTET STRING { 32B seed } }, [1] { BIT STRING { 32B pubkey } } }
+    let mut v2 = Vec::with_capacity(85);
+    v2.extend_from_slice(&[
+        0x30, 0x53, 0x02, 0x01, 0x01, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+    ]);
+    v2.extend_from_slice(privkey);
+    v2.extend_from_slice(&[0xa1, 0x23, 0x03, 0x21, 0x00]);
+    v2.extend_from_slice(public_key);
+    Ok(v2)
+}
+
+pub(crate) fn signing_key_pair_from_pkcs8_der(der: &[u8]) -> Result<InMemorySigningKeyPair> {
+    InMemorySigningKeyPair::from_pkcs8_der(der).or_else(|_| {
+        let v2_der = ed25519_pkcs8_to_v2(der)?;
+        InMemorySigningKeyPair::from_pkcs8_der(&v2_der).map_err(|e| anyhow::anyhow!("{}", e))
+    })
+}
+
+fn signing_key_pair_from_pkcs8_pem(pem_data: &[u8]) -> Result<InMemorySigningKeyPair> {
+    InMemorySigningKeyPair::from_pkcs8_pem(pem_data).or_else(|_| {
+        let parsed = pem::parse(pem_data).context("parsing PEM for Ed25519 fallback")?;
+        let v2_der = ed25519_pkcs8_to_v2(parsed.contents())?;
+        InMemorySigningKeyPair::from_pkcs8_der(&v2_der).map_err(|e| anyhow::anyhow!("{}", e))
+    })
+}
 
 pub(crate) mod jwt;
 
@@ -46,11 +90,25 @@ impl SigningKey {
     }
 }
 
+impl TryFrom<&SigningKey> for PrivateKey {
+    type Error = anyhow::Error;
+
+    fn try_from(signing_key: &SigningKey) -> Result<Self> {
+        match &signing_key.in_memory_signing_key_pair {
+            InMemorySigningKeyPair::Ed25519(_) => {
+                let parsed = pem::parse(&signing_key.pkcs8_pem).context("parsing Ed25519 pkcs8 pem")?;
+                Ok(PrivateKey::Ed25519(bytes::Bytes::copy_from_slice(parsed.contents())))
+            }
+            other => other.try_into(),
+        }
+    }
+}
+
 impl Clone for SigningKey {
     fn clone(&self) -> Self {
         Self {
             #[allow(clippy::unwrap_used)] // This can never panic because a SigningKey could never be created with an invalid pkcs8_pem
-            in_memory_signing_key_pair: InMemorySigningKeyPair::from_pkcs8_pem(&self.pkcs8_pem).unwrap(),
+            in_memory_signing_key_pair: signing_key_pair_from_pkcs8_pem(&self.pkcs8_pem).unwrap(),
             pkcs8_pem: self.pkcs8_pem.clone(),
         }
     }
@@ -166,8 +224,24 @@ pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
     })
 }
 
+pub(crate) fn generate_ed25519_key() -> Result<SigningKey> {
+    let output = StdCommand::new("openssl")
+        .args(["genpkey", "-algorithm", "Ed25519"])
+        .output()
+        .context("openssl genpkey Ed25519")?;
+
+    ensure!(
+        output.status.success(),
+        "openssl genpkey Ed25519 failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let pem = String::from_utf8(output.stdout).context("openssl genpkey output not valid UTF-8")?;
+    key_from_pkcs8_pem(&pem)
+}
+
 pub(crate) fn key_from_pkcs8_pem(pem: &str) -> Result<SigningKey> {
-    let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(pem).context("pair from der");
+    let in_memory_signing_key_pair = signing_key_pair_from_pkcs8_pem(pem.as_bytes()).context("pair from der");
 
     Ok(SigningKey {
         in_memory_signing_key_pair: in_memory_signing_key_pair?,
@@ -270,27 +344,37 @@ pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> 
     let mut temp_file = tempfile::NamedTempFile::new()?;
     temp_file.write_all(tbs_der)?;
 
+    let temp_path = temp_file.path().to_str().context("getting temp file path")?;
+    let is_ed25519 = matches!(signing_key.in_memory_signing_key_pair, InMemorySigningKeyPair::Ed25519(_));
+    let args: Vec<&str> = if is_ed25519 {
+        vec!["pkeyutl", "-sign", "-inkey", "/dev/stdin", "-rawin", "-in", temp_path]
+    } else {
+        vec!["dgst", "-sha256", "-sign", "/dev/stdin", temp_path]
+    };
+
     let mut command = StdCommand::new("openssl")
-        .args([
-            "dgst",
-            "-sha256",
-            "-sign",
-            "/dev/stdin",
-            temp_file.path().to_str().context("getting temp file path")?,
-        ])
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
-        .context("openssl dgst")?;
+        .context("openssl sign")?;
 
     command
         .stdin
         .take()
-        .context("getting openssl dgst stdin")?
+        .context("getting openssl stdin")?
         .write_all(signing_key.pkcs8_pem.as_slice())
-        .context("writing to openssl dgst stdin")?;
+        .context("writing to openssl stdin")?;
 
-    Ok(command.wait_with_output().context("waiting for openssl dgst")?.stdout)
+    let output = command.wait_with_output().context("waiting for openssl sign")?;
+    ensure!(
+        output.status.success(),
+        "openssl sign failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(output.stdout)
 }
 
 pub(crate) fn sha256(data: &[u8]) -> Result<Vec<u8>> {
@@ -355,6 +439,8 @@ pub(crate) fn ensure_openssl_version() -> Result<()> {
 }
 
 mod test {
+    use std::io::Write;
+
     #[test]
     fn test_kid() {
         let signing_key = {
@@ -464,5 +550,140 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
         let signing_key = super::key_from_pem(&sec1_pem).expect("key_from_pem should accept SEC1 EC keys");
         assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+    }
+
+    #[test]
+    fn test_key_from_pem_ed25519_pkcs8() {
+        let output = std::process::Command::new("openssl")
+            .args(["genpkey", "-algorithm", "Ed25519"])
+            .output()
+            .expect("failed to generate Ed25519 key");
+        assert!(output.status.success());
+
+        let pem_str = String::from_utf8(output.stdout).unwrap();
+        assert!(pem_str.contains("BEGIN PRIVATE KEY"));
+
+        let signing_key = super::key_from_pem(&pem_str).expect("key_from_pem should accept Ed25519 PKCS#8 keys");
+        assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+        assert!(matches!(
+            signing_key.in_memory_signing_key_pair,
+            super::InMemorySigningKeyPair::Ed25519(_)
+        ));
+    }
+
+    #[test]
+    fn test_generate_ed25519_key() {
+        let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key should succeed");
+        assert!(matches!(
+            signing_key.in_memory_signing_key_pair,
+            super::InMemorySigningKeyPair::Ed25519(_)
+        ));
+    }
+
+    #[test]
+    fn test_sign_ed25519() {
+        let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key failed");
+        let data = b"test data to sign";
+
+        let signature = super::sign(&signing_key, data).expect("sign should succeed for Ed25519");
+        assert!(!signature.is_empty(), "signature should not be empty");
+        assert_eq!(signature.len(), 64, "Ed25519 signature should be 64 bytes");
+
+        // Verify the signature using openssl
+        let mut key_file = tempfile::NamedTempFile::new().unwrap();
+        key_file.write_all(&signing_key.pkcs8_pem).unwrap();
+
+        let mut sig_file = tempfile::NamedTempFile::new().unwrap();
+        sig_file.write_all(&signature).unwrap();
+
+        let mut data_file = tempfile::NamedTempFile::new().unwrap();
+        data_file.write_all(data).unwrap();
+
+        let verify_output = std::process::Command::new("openssl")
+            .args([
+                "pkeyutl",
+                "-verify",
+                "-inkey",
+                key_file.path().to_str().unwrap(),
+                "-rawin",
+                "-in",
+                data_file.path().to_str().unwrap(),
+                "-sigfile",
+                sig_file.path().to_str().unwrap(),
+            ])
+            .output()
+            .expect("openssl pkeyutl -verify failed");
+
+        assert!(
+            verify_output.status.success(),
+            "signature verification failed: {}",
+            String::from_utf8_lossy(&verify_output.stderr)
+        );
+    }
+
+    #[test]
+    fn test_try_from_signing_key_ed25519() {
+        let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key failed");
+        let private_key = super::PrivateKey::try_from(&signing_key).expect("TryFrom should succeed for Ed25519");
+        assert!(matches!(private_key, super::PrivateKey::Ed25519(_)), "expected PrivateKey::Ed25519");
+    }
+
+    #[test]
+    fn test_try_from_signing_key_rsa() {
+        let signing_key = super::generate_rsa_key(2048).expect("generate_rsa_key failed");
+        let private_key = super::PrivateKey::try_from(&signing_key).expect("TryFrom should succeed for RSA");
+        assert!(matches!(private_key, super::PrivateKey::Rsa(_)), "expected PrivateKey::Rsa");
+    }
+
+    #[test]
+    fn test_sign_rsa() {
+        let signing_key = super::generate_rsa_key(2048).expect("generate_rsa_key failed");
+        let data = b"test data to sign";
+
+        let signature = super::sign(&signing_key, data).expect("sign should succeed for RSA");
+        assert!(!signature.is_empty(), "signature should not be empty");
+
+        let mut key_file = tempfile::NamedTempFile::new().unwrap();
+        key_file.write_all(&signing_key.pkcs8_pem).unwrap();
+
+        let pubkey = super::pubkey_pem_from_pkcs8_der(&pem::parse(&signing_key.pkcs8_pem).unwrap().contents()).unwrap();
+        let mut pub_file = tempfile::NamedTempFile::new().unwrap();
+        pub_file.write_all(&pubkey).unwrap();
+
+        let mut sig_file = tempfile::NamedTempFile::new().unwrap();
+        sig_file.write_all(&signature).unwrap();
+
+        let mut data_file = tempfile::NamedTempFile::new().unwrap();
+        data_file.write_all(data).unwrap();
+
+        let verify_output = std::process::Command::new("openssl")
+            .args([
+                "dgst",
+                "-sha256",
+                "-verify",
+                pub_file.path().to_str().unwrap(),
+                "-signature",
+                sig_file.path().to_str().unwrap(),
+                data_file.path().to_str().unwrap(),
+            ])
+            .output()
+            .expect("openssl dgst -verify failed");
+
+        assert!(
+            verify_output.status.success(),
+            "RSA signature verification failed: {}",
+            String::from_utf8_lossy(&verify_output.stderr)
+        );
+    }
+
+    #[test]
+    fn test_key_from_pem_unknown_tag() {
+        let fake_pem = "-----BEGIN DSA PRIVATE KEY-----\nZmFrZQ==\n-----END DSA PRIVATE KEY-----\n";
+        let result = super::key_from_pem(fake_pem);
+        let err = result.err().expect("should fail for unknown PEM tag");
+        assert!(
+            err.to_string().contains("unknown private key format"),
+            "should report unknown format"
+        );
     }
 }

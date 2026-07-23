@@ -40,8 +40,8 @@ impl Display for DistributedPublicKey {
 }
 
 impl DistributedPublicKey {
-    pub(crate) fn regenerate(&mut self, new_private: PrivateKey) -> Result<()> {
-        self.key_regenerated = Some(PublicKey::try_from(&new_private)?);
+    pub(crate) fn regenerate(&mut self, new_private: &PrivateKey) -> Result<()> {
+        self.key_regenerated = Some(PublicKey::try_from(new_private)?);
 
         Ok(())
     }
@@ -61,7 +61,7 @@ impl DistributedPublicKey {
                 .n()
                 .to_radix_le(2)
                 .len(),
-            PublicKey::Ec(_) => bail!("key algorithm mismatch"),
+            PublicKey::Ec(_) | PublicKey::Ed25519(_) => bail!("key algorithm mismatch"),
         };
 
         let signing_key = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
@@ -140,6 +140,7 @@ impl DistributedPublicKey {
         let public_key_pem = match &self.key_regenerated.clone().context("key was not regenerated")? {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
             PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
+            PublicKey::Ed25519(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing Ed25519 public key PEM")?,
         };
 
         commit_file(
