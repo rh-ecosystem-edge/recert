@@ -1,0 +1,40 @@
+FROM rust:1.87 AS builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src/ src/
+COPY vendor/ vendor/
+COPY .cargo/ .cargo/
+RUN cargo build --release --bin recert
+
+FROM docker.io/library/debian:bookworm
+WORKDIR /app
+
+ARG ETCD_VERSION=v3.5.17
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl openssh-client python3-yaml curl ca-certificates \
+    && curl -sL "https://github.com/etcd-io/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz" | tar xz \
+    && mv "etcd-${ETCD_VERSION}-linux-amd64/etcd" /usr/local/bin/ \
+    && mv "etcd-${ETCD_VERSION}-linux-amd64/etcdctl" /usr/local/bin/ \
+    && rm -rf "etcd-${ETCD_VERSION}-linux-amd64" \
+    && apt-get remove -y curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/recert /usr/local/bin/recert
+COPY tests/integration/ /app/tests/integration/
+
+ENV RECERT_BIN=/usr/local/bin/recert
+ENV FIXTURES_DIR=/app/tests/integration/fixtures/generated
+ENV ARTIFACTS_DIR=/tmp/recert-integration-tests
+
+ENTRYPOINT ["/bin/bash", "-c", "\
+    etcd --listen-client-urls http://localhost:2379 \
+         --advertise-client-urls http://localhost:2379 \
+         --data-dir /tmp/etcd-data &>/dev/null & \
+    timeout 30 bash -c 'until etcdctl endpoint health --endpoints=localhost:2379 2>/dev/null; do sleep 0.5; done' && \
+    bash /app/tests/integration/fixtures/seed_etcd.sh && \
+    bash /app/tests/integration/fixtures/generate.sh && \
+    bash /app/tests/integration/run_tests.sh \
+"]

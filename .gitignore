@@ -3,3 +3,4 @@
 /summary.yaml
 /summary_redacted.yaml
 bin/
+tests/integration/fixtures/generated/

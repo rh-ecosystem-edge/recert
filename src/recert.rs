@@ -63,7 +63,7 @@ async fn setup_etcd_client(recert_config: &RecertConfig) -> Result<(Arc<InMemory
 
     let mut encryption_customizations: Option<EncryptionCustomizations> = None;
 
-    if is_encryption_enabled(&in_memory_etcd_client).await? {
+    if in_memory_etcd_client.etcd_client.is_some() && is_encryption_enabled(&in_memory_etcd_client).await? {
         let decrypt_resource_transformers = build_decryption_transformers(recert_config, &mut in_memory_etcd_client).await?;
 
         let encryption_type = get_apiserver_encryption_type(&in_memory_etcd_client).await?;

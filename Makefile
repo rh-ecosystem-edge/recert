@@ -48,6 +48,12 @@ clean:
 test: rust-test
 	@echo "All testing tasks completed successfully."
 
+.PHONY: integration-test
+integration-test: ## Run integration tests in a container
+	docker build -f Dockerfile.integration -t recert-integration .
+	mkdir -p /tmp/recert-integration-tests
+	docker run --rm -v /tmp/recert-integration-tests:/tmp/recert-integration-tests recert-integration
+
 # Konflux targets
 
 .PHONY: sync-git-submodules
