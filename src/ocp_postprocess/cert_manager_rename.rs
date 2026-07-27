@@ -503,5 +503,4 @@ mod tests {
         assert!(modified);
         assert_eq!(cert.pointer("/spec/commonName").unwrap().as_str().unwrap(), "target.example.com");
     }
-
 }
