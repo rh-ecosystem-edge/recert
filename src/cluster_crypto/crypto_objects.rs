@@ -499,7 +499,10 @@ mod tests {
     fn test_ed25519_private_key_serialize() {
         let (private_key, _) = generate_ed25519_key_pair();
         let serialized = serde_json::to_string(&private_key).expect("serialize should succeed");
-        assert!(serialized.contains("PRIVATE KEY"), "serialized Ed25519 key should contain PRIVATE KEY tag");
+        assert!(
+            serialized.contains("PRIVATE KEY"),
+            "serialized Ed25519 key should contain PRIVATE KEY tag"
+        );
         assert!(!serialized.contains("EC PRIVATE KEY"), "should not contain EC PRIVATE KEY tag");
     }
 

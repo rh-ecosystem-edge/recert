@@ -138,8 +138,7 @@ mod tests {
     #[test]
     fn test_jwt_resign_bails_for_ed25519() {
         let ed25519_key = crate::cluster_crypto::crypto_utils::generate_ed25519_key().expect("gen failed");
-        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(r#"{"alg":"RS256","kid":"test"}"#.as_bytes());
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"test"}"#.as_bytes());
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{}");
         let fake_jwt = format!("{}.{}.fakesig", header, payload);
 
