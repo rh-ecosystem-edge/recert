@@ -353,14 +353,9 @@ mod tests {
             CryptoObject::PrivateKey(private_key, public_key) => {
                 match &private_key {
                     PrivateKey::Ec(bytes) => {
-                        assert_ne!(
-                            bytes.as_ref(),
-                            parsed.contents(),
-                            "stored bytes should differ from SEC1 input"
-                        );
+                        assert_ne!(bytes.as_ref(), parsed.contents(), "stored bytes should differ from SEC1 input");
                         let pkcs8_pem = pem::Pem::new("PRIVATE KEY", bytes.as_ref());
-                        InMemorySigningKeyPair::from_pkcs8_der(pkcs8_pem.contents())
-                            .expect("stored bytes should be valid PKCS#8 DER");
+                        InMemorySigningKeyPair::from_pkcs8_der(pkcs8_pem.contents()).expect("stored bytes should be valid PKCS#8 DER");
                     }
                     _ => panic!("expected PrivateKey::Ec"),
                 }
