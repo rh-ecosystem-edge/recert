@@ -276,7 +276,11 @@ fn process_byte_array_value(value: &Value) -> Result<Option<String>> {
                     bail!("non-number in array");
                 }
             }
-            Some(String::from_utf8(bytes).context("non-utf8 decoded byte array value")?)
+            if let Ok(decoded) = String::from_utf8(bytes) {
+                Some(decoded)
+            } else {
+                None
+            }
         }
         _ => None,
     })
