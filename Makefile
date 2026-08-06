@@ -71,7 +71,7 @@ konflux-update-rpm-lock-runtime: sync-git-submodules ## Update the rpm lock file
 	@echo "Updating rpm lock file for the runtime..."
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/rpm-lock generate-rhel9-locks \
 		LOCK_SCRIPT_TARGET_DIR=$(PROJECT_DIR)/.konflux/lock-runtime/tmp/ \
-		RHEL9_EXECUTION_IMAGE=$$(awk -F'=' '/^RUNTIME_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf | sed 's|ubi-minimal|ubi|g' | sed 's|@.*||') \
+		RHEL9_EXECUTION_IMAGE=$$(awk -F'=' '/^RUNTIME_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf | sed 's|ubi-minimal[^:]*|ubi|' | sed 's|@.*||') \
 		RHEL9_IMAGE_TO_LOCK=$$(awk -F'=' '/^RUNTIME_IMAGE=/ {print $$2}' $(PROJECT_DIR)/.konflux/container_build_args.conf)
 	@echo "Update rpms.lock.yaml with new contents..."
 	cp $(PROJECT_DIR)/.konflux/lock-runtime/tmp/rpms.lock.yaml $(PROJECT_DIR)/.konflux/lock-runtime/rpms.lock.yaml
