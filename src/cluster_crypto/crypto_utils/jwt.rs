@@ -5,7 +5,7 @@ use std::{io::Write, process::Command};
 use x509_certificate::InMemorySigningKeyPair;
 
 pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
-    if let PublicKey::Ec(_) = public_key {
+    if let PublicKey::Ec(_) | PublicKey::Ed25519(_) = public_key {
         return Ok(false);
     };
 
@@ -85,7 +85,7 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
             bail!("ecdsa unsupported");
         }
         InMemorySigningKeyPair::Ed25519(_) => {
-            bail!("ed unsupported");
+            bail!("Ed25519 (EdDSA) JWT signing not supported — OCP uses RS256");
         }
         InMemorySigningKeyPair::Rsa(_rsa_key_pair, _bytes) => (
             private_key.jwt_key_id().context("calculating key id")?,
@@ -118,4 +118,33 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
         .output()?;
 
     Ok(format!("{}.{}", header_payload, base64_url.encode(output.stdout)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jwt_verify_returns_false_for_ed25519() {
+        let ed25519_key = crate::cluster_crypto::crypto_utils::generate_ed25519_key().expect("gen failed");
+        let priv_key = crate::cluster_crypto::keys::PrivateKey::try_from(&ed25519_key).expect("try_from failed");
+        let pub_key = crate::cluster_crypto::keys::PublicKey::try_from(&priv_key).expect("pub from priv failed");
+
+        let result = verify("header.payload.signature", &pub_key);
+        assert!(result.is_ok());
+        assert!(!result.unwrap(), "Ed25519 JWT verify should return false");
+    }
+
+    #[test]
+    fn test_jwt_resign_bails_for_ed25519() {
+        let ed25519_key = crate::cluster_crypto::crypto_utils::generate_ed25519_key().expect("gen failed");
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"test"}"#.as_bytes());
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{}");
+        let fake_jwt = format!("{}.{}.fakesig", header, payload);
+
+        let result = resign(&fake_jwt, &ed25519_key);
+        assert!(result.is_err(), "resign should bail for Ed25519 signing key");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Ed25519"), "error should mention Ed25519: {}", err_msg);
+    }
 }

@@ -21,6 +21,7 @@ use x509_certificate::InMemorySigningKeyPair;
 pub(crate) enum PrivateKey {
     Rsa(RsaPrivateKey),
     Ec(Bytes),
+    Ed25519(Bytes),
 }
 
 impl Serialize for PrivateKey {
@@ -41,6 +42,7 @@ impl Serialize for PrivateKey {
                 ),
             ),
             Self::Ec(ec_bytes) => serializer.serialize_str(&pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()).to_string()),
+            Self::Ed25519(bytes) => serializer.serialize_str(&pem::Pem::new("PRIVATE KEY", bytes.as_ref()).to_string()),
         }
     }
 }
@@ -51,7 +53,9 @@ impl TryFrom<&InMemorySigningKeyPair> for PrivateKey {
     fn try_from(value: &InMemorySigningKeyPair) -> std::result::Result<Self, Self::Error> {
         Ok(match value {
             InMemorySigningKeyPair::Ecdsa(_, _, vec) => PrivateKey::Ec(Bytes::copy_from_slice(vec.as_ref())),
-            InMemorySigningKeyPair::Ed25519(_) => todo!(),
+            // Ed25519 doesn't expose raw key bytes in the enum variant, so we construct
+            // PrivateKey::Ed25519 from the PKCS#8 PEM via TryFrom<&SigningKey> instead.
+            InMemorySigningKeyPair::Ed25519(_) => bail!("Ed25519 private key extraction unsupported from this type"),
             InMemorySigningKeyPair::Rsa(_, vec) => {
                 let rsa_private_key = RsaPrivateKey::from_pkcs1_der(vec.as_ref()).context(format!(
                     "converting in memory pair to RSA PrivateKey {:?}",
@@ -68,6 +72,7 @@ impl std::fmt::Debug for PrivateKey {
         match self {
             Self::Rsa(_) => write!(f, "<rsa_priv>"),
             Self::Ec(_) => write!(f, "<ec_priv>"),
+            Self::Ed25519(_) => write!(f, "<ed25519_priv>"),
         }
     }
 }
@@ -77,6 +82,7 @@ impl PrivateKey {
         Ok(match &self {
             PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
             PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
+            PrivateKey::Ed25519(bytes) => pem::Pem::new("PRIVATE KEY", bytes.as_ref()),
         })
     }
 }
@@ -85,6 +91,7 @@ impl PrivateKey {
 pub(crate) enum PublicKey {
     Rsa(Bytes),
     Ec(Bytes),
+    Ed25519(Bytes),
 }
 
 impl Serialize for PublicKey {
@@ -117,6 +124,10 @@ impl TryFrom<&PrivateKey> for PublicKey {
                     .context("failed to make pair from pkcs8")?;
                 PublicKey::Ec(Bytes::copy_from_slice(pair.public_key().as_ref()))
             }
+            PrivateKey::Ed25519(pkcs8_der) => {
+                let pubkey_pem = super::crypto_utils::pubkey_pem_from_pkcs8_der(pkcs8_der)?;
+                PublicKey::Ed25519(pubkey_pem.into())
+            }
         })
     }
 }
@@ -132,6 +143,7 @@ impl std::fmt::Debug for PublicKey {
         match self {
             Self::Rsa(der_bytes) => write!(f, "<rsa_pub: {}>", base64_standard.encode(der_bytes.as_ref())),
             Self::Ec(x) => write!(f, "<ec_pub: {:?}>", x),
+            Self::Ed25519(x) => write!(f, "<ed25519_pub: {:?}>", x),
         }
     }
 }
@@ -141,14 +153,14 @@ impl PublicKey {
         PublicKey::Rsa(der_bytes.clone())
     }
 
-    pub(crate) fn from_ec_cert_bytes(cert_bytes: &Bytes) -> Result<PublicKey> {
-        // Need to shell out to openssl
+    fn pubkey_pem_from_cert_pem(cert_bytes: &Bytes) -> Result<Bytes> {
         let mut command = Command::new("openssl")
             .arg("x509")
             .arg("-pubkey")
             .arg("-noout")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .context("running openssl")?;
 
@@ -163,13 +175,24 @@ impl PublicKey {
             bail!("openssl failed: {}", String::from_utf8_lossy(&output.stderr));
         }
 
-        Ok(PublicKey::Ec(output.stdout.into()))
+        Ok(output.stdout.into())
+    }
+
+    pub(crate) fn from_cert_bytes(cert_bytes: &Bytes, algo: &x509_certificate::KeyAlgorithm) -> Result<PublicKey> {
+        let pem = Self::pubkey_pem_from_cert_pem(cert_bytes)?;
+        Ok(match algo {
+            x509_certificate::KeyAlgorithm::Ecdsa(_) => PublicKey::Ec(pem),
+            x509_certificate::KeyAlgorithm::Ed25519 => PublicKey::Ed25519(pem),
+            x509_certificate::KeyAlgorithm::Rsa => bail!("use from_rsa_bytes for RSA keys"),
+        })
     }
 
     pub(crate) fn pem(&self) -> Result<pem::Pem> {
         Ok(match &self {
             PublicKey::Rsa(rsa_der_bytes) => pem::Pem::new("RSA PUBLIC KEY", rsa_der_bytes.as_ref()),
-            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes).context(format!("ec bytes to pem {:?}", pem_bytes))?,
+            PublicKey::Ec(pem_bytes) | PublicKey::Ed25519(pem_bytes) => {
+                pem::parse(pem_bytes).context(format!("bytes to pem {:?}", pem_bytes))?
+            }
         })
     }
 }
