@@ -1,6 +1,6 @@
 # See README.Konflux.md before editing this Dockerfile
 ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/ubi:latest
-ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
+ARG RUNTIME_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 
 # build stage
 FROM ${BUILDER_IMAGE} AS builder-image
