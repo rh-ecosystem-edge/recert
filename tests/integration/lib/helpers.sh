@@ -172,6 +172,7 @@ run_crypto_algo_test() {
         done
     fi
 
+
     local ca_cert_hash ca_key_hash server_cert_hash server_key_hash
     ca_cert_hash=$(sha256_file "${crypto_dir}/${prefix}-ca.crt")
     ca_key_hash=$(sha256_file "${crypto_dir}/${prefix}-ca.key")
@@ -198,6 +199,7 @@ EOF
         assert_pem_tag "${crypto_dir}/${prefix}-server.key" "EC PRIVATE KEY" \
             "${label} regenerated server key should stay SEC1"
     fi
+
 
     # P-384 signing on main uses SHA-256, so openssl verify would fail
     if [[ "$expected_detail" != "secp384r1" ]]; then
