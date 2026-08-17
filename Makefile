@@ -29,6 +29,10 @@ YAMLLINT_VERSION ?= 1.35.1
 # YQ_VERSION defines the yq version to download from GitHub releases.
 YQ_VERSION ?= v4.45.4
 
+## Tool Binaries
+YAMLLINT ?= $(LOCALBIN)/yamllint
+YQ ?= $(LOCALBIN)/yq
+
 # Prefer binaries in the local bin directory over system binaries.
 export PATH := $(abspath $(LOCALBIN)):$(PATH)
 export CARGO_TERM_COLOR := always
@@ -127,7 +131,7 @@ yamllint-download: sync-git-submodules $(LOCALBIN) ## Download yamllint
 .PHONY: yamllint
 yamllint: yamllint-download ## Lint YAML files in the repository
 	@echo "Running yamllint on repository YAML files..."
-	yamllint -c $(PROJECT_DIR)/.yamllint.yaml .
+	$(YAMLLINT) -c $(PROJECT_DIR)/.yamllint.yaml .
 	@echo "YAML linting completed successfully."
 
 .PHONY: yq
@@ -145,7 +149,7 @@ yq-sort-and-format: yq ## Sort keys/reformat all YAML files in the repository
 	@echo "Sorting keys and reformatting YAML files..."
 	@find . -name "*.yaml" -o -name "*.yml" | grep -v -E "(telco5g-konflux/|target/|vendor/|bin/|\.git/)" | while read file; do \
 		echo "Processing $$file..."; \
-		yq -i '.. |= sort_keys(.)' "$$file"; \
+		$(YQ) -i '.. |= sort_keys(.)' "$$file"; \
 	done
 	@echo "YAML sorting and formatting completed successfully."
 
