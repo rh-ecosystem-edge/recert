@@ -115,6 +115,7 @@ konflux-update-tekton-task-refs: sync-git-submodules ## Update task references i
 	@echo "Task references updated successfully."
 
 .PHONY: yamllint-download
+.PHONY: $(YAMLLINT)
 yamllint-download: sync-git-submodules $(LOCALBIN) ## Download yamllint
 	@echo "Downloading yamllint..."
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
@@ -130,6 +131,7 @@ yamllint: yamllint-download ## Lint YAML files in the repository
 	@echo "YAML linting completed successfully."
 
 .PHONY: yq
+.PHONY: $(YQ)
 yq: sync-git-submodules $(LOCALBIN) ## Download yq
 	@echo "Downloading yq..."
 	$(MAKE) -C $(PROJECT_DIR)/telco5g-konflux/scripts/download \
