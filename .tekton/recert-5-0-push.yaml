@@ -72,7 +72,7 @@ spec:
       value: ["latest"]
     - name: additional-labels
       value:
-        - name=openshift4/recert-rhel9
+        - name=openshift5/recert-rhel9
   pipelineRef:
     name: build-pipeline
   taskRunTemplate:
