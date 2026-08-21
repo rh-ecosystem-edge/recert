@@ -5,6 +5,9 @@ ignore:
   # Ignore the generated rpm lock files because we can't easily control their formatting
   - .konflux/lock-build/rpms.lock.yaml
   - .konflux/lock-runtime/rpms.lock.yaml
+  # Ignore the rpm lock file tmp directory
+  - .konflux/lock-build/tmp/
+  - .konflux/lock-runtime/tmp/
   # Ignore the submodule directories
   - telco5g-konflux/
 rules:
