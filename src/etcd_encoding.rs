@@ -118,42 +118,129 @@ pub(crate) async fn decode(data: &[u8]) -> Result<(Vec<u8>, Encoding)> {
 }
 
 pub(crate) async fn encode(data: &[u8], encoding: Encoding) -> Result<Vec<u8>> {
-    let value: Value = serde_json::from_slice(data)?;
+    match encoding {
+        Encoding::Json => return Ok(data.to_vec()),
+        Encoding::Cbor => return k8s_cbor::json_to_k8s_cbor_bytes(serde_json::from_slice(data)?).context("converting JSON to CBOR"),
+        Encoding::Protobuf => {
+            let value: Value = serde_json::from_slice(data)?;
+            let kind = value
+                .pointer("/kind")
+                .context("missing kind")?
+                .as_str()
+                .context("kind is not a string")?;
 
-    if matches!(encoding, Encoding::Cbor) {
-        return k8s_cbor::json_to_k8s_cbor_bytes(value).context("converting JSON to CBOR");
+            let mut result = b"k8s\x00".to_vec();
+
+            result.extend(
+                match kind {
+                    "ConfigMap" => Unknown::from(serde_json::from_slice::<ConfigMapWithMeta>(data)?),
+                    "Route" => Unknown::from(serde_json::from_slice::<RouteWithMeta>(data)?),
+                    "Secret" => Unknown::from(serde_json::from_slice::<SecretWithMeta>(data)?),
+                    "Node" => Unknown::from(serde_json::from_slice::<NodeWithMeta>(data)?),
+                    "Pod" => Unknown::from(serde_json::from_slice::<PodWithMeta>(data)?),
+                    "Deployment" => Unknown::from(serde_json::from_slice::<DeploymentWithMeta>(data)?),
+                    "ControllerRevision" => Unknown::from(serde_json::from_slice::<ControllerRevisionWithMeta>(data)?),
+                    "Job" => Unknown::from(serde_json::from_slice::<JobWithMeta>(data)?),
+                    "CronJob" => Unknown::from(serde_json::from_slice::<CronJobWithMeta>(data)?),
+                    "StatefulSet" => Unknown::from(serde_json::from_slice::<StatefulSetWithMeta>(data)?),
+                    "DaemonSet" => Unknown::from(serde_json::from_slice::<DaemonsSetWithMeta>(data)?),
+                    "ValidatingWebhookConfiguration" => {
+                        Unknown::from(serde_json::from_slice::<ValidatingWebhookConfigurationWithMeta>(data)?)
+                    }
+                    "MutatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<MutatingWebhookConfigurationWithMeta>(data)?),
+                    "OAuthClient" => Unknown::from(serde_json::from_slice::<OAuthClientWithMeta>(data)?),
+                    _ => return Ok(data.to_vec()),
+                }
+                .encode_to_vec(),
+            );
+
+            Ok(result)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configmap_json() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "foo",
+                "namespace": "bar",
+                "labels": {},
+                "annotations": {},
+                "ownerReferences": [],
+                "finalizers": [],
+                "managedFields": []
+            },
+            "data": {"hello": "world"},
+            "binaryData": {}
+        }))
+        .unwrap()
     }
 
-    // If kind is a known protobuf kind, write it back as protobuf, otherwise return raw JSON
-    // TODO: Just look at the new encoding param?
-    let kind = value
-        .pointer("/kind")
-        .context("missing kind")?
-        .as_str()
-        .context("kind is not a string")?;
+    #[tokio::test]
+    async fn test_decode_plain_json_passthrough() {
+        let json = br#"{"kind":"ConfigMap","apiVersion":"v1","metadata":{"name":"foo"}}"#;
+        let (decoded, encoding) = decode(json).await.unwrap();
+        assert!(matches!(encoding, Encoding::Json));
+        assert_eq!(decoded, json);
+    }
 
-    let mut result = b"k8s\x00".to_vec();
+    #[tokio::test]
+    async fn test_encode_unknown_kind_stays_json() {
+        let json = br#"{"kind":"Foo","apiVersion":"v1","metadata":{"name":"x"}}"#;
+        let encoded = encode(json, Encoding::Protobuf).await.unwrap();
+        assert_eq!(encoded, json);
+        assert!(!encoded.starts_with(b"k8s\x00"));
+    }
 
-    result.extend(
-        match kind {
-            "ConfigMap" => Unknown::from(serde_json::from_slice::<ConfigMapWithMeta>(data)?),
-            "Route" => Unknown::from(serde_json::from_slice::<RouteWithMeta>(data)?),
-            "Secret" => Unknown::from(serde_json::from_slice::<SecretWithMeta>(data)?),
-            "Node" => Unknown::from(serde_json::from_slice::<NodeWithMeta>(data)?),
-            "Pod" => Unknown::from(serde_json::from_slice::<PodWithMeta>(data)?),
-            "Deployment" => Unknown::from(serde_json::from_slice::<DeploymentWithMeta>(data)?),
-            "ControllerRevision" => Unknown::from(serde_json::from_slice::<ControllerRevisionWithMeta>(data)?),
-            "Job" => Unknown::from(serde_json::from_slice::<JobWithMeta>(data)?),
-            "CronJob" => Unknown::from(serde_json::from_slice::<CronJobWithMeta>(data)?),
-            "StatefulSet" => Unknown::from(serde_json::from_slice::<StatefulSetWithMeta>(data)?),
-            "DaemonSet" => Unknown::from(serde_json::from_slice::<DaemonsSetWithMeta>(data)?),
-            "ValidatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<ValidatingWebhookConfigurationWithMeta>(data)?),
-            "MutatingWebhookConfiguration" => Unknown::from(serde_json::from_slice::<MutatingWebhookConfigurationWithMeta>(data)?),
-            "OAuthClient" => Unknown::from(serde_json::from_slice::<OAuthClientWithMeta>(data)?),
-            _ => return Ok(data.to_vec()),
-        }
-        .encode_to_vec(),
-    );
+    #[tokio::test]
+    async fn test_configmap_protobuf_roundtrip() {
+        let json = configmap_json();
+        let encoded = encode(&json, Encoding::Protobuf).await.unwrap();
+        assert!(encoded.starts_with(b"k8s\x00"), "protobuf values start with k8s\\x00");
 
-    Ok(result)
+        let (decoded, encoding) = decode(&encoded).await.unwrap();
+        assert!(matches!(encoding, Encoding::Protobuf));
+
+        let value: Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(value.pointer("/kind").and_then(Value::as_str), Some("ConfigMap"));
+        assert_eq!(value.pointer("/metadata/name").and_then(Value::as_str), Some("foo"));
+        assert_eq!(value.pointer("/data/hello").and_then(Value::as_str), Some("world"));
+    }
+
+    #[tokio::test]
+    async fn test_encode_json_encoding_stays_json() {
+        let json = configmap_json();
+        let encoded = encode(&json, Encoding::Json).await.unwrap();
+        assert_eq!(encoded, json);
+        assert!(!encoded.starts_with(b"k8s\x00"));
+    }
+
+    #[tokio::test]
+    async fn test_cbor_roundtrip() {
+        let json = serde_json::json!({"kind": "Foo", "hello": "world"});
+        let bytes = serde_json::to_vec(&json).unwrap();
+        let encoded = encode(&bytes, Encoding::Cbor).await.unwrap();
+        assert_eq!(&encoded[..3], [0xd9, 0xd9, 0xf7]);
+
+        let (decoded, encoding) = decode(&encoded).await.unwrap();
+        assert!(matches!(encoding, Encoding::Cbor));
+        let value: Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(value["kind"], "Foo");
+        assert_eq!(value["hello"], "world");
+    }
+
+    #[tokio::test]
+    async fn test_decode_untagged_cbor_treated_as_json() {
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(&ciborium::value::Value::Map(vec![]), &mut bytes).unwrap();
+        let (decoded, encoding) = decode(&bytes).await.unwrap();
+        assert!(matches!(encoding, Encoding::Json));
+        assert_eq!(decoded, bytes);
+    }
 }

@@ -88,3 +88,40 @@ impl std::fmt::Display for UseCertRules {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CERT_A: &str = include_str!("cluster_crypto/cert_key_pair/testdata/rsa_rfc5280.pem");
+    const CERT_B: &str = include_str!("cluster_crypto/cert_key_pair/testdata/rsa_rfc7093.pem");
+
+    #[test]
+    fn test_parse_pem_and_match_cn() {
+        let cert = UseCert::parse(CERT_A).unwrap();
+        let rules = UseCertRules(vec![cert.clone()]);
+        let replacement = rules.get_replacement_cert(cert.cert.cert.subject_name()).unwrap().unwrap();
+        assert_eq!(replacement.subject, cert.cert.subject);
+    }
+
+    #[test]
+    fn test_parse_rejects_wrong_tag() {
+        let pem = "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n";
+        let err = UseCert::parse(pem).err().unwrap();
+        assert!(err.to_string().contains("expected CERTIFICATE"));
+    }
+
+    #[test]
+    fn test_parse_rejects_multiple_blocks() {
+        let block = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        let err = UseCert::parse(&format!("{block}{block}")).err().unwrap();
+        assert!(err.to_string().contains("expected exactly one PEM block"));
+    }
+
+    #[test]
+    fn test_get_replacement_cert_no_match() {
+        let rules = UseCertRules(vec![UseCert::parse(CERT_A).unwrap()]);
+        let other = UseCert::parse(CERT_B).unwrap();
+        assert!(rules.get_replacement_cert(other.cert.cert.subject_name()).unwrap().is_none());
+    }
+}

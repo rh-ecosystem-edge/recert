@@ -41,29 +41,40 @@ impl std::fmt::Display for UseKey {
 
 impl UseKey {
     pub(crate) fn parse(value: &str) -> Result<Self> {
-        // TODO: ' ' is legacy, remove eventually
-        let parts = if value.contains(':') { value.split(':') } else { value.split(' ') }.collect::<Vec<_>>();
-
-        ensure!(
-            parts.len() == 2,
-            "expected exactly one ':' in use-key argument, found {}",
-            parts.len()
-        );
-
-        let key_cert_cn = parts[0].to_string();
-        let path_or_pem = parts[1].to_string();
+        let (key_cert_cn, path_or_pem) = split_cn_and_key(value)?;
 
         Ok(Self {
             key_cert_cn,
             signing_key: if path_or_pem.contains('\n') {
-                let pem_string = path_or_pem;
-                key_from_pem(&pem_string).context("failed to parse PEM string")?
+                key_from_pem(&path_or_pem).context("failed to parse PEM string")?
             } else {
-                let private_key_path = PathBuf::from(path_or_pem.to_string());
+                let private_key_path = PathBuf::from(&path_or_pem);
                 key_from_file(&private_key_path).context(format!("reading private key from file {}", private_key_path.display()))?
             },
         })
     }
+}
+
+fn split_cn_and_key(value: &str) -> Result<(String, String)> {
+    if let Some(pem_start) = value.find("-----BEGIN") {
+        let cn = value[..pem_start]
+            .trim_end()
+            .strip_suffix(':')
+            .context("expected ':' before PEM block in use-key argument")?
+            .trim_end();
+        ensure!(!cn.is_empty(), "empty CN in use-key argument");
+        return Ok((cn.to_string(), value[pem_start..].to_string()));
+    }
+
+    if let Some((cn, path)) = value.rsplit_once(':') {
+        ensure!(!cn.is_empty() && !path.is_empty(), "expected CN:path in use-key argument");
+        return Ok((cn.to_string(), path.to_string()));
+    }
+
+    // TODO: ' ' is legacy, remove eventually
+    let (cn, path) = value.split_once(' ').context("expected CN and key path in use-key argument")?;
+    ensure!(!cn.is_empty() && !path.is_empty(), "expected CN and key path in use-key argument");
+    Ok((cn.to_string(), path.to_string()))
 }
 
 #[derive(serde::Serialize)]
@@ -91,5 +102,61 @@ impl std::fmt::Display for UseKeyRules {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rsa_pem() -> &'static str {
+        static PEM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        PEM.get_or_init(|| {
+            let output = std::process::Command::new("openssl")
+                .args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"])
+                .output()
+                .expect("openssl genpkey");
+            assert!(output.status.success());
+            String::from_utf8(output.stdout).unwrap()
+        })
+    }
+
+    #[test]
+    fn test_parse_colon_separated_pem() {
+        let pem = rsa_pem();
+        let parsed = UseKey::parse(&format!("my-cn:{pem}")).unwrap();
+        assert_eq!(parsed.key_cert_cn, "my-cn");
+    }
+
+    #[test]
+    fn test_parse_rejects_wrong_part_count() {
+        assert!(UseKey::parse("only-one-part").is_err());
+    }
+
+    #[test]
+    fn test_parse_legacy_space_separator() {
+        let pem = rsa_pem();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("key.pem");
+        std::fs::write(&path, pem).unwrap();
+        let parsed = UseKey::parse(&format!("my-cn {}", path.display())).unwrap();
+        assert_eq!(parsed.key_cert_cn, "my-cn");
+    }
+
+    #[test]
+    fn test_parse_cn_with_colons_from_file() {
+        let pem = rsa_pem();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("key.pem");
+        std::fs::write(&path, pem).unwrap();
+        let parsed = UseKey::parse(&format!("system:admin:{}", path.display())).unwrap();
+        assert_eq!(parsed.key_cert_cn, "system:admin");
+    }
+
+    #[test]
+    fn test_parse_cn_with_colons_from_pem() {
+        let pem = rsa_pem();
+        let parsed = UseKey::parse(&format!("system:admin:{pem}")).unwrap();
+        assert_eq!(parsed.key_cert_cn, "system:admin");
     }
 }

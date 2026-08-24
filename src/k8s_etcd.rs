@@ -113,9 +113,8 @@ impl InMemoryK8sEtcd {
 
             if let Some(resource_transformers) = &self.encrypt_resource_transformers {
                 // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L172
-                if let Some(transformers) = resource_transformers
-                    .resource_to_prefix_transformers
-                    .get(&resource_from_key(key.to_string()))
+                if let Some(transformers) =
+                    resource_from_key(&key).and_then(|resource| resource_transformers.resource_to_prefix_transformers.get(resource))
                 {
                     value = transformers[0]
                         .encrypt(key.to_string(), value)
@@ -200,9 +199,8 @@ impl InMemoryK8sEtcd {
 
             if let Some(resource_transformers) = &self.decrypt_resource_transformers {
                 // https://github.com/kubernetes/apiserver/blob/3423727e46efe7dfa40dcdb1a9c5c5027b07303d/pkg/storage/value/transformer.go#L110
-                if let Some(transformers) = resource_transformers
-                    .resource_to_prefix_transformers
-                    .get(&resource_from_key(key.to_string()))
+                if let Some(transformers) =
+                    resource_from_key(&key).and_then(|resource| resource_transformers.resource_to_prefix_transformers.get(resource))
                 {
                     for transformer in transformers {
                         if raw_etcd_value.to_vec().starts_with(transformer.get_prefix().as_bytes()) {
@@ -331,8 +329,8 @@ impl InMemoryK8sEtcd {
     }
 }
 
-fn resource_from_key(key: String) -> String {
-    key.split('/').collect::<Vec<_>>()[2].to_string()
+fn resource_from_key(key: &str) -> Option<&str> {
+    key.split('/').nth(2)
 }
 
 fn is_too_many_requests_error(delete_response: &std::prelude::v1::Result<etcd_client::DeleteResponse, etcd_client::Error>) -> bool {
@@ -364,4 +362,32 @@ pub(crate) async fn put_etcd_yaml(client: &InMemoryK8sEtcd, k8slocation: &K8sRes
         .await
         .context("putting in etcd")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resource_from_key_secret() {
+        assert_eq!(resource_from_key("/kubernetes.io/secrets/openshift-config/foo"), Some("secrets"));
+    }
+
+    #[test]
+    fn test_resource_from_key_configmap() {
+        assert_eq!(
+            resource_from_key("/kubernetes.io/configmaps/kube-system/cluster-config-v1"),
+            Some("configmaps")
+        );
+    }
+
+    #[test]
+    fn test_resource_from_key_openshift_route() {
+        assert_eq!(resource_from_key("/openshift.io/routes/openshift-console/console"), Some("routes"));
+    }
+
+    #[test]
+    fn test_resource_from_key_short_key_is_none() {
+        assert_eq!(resource_from_key("/too-short"), None);
+    }
 }

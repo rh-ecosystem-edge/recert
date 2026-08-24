@@ -312,3 +312,121 @@ fn process_base64_value(value: &Value) -> Result<Option<String>> {
         _ => None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_scan_secret_skips_ignore_list() {
+        let secret = json!({
+            "kind": "Secret",
+            "data": {
+                "tls.crt": [116, 108, 115],
+                "prometheus.yaml.gz": [1, 2, 3]
+            }
+        });
+
+        let found = crawl_json(secret).unwrap();
+        let pointers: Vec<_> = found.iter().map(|v| v.location.json_pointer.as_str()).collect();
+        assert!(pointers.contains(&"/data/tls.crt"));
+        assert!(rules::IGNORE_LIST_SECRET.contains("prometheus.yaml.gz"));
+        assert!(!pointers.contains(&"/data/prometheus.yaml.gz"));
+        assert!(found
+            .iter()
+            .any(|v| v.location.json_pointer == "/data/tls.crt" && matches!(v.location.encoding, FieldEncoding::ByteArray)));
+    }
+
+    #[test]
+    fn test_scan_configmap_skips_verifier_key() {
+        let configmap = json!({
+            "kind": "ConfigMap",
+            "data": {
+                "foo": "bar",
+                "verifier-public-key-redhat": "skip-me"
+            }
+        });
+
+        let found = crawl_json(configmap).unwrap();
+        assert!(IGNORE_LIST_CONFIGMAP.contains("verifier-public-key-redhat"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].location.json_pointer, "/data/foo");
+        assert!(matches!(found[0].location.encoding, FieldEncoding::None));
+    }
+
+    #[test]
+    fn test_scan_kubeconfig_without_kind() {
+        let kubeconfig = json!({
+            "users": [{
+                "name": "admin",
+                "user": {
+                    "client-certificate-data": "Y2VydA==",
+                    "client-key-data": "a2V5"
+                }
+            }],
+            "clusters": [{
+                "name": "cluster",
+                "cluster": {
+                    "certificate-authority-data": "Y2E="
+                }
+            }]
+        });
+
+        let found = crawl_json(kubeconfig).unwrap();
+        let pointers: Vec<_> = found.iter().map(|v| v.location.json_pointer.as_str()).collect();
+        assert!(pointers.contains(&"/users/0/user/client-certificate-data"));
+        assert!(pointers.contains(&"/users/0/user/client-key-data"));
+        assert!(pointers.contains(&"/clusters/0/cluster/certificate-authority-data"));
+        assert!(found.iter().all(|v| matches!(v.location.encoding, FieldEncoding::Base64)));
+    }
+
+    #[test]
+    fn test_unknown_kind_returns_empty() {
+        let found = crawl_json(json!({"kind": "Deployment", "spec": {}})).unwrap();
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn test_process_byte_array_value() {
+        let decoded = process_byte_array_value(&json!([116, 108, 115])).unwrap();
+        assert_eq!(decoded.as_deref(), Some("tls"));
+        assert!(process_byte_array_value(&json!("not-an-array")).unwrap().is_none());
+        assert!(process_byte_array_value(&json!([116, "nope"])).is_err());
+    }
+
+    #[test]
+    fn test_process_base64_value() {
+        let decoded = process_base64_value(&json!("dGxz")).unwrap();
+        assert_eq!(decoded.as_deref(), Some("tls"));
+        assert!(process_base64_value(&json!(123)).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_scan_machineconfig_pem_files() {
+        let mc = json!({
+            "kind": "MachineConfig",
+            "spec": {
+                "config": {
+                    "storage": {
+                        "files": [
+                            {
+                                "path": "/etc/kubernetes/ca.crt",
+                                "contents": {"source": "data:,cert"}
+                            },
+                            {
+                                "path": "/etc/hostname",
+                                "contents": {"source": "data:,ignored"}
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        let found = crawl_json(mc).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].location.json_pointer, "/spec/config/storage/files/0/contents/source");
+        assert!(matches!(found[0].location.encoding, FieldEncoding::DataUrl));
+    }
+}

@@ -1,49 +1,32 @@
 use anyhow::{ensure, Result};
 
 pub fn pem_bundle_line_ending(pem_bundle: &str) -> Result<pem::LineEnding> {
-    enum State {
-        Start,
-        CR,
-        LF,
-    }
-
-    let mut state = State::Start;
-
-    let mut crlf_count = 0;
-    let mut lf_count = 0;
-
-    for c in pem_bundle.chars() {
-        match state {
-            State::Start => match c {
-                '\r' => state = State::CR,
-                '\n' => state = State::LF,
-                _ => (),
-            },
-            State::CR => match c {
-                '\r' => state = State::CR,
-                '\n' => {
-                    state = State::Start;
-                    crlf_count += 1;
-                }
-                _ => (),
-            },
-            State::LF => match c {
-                '\r' => {
-                    state = State::CR;
-                    crlf_count += 1;
-                }
-                '\n' => {
-                    state = State::LF;
-                    lf_count += 1;
-                }
-                _ => state = State::Start,
-            },
+    let bytes = pem_bundle.as_bytes();
+    let (mut crlf_count, mut lf_count, mut cr_count) = (0usize, 0, 0);
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\r' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                crlf_count += 1;
+                i += 2;
+            } else {
+                cr_count += 1;
+                i += 1;
+            }
+        } else if bytes[i] == b'\n' {
+            lf_count += 1;
+            i += 1;
+        } else {
+            i += 1;
         }
     }
 
     ensure!(
-        crlf_count == 0 || lf_count == 0,
-        format!("pem bundle has mixed line endings, crlf_count {} lf_count {}", crlf_count, lf_count)
+        (crlf_count == 0 || lf_count == 0) && cr_count == 0,
+        "pem bundle has mixed line endings, crlf_count {} lf_count {} cr_count {}",
+        crlf_count,
+        lf_count,
+        cr_count
     );
 
     if crlf_count > 0 {
@@ -120,4 +103,80 @@ pub(crate) fn pem_bundle_replace_pem_at_index(original_pem_bundle: &str, pem_ind
     );
 
     Ok(new_bundle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cert_pem(contents: &[u8]) -> pem::Pem {
+        pem::Pem::new("CERTIFICATE", contents)
+    }
+
+    fn two_cert_bundle() -> (String, pem::Pem, pem::Pem) {
+        let first = cert_pem(b"AAAA");
+        let second = cert_pem(b"BBBB");
+        let bundle = format!("{}{}", pem::encode(&first), pem::encode(&second));
+        (bundle, first, second)
+    }
+
+    #[test]
+    fn test_line_ending_lf() {
+        let bundle = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        assert!(matches!(pem_bundle_line_ending(bundle).unwrap(), pem::LineEnding::LF));
+    }
+
+    #[test]
+    fn test_line_ending_crlf() {
+        let bundle = "-----BEGIN CERTIFICATE-----\r\nMIIB\r\n-----END CERTIFICATE-----\r\n";
+        assert!(matches!(pem_bundle_line_ending(bundle).unwrap(), pem::LineEnding::CRLF));
+    }
+
+    #[test]
+    fn test_line_ending_no_newlines_defaults_to_lf() {
+        assert!(matches!(pem_bundle_line_ending("no-newlines").unwrap(), pem::LineEnding::LF));
+    }
+
+    #[test]
+    fn test_line_ending_mixed_errors() {
+        let bundle = "line\n\nmixed\r\n";
+        let err = pem_bundle_line_ending(bundle).unwrap_err();
+        assert!(err.to_string().contains("mixed line endings"));
+    }
+
+    #[test]
+    fn test_line_ending_mixed_single_lf_and_crlf() {
+        let bundle = "line\nmixed\r\n";
+        let err = pem_bundle_line_ending(bundle).unwrap_err();
+        assert!(err.to_string().contains("mixed line endings"));
+    }
+
+    #[test]
+    fn test_replace_pem_at_index() {
+        let (bundle, first, _second) = two_cert_bundle();
+        let replacement = cert_pem(b"CCCC");
+
+        let replaced = pem_bundle_replace_pem_at_index(&bundle, 1, &replacement).unwrap();
+        let parsed = pem::parse_many(&replaced).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].contents(), first.contents());
+        assert_eq!(parsed[1].contents(), replacement.contents());
+    }
+
+    #[test]
+    fn test_replace_pem_index_out_of_range() {
+        let (bundle, _, _) = two_cert_bundle();
+        let replacement = cert_pem(b"CCCC");
+        let err = pem_bundle_replace_pem_at_index(&bundle, 5, &replacement).unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn test_replace_pem_duplicate_block_errors() {
+        let pem = cert_pem(b"AAAA");
+        let encoded = pem::encode(&pem);
+        let bundle = format!("{}{}", encoded, encoded);
+        let err = pem_bundle_replace_pem_at_index(&bundle, 0, &cert_pem(b"CCCC")).unwrap_err();
+        assert!(err.to_string().contains("not unique"));
+    }
 }
