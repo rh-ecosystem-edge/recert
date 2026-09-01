@@ -18,13 +18,13 @@ arches:
     name: cracklib-dicts
     evr: 2.9.6-28.el9
     sourcerpm: cracklib-2.9.6-28.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/g/gzip-1.12-1.el9.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/g/gzip-1.12-2.el9_8.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
-    size: 169809
-    checksum: sha256:45710df49b439ddc4a2848fd3877367761b574234ae28b6be46f1cf54f3fcdca
+    size: 171305
+    checksum: sha256:efafc848fdaa3a8e5e77baddc07abc7d800dc973efd44ecf492bc64dca4fabe6
     name: gzip
-    evr: 1.12-1.el9
-    sourcerpm: gzip-1.12-1.el9.src.rpm
+    evr: 1.12-2.el9_8
+    sourcerpm: gzip-1.12-2.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libcbor-0.7.0-5.el9.aarch64.rpm
     repoid: ubi-9-for-aarch64-baseos-rpms
     size: 59368
@@ -141,13 +141,13 @@ arches:
     name: cracklib-dicts
     evr: 2.9.6-28.el9
     sourcerpm: cracklib-2.9.6-28.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/g/gzip-1.12-1.el9.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/g/gzip-1.12-2.el9_8.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
-    size: 171206
-    checksum: sha256:c8b3e0414d55b1eedb0185a564ac6cb2368bee2fd5f995447d045f6a714488ac
+    size: 172571
+    checksum: sha256:a87bdcce45011f232758c01bd99c564b5f6b549d391646cc573a132d22604b85
     name: gzip
-    evr: 1.12-1.el9
-    sourcerpm: gzip-1.12-1.el9.src.rpm
+    evr: 1.12-2.el9_8
+    sourcerpm: gzip-1.12-2.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libcbor-0.7.0-5.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 60575
