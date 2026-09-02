@@ -92,10 +92,10 @@ impl CertKeyPair {
                     )?;
                 }
 
+                let regenerated_private_key = new_cert_subject_signing_key.to_private_key()?;
+
                 if let Some(associated_public_key) = &mut self.associated_public_key {
-                    (*associated_public_key)
-                        .borrow_mut()
-                        .regenerate((&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?)?;
+                    (*associated_public_key).borrow_mut().regenerate(&regenerated_private_key)?;
                 }
 
                 // This condition exists because not all certs originally had a private key associated with
@@ -103,8 +103,7 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
-                    (**distributed_private_key).borrow_mut().key_regenerated =
-                        Some((&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?);
+                    (**distributed_private_key).borrow_mut().key_regenerated = Some(regenerated_private_key);
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
@@ -165,6 +164,9 @@ impl CertKeyPair {
         // mkoid 1.2.840.10045.2.1
         let ec_public_key_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 206, 61, 2, 1]));
 
+        // mkoid 1.3.101.112
+        let ed25519_oid: Oid<Bytes> = Oid(Bytes::from_static(&[43, 101, 112]));
+
         let self_new_key_pair = if let Some(use_key_rule) = crypto_customizations
             .use_key_rules
             .key_file(tbs_certificate.subject.clone())
@@ -172,19 +174,19 @@ impl CertKeyPair {
         {
             log::info!("{}", use_key_rule);
             use_key_rule.signing_key
-        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid.clone() {
+        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid {
             let rsa_key_size = match &(*self.distributed_cert).borrow().certificate.public_key {
                 PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
                     .context("getting rsa key")?
                     .n()
                     .to_radix_le(2)
                     .len(),
-                PublicKey::Ec(_) => bail!("key algorithm mismatch"),
+                _ => bail!("key algorithm mismatch"),
             };
 
             // Draw an new RSA key from the pool for this cert
             rsa_key_pool.get(rsa_key_size).context("getting rsa key")?
-        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ec_public_key_oid.clone() {
+        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ec_public_key_oid {
             if let Some(params) = &tbs_certificate.subject_public_key_info.algorithm.parameters {
                 let curve_oid = params.decode_oid()?;
                 let curve = EcdsaCurve::try_from(&curve_oid)?;
@@ -193,6 +195,8 @@ impl CertKeyPair {
             } else {
                 bail!("ECDSA key missing parameters");
             }
+        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ed25519_oid {
+            crypto_utils::generate_ed25519_key().context("generating ed25519 key")?
         } else {
             bail!("unsupported key type");
         };
@@ -265,8 +269,10 @@ impl CertKeyPair {
         )
         .context("mutating cert")?;
 
-        // The to-be-signed certificate, encoded to DER, is the bytes we sign
-        let tbs_der = encode_tbs_cert_to_der(&tbs_certificate)?;
+        // The to-be-signed certificate, encoded to DER, is the bytes we sign.
+        // fix_ed25519_alg_id: the vendored x509-certificate crate adds NULL
+        // parameters to Ed25519 AlgorithmIdentifiers, but RFC 8410 requires them absent.
+        let tbs_der = crypto_utils::fix_ed25519_alg_id(&encode_tbs_cert_to_der(&tbs_certificate)?);
 
         // Generate the actual signature
         let signature = sign(signing_key, &tbs_der).context("signing")?;
@@ -279,8 +285,9 @@ impl CertKeyPair {
         };
 
         // Encode the entire cert as DER and reload it into a CapturedX509Certificate which is the
-        // type we use in our structs
-        let cert = CapturedX509Certificate::from_der(X509Certificate::from(cert).encode_der()?)?;
+        // type we use in our structs.
+        let cert_der = crypto_utils::fix_ed25519_alg_id(&X509Certificate::from(cert).encode_der()?);
+        let cert = CapturedX509Certificate::from_der(cert_der)?;
 
         Ok((self_new_key_pair, cert))
     }
