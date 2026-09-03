@@ -22,7 +22,7 @@ COPY src/ src/
 COPY build.rs build.rs
 RUN cargo build --release --bin recert
 
-FROM docker.io/library/debian:bookworm AS runtime
+FROM docker.io/library/debian:trixie AS runtime
 WORKDIR /app
 RUN apt-get update
 RUN apt-get install -y openssl openssh-client
