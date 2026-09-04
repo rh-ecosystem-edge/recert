@@ -33,4 +33,6 @@ assert_cert_regenerated "PKCS#8 P-256 CA" "$crypto_dir" "ec-p256-ca.crt" "ec-p25
 assert_cert_regenerated "PKCS#8 P-256 server" "$crypto_dir" "ec-p256-server.crt" "ec-p256-server.key" \
     "$server_cert_hash" "$server_key_hash" "id-ecPublicKey" "prime256v1"
 assert_chain_valid "${crypto_dir}/ec-p256-ca.crt" "${crypto_dir}/ec-p256-server.crt"
+assert_pem_tag "${crypto_dir}/ec-p256-ca.key" "PRIVATE KEY" "regenerated EC CA key should be PKCS#8 PRIVATE KEY"
+assert_pem_tag "${crypto_dir}/ec-p256-server.key" "PRIVATE KEY" "regenerated EC server key should be PKCS#8 PRIVATE KEY"
 assert_summary_valid "${workdir}/summary.yaml"
