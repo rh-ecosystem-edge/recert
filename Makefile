@@ -52,6 +52,10 @@ clean:
 test: rust-test
 	@echo "All testing tasks completed successfully."
 
+.PHONY: e2e-test
+e2e-test: ## Run e2e crypto tests
+	bash $(PROJECT_DIR)/e2e_test.sh
+
 .PHONY: integration-test
 integration-test: ## Run integration tests in a container
 	docker build -f Dockerfile.integration -t recert-integration .
