@@ -102,3 +102,94 @@ impl std::fmt::Display for CnSanReplaceRules {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    fn rules(pairs: &[&str]) -> CnSanReplaceRules {
+        CnSanReplaceRules(pairs.iter().map(|p| CnSanReplace::parse(p).unwrap()).collect())
+    }
+
+    #[test]
+    fn test_parse_hostname_colon() {
+        let parsed = CnSanReplace::parse("old.example.com:new.example.com").unwrap();
+        assert_eq!(parsed.old, "old.example.com");
+        assert_eq!(parsed.new, "new.example.com");
+    }
+
+    #[test]
+    fn test_parse_ipv6_comma() {
+        let parsed = CnSanReplace::parse("2001:db8::1,2001:db8::50").unwrap();
+        assert_eq!(parsed.old, "2001:db8::1");
+        assert_eq!(parsed.new, "2001:db8::50");
+    }
+
+    #[test]
+    fn test_parse_rejects_too_many_parts() {
+        let err = CnSanReplace::parse("a:b:c").err().unwrap();
+        assert!(err.to_string().contains("expected exactly one ':'"));
+    }
+
+    #[test]
+    fn test_parse_rejects_missing_separator() {
+        assert!(CnSanReplace::parse("onlyone").is_err());
+    }
+
+    #[test]
+    fn test_replace_exact_match_only() {
+        let rules = rules(&["old.com:new.com"]);
+
+        assert_eq!(rules.replace("old.com"), "new.com");
+        assert_eq!(rules.replace("api.old.com"), "api.old.com");
+        assert_eq!(rules.replace("old.com.extra"), "old.com.extra");
+    }
+
+    #[test]
+    fn test_replace_last_matching_rule_wins() {
+        let rules = rules(&["old.com:first.com", "old.com:second.com"]);
+
+        assert_eq!(rules.replace("old.com"), "second.com");
+    }
+
+    #[test]
+    fn test_replace_ip_v4() {
+        let rules = rules(&["192.0.2.1:192.0.2.50"]);
+        let input = OctetString::new(Ipv4Addr::new(192, 0, 2, 1).octets().to_vec()).unwrap();
+        let expected = OctetString::new(Ipv4Addr::new(192, 0, 2, 50).octets().to_vec()).unwrap();
+
+        assert_eq!(rules.replace_ip(&input), expected);
+    }
+
+    #[test]
+    fn test_replace_ip_v6() {
+        let rules = rules(&["2001:db8::1,2001:db8::50"]);
+        let input = OctetString::new(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1).octets().to_vec()).unwrap();
+        let expected = OctetString::new(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0x50).octets().to_vec()).unwrap();
+
+        assert_eq!(rules.replace_ip(&input), expected);
+    }
+
+    #[test]
+    fn test_replace_ip_skips_ip_to_hostname() {
+        let rules = rules(&["192.0.2.1:example.com"]);
+        let input = OctetString::new(Ipv4Addr::new(192, 0, 2, 1).octets().to_vec()).unwrap();
+
+        assert_eq!(rules.replace_ip(&input), input);
+    }
+
+    #[test]
+    fn test_replace_ip_unmatched_unchanged() {
+        let rules = rules(&["192.0.2.1:192.0.2.50"]);
+        let input = OctetString::new(Ipv4Addr::new(192, 0, 2, 9).octets().to_vec()).unwrap();
+
+        assert_eq!(rules.replace_ip(&input), input);
+    }
+
+    #[test]
+    fn test_is_empty() {
+        assert!(CnSanReplaceRules(vec![]).is_empty());
+        assert!(!rules(&["a:b"]).is_empty());
+    }
+}
