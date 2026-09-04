@@ -7,6 +7,9 @@ crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key server.crt server.key)
 
 setup_webhook_authenticator "$crypto_dir"
 
+# Trap cleanup before the first write to the shared etcd key
+trap 'etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" /kubernetes.io/secrets/default/app-tls >/dev/null' EXIT
+
 etcd_put_tls_secret "default" "app-tls" \
     "${crypto_dir}/server.crt" "${crypto_dir}/server.key"
 
