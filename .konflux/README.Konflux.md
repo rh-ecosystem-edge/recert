@@ -47,3 +47,17 @@ The push/pull tekton yaml files in `.tekton` have been configured to setup a her
 
 ### Update  rpms
 Konflux provides a mechanism (Mintmaker) to automatically file PRs to update RPM versions and generate the updated lockfile. At time of writing, this is limited to a `rpm.locks.yaml` file present in the project root.
+
+## Rust dependency updates
+
+Rust dependencies are tracked by `Cargo.toml`, `Cargo.lock`, and the committed
+`vendor/` directory. The `cargo` Renovate manager is enabled in `renovate.json`
+for separate, manually reviewed dependency PRs. A Cargo update must regenerate
+the vendor tree before it can merge; run `make rust-vendor-update` locally when
+reviewing or preparing a dependency update.
+
+Konflux/Mintmaker must allow the repository's vendor-refresh command as a
+narrowly scoped post-update task before it can generate complete automated Rust
+dependency PRs. Until that command is enabled by the platform configuration,
+Cargo PRs should be treated as incomplete unless they include the corresponding
+`vendor/` changes.

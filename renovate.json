@@ -39,6 +39,36 @@
     "gomod": {
         "enabled": false
     },
+    "cargo": {
+        "enabled": true,
+        "rangeStrategy": "bump",
+        "packageRules": [
+            {
+                "automerge": false,
+                "matchUpdateTypes": [
+                    "major",
+                    "minor",
+                    "patch",
+                    "pin",
+                    "pinDigest",
+                    "digest",
+                    "replacement",
+                    "rollback"
+                ],
+                "postUpgradeTasks": [
+                    {
+                        "commands": [
+                            "make rust-vendor-update"
+                        ],
+                        "executionMode": "update",
+                        "fileFilters": [
+                            "vendor/**"
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
     "packageRules": [
         {
             "addLabels": [
