@@ -177,6 +177,12 @@ rust-deps: ## Install Rust build dependencies (protobuf-compiler, rustfmt, rust,
 	$(PROJECT_DIR)/hack/rust-deps.sh
 	@echo "Dependencies installed successfully."
 
+.PHONY: rust-vendor-update
+rust-vendor-update: ## Regenerate the committed Cargo vendor tree
+	@echo "Updating vendored Rust dependencies..."
+	$(PROJECT_DIR)/hack/update-vendor.sh
+	@echo "Vendored dependencies updated successfully."
+
 .PHONY: rust-fmt
 rust-fmt: ## Check Rust code formatting
 	@echo "Checking Rust code formatting..."
@@ -186,8 +192,14 @@ rust-fmt: ## Check Rust code formatting
 .PHONY: rust-check
 rust-check: ## Check Rust code compilation
 	@echo "Checking Rust code compilation..."
-	cargo check
+	cargo check --locked --offline
 	@echo "Compilation check completed successfully."
+
+.PHONY: rust-vendor-check
+rust-vendor-check: ## Verify the committed Cargo vendor tree matches the lockfile
+	@echo "Checking vendored Rust dependencies..."
+	$(PROJECT_DIR)/hack/check-vendor.sh
+	@echo "Vendored dependency check completed successfully."
 
 .PHONY: rust-clippy
 rust-clippy: ## Run Rust linter (clippy)
@@ -202,7 +214,7 @@ rust-test: ## Run Rust tests
 	@echo "Tests completed successfully."
 
 .PHONY: rust-ci
-rust-ci: rust-deps rust-fmt rust-check rust-clippy rust-test rust-compile ## Run all Rust CI checks (used for Github actions workflow)
+rust-ci: rust-deps rust-fmt rust-vendor-check rust-check rust-clippy rust-test rust-compile ## Run all Rust CI checks (used for Github actions workflow)
 	@echo "All Rust CI checks completed successfully."
 
 .PHONY: help
