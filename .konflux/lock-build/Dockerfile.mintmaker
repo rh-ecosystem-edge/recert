@@ -1,5 +1,5 @@
 # Due to a limitation in Mintmaker, we need to create a dummy Dockerfile that does not use ARGs
 # This should match the BUILDER_IMAGE in container_build_args.conf
 # Mintmaker should keep these in sync automatically when it performs updates
-FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:25a147defd01e19674714f55d17538c8dbe55d8c305fa157ecc3f9c8977b05b6
+FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:206b65b8ee0f04b992818c9a51b29081b14974630d4850bc358097d0c44ea156
 #
