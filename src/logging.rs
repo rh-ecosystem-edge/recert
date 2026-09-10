@@ -106,9 +106,18 @@ pub(crate) fn generate_summary(
         error: error.map(|e| format!("{:?}", e)),
     };
 
+    #[cfg(not(feature = "insecure_dev_only_unredacted_summary"))]
+    if summary.recert_config.summary_file.is_some() {
+        bail!("summary_file contains unredacted secret keys - use summary_file_clean instead, or build with --features insecure_dev_only_unredacted_summary");
+    }
+
+    #[cfg(feature = "insecure_dev_only_unredacted_summary")]
     if let Some(summary_file) = summary.recert_config.summary_file.clone() {
-        let summary_file = summary_file.0.create().context("opening summary file for writing")?;
-        serde_yaml::to_writer(summary_file, &summary).context("serializing cluster crypto into summary file")?;
+        use std::os::unix::fs::PermissionsExt;
+        let path = summary_file.0.path().to_owned();
+        let file = summary_file.0.create().context("opening summary file for writing")?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).context("setting summary file permissions to 0600")?;
+        serde_yaml::to_writer(file, &summary).context("serializing cluster crypto into summary file")?;
     }
 
     if let Some(summary_file_clean) = summary.recert_config.summary_file_clean.clone() {
