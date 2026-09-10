@@ -15,7 +15,6 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
 };
 use anyhow::{bail, Context, Result};
-use pkcs1::EncodeRsaPrivateKey;
 use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 use std::{self, cell::RefCell, path::PathBuf, rc::Rc};
@@ -90,7 +89,7 @@ impl DistributedPrivateKey {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &self.key_regenerated.clone().context("key was no regenerated")?.pem()?,
+                    &self.key_regenerated.as_ref().context("key was no regenerated")?.pem()?,
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
@@ -104,10 +103,7 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
-        let private_key_pem = match &self.key_regenerated.clone().context("key was no regenerated")? {
-            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
-            PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
-        };
+        let private_key_pem = self.key_regenerated.as_ref().context("key was no regenerated")?.pem()?;
 
         commit_file(
             &filelocation.path,
