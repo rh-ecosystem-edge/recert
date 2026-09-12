@@ -1,9 +1,11 @@
 use anyhow::{bail, ensure, Context, Result};
 use p256::pkcs8::DecodePublicKey;
+use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 
 use super::{
+    crypto_utils,
     keys::{PrivateKey, PublicKey},
     locations::{FileContentLocation, FileLocation, K8sLocation, Location, LocationValueType, Locations},
     pem_utils,
@@ -40,8 +42,8 @@ impl Display for DistributedPublicKey {
 }
 
 impl DistributedPublicKey {
-    pub(crate) fn regenerate(&mut self, new_private: PrivateKey) -> Result<()> {
-        self.key_regenerated = Some(PublicKey::try_from(&new_private)?);
+    pub(crate) fn regenerate(&mut self, new_private: &PrivateKey) -> Result<()> {
+        self.key_regenerated = Some(PublicKey::try_from(new_private)?);
 
         Ok(())
     }
@@ -55,20 +57,24 @@ impl DistributedPublicKey {
             "public keys with an association should only be regenerated indirectly through their association"
         );
 
-        let num_bits = match &self.key {
-            PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
-                .context("getting rsa key")?
-                .n()
-                .to_radix_le(2)
-                .len(),
-            PublicKey::Ec(_) => bail!("key algorithm mismatch"),
+        let signing_key = match &self.key {
+            PublicKey::Rsa(bytes) => {
+                let rsa_pub = rsa::RsaPublicKey::from_public_key_der(bytes)
+                    .or_else(|_| rsa::RsaPublicKey::from_pkcs1_der(bytes))
+                    .context("getting rsa key")?;
+                let num_bits = rsa_pub.n().to_radix_le(2).len();
+                rsa_key_pool.get(num_bits).context("RSA pool empty")?
+            }
+            PublicKey::Ec(pem_bytes) => {
+                let pubkey_pem = std::str::from_utf8(pem_bytes).context("EC public key PEM not UTF-8")?;
+                let parsed = pem::parse(pubkey_pem.as_bytes()).context("parsing EC public key PEM")?;
+                let curve = crypto_utils::ec_curve_from_public_key_der(parsed.contents()).context("detecting EC curve from public key")?;
+                crypto_utils::generate_ec_key(curve).context("generating EC key")?
+            }
+            PublicKey::Ed25519(_) => crypto_utils::generate_ed25519_key().context("generating Ed25519 key")?,
         };
 
-        let signing_key = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
-
-        let regenerated_private_key: PrivateKey = (&signing_key.in_memory_signing_key_pair)
-            .try_into()
-            .context("signing key to private key")?;
+        let regenerated_private_key = signing_key.to_private_key().context("signing key to private key")?;
         self.key_regenerated = Some((&regenerated_private_key).try_into().context("private to public key")?);
 
         Ok(())
@@ -139,7 +145,8 @@ impl DistributedPublicKey {
     async fn commit_filesystem_public_key(&self, filelocation: &FileLocation) -> Result<()> {
         let public_key_pem = match &self.key_regenerated.clone().context("key was not regenerated")? {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
-            PublicKey::Ec(_) => bail!("ECDSA public key not yet supported for filesystem commit"),
+            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing EC public key PEM")?,
+            PublicKey::Ed25519(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing Ed25519 public key PEM")?,
         };
 
         commit_file(
