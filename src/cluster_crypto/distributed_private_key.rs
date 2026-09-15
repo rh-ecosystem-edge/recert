@@ -6,6 +6,7 @@ use super::{
     signee::Signee,
 };
 use crate::{
+    cluster_crypto::crypto_utils,
     config::CryptoCustomizations,
     file_utils::{
         add_recert_edited_annotation, commit_file, get_filesystem_yaml, read_file_to_string, recreate_yaml_at_location_with_new_pem,
@@ -15,7 +16,6 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
 };
 use anyhow::{bail, Context, Result};
-use pkcs1::EncodeRsaPrivateKey;
 use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 use std::{self, cell::RefCell, path::PathBuf, rc::Rc};
@@ -31,23 +31,30 @@ pub(crate) struct DistributedPrivateKey {
 
 impl DistributedPrivateKey {
     pub(crate) fn regenerate(&mut self, rsa_key_pool: &mut RsaKeyPool, crypto_customizations: &CryptoCustomizations) -> Result<()> {
-        let num_bits = match &self.key {
-            PrivateKey::Rsa(key) => key.n().to_radix_le(2).len(),
-            PrivateKey::Ec(_) => bail!("cannot regenerate standalone EC key"),
+        let self_new_key_pair = match &self.key {
+            PrivateKey::Rsa(key) => {
+                let num_bits = key.n().to_radix_le(2).len();
+                rsa_key_pool.get(num_bits).context("RSA pool empty")?
+            }
+            PrivateKey::Ec(pkcs8_der) => {
+                let curve = crypto_utils::ec_curve_from_pkcs8_der(pkcs8_der).context("detecting EC curve")?;
+                crypto_utils::generate_ec_key(curve).context("generating EC key")?
+            }
+            PrivateKey::Ed25519(_) => crypto_utils::generate_ed25519_key().context("generating Ed25519 key")?,
         };
-
-        let self_new_key_pair = rsa_key_pool.get(num_bits).context("RSA pool empty")?;
 
         for signee in &mut self.signees {
             signee.regenerate(Some(&self_new_key_pair), rsa_key_pool, crypto_customizations, None, None)?;
         }
 
-        let regenerated_private_key: PrivateKey = (&self_new_key_pair.in_memory_signing_key_pair).try_into()?;
+        let regenerated_private_key = self_new_key_pair.to_private_key()?;
         self.key_regenerated = Some(regenerated_private_key.clone());
 
         if let Some(public_key) = &self.associated_distributed_public_key {
-            (*public_key).borrow_mut().regenerate(regenerated_private_key.clone())?;
+            (*public_key).borrow_mut().regenerate(&regenerated_private_key)?;
         }
+
+        self.key_regenerated = Some(regenerated_private_key);
 
         Ok(())
     }
@@ -104,10 +111,7 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
-        let private_key_pem = match &self.key_regenerated.clone().context("key was no regenerated")? {
-            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
-            PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
-        };
+        let private_key_pem = self.key_regenerated.clone().context("key was not regenerated")?.pem()?;
 
         commit_file(
             &filelocation.path,
