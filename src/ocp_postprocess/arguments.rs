@@ -73,4 +73,24 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_encode_with_delimeter_empty() {
+        assert_eq!(encode_with_delimeter(serde_json::Map::new(), " ").unwrap(), "");
+    }
+
+    #[test]
+    fn test_trim_quotes() {
+        assert_eq!(trim_quotes("\"foo\""), "foo");
+        assert_eq!(trim_quotes("foo"), "foo");
+        assert_eq!(trim_quotes("\"foo"), "\"foo");
+        assert_eq!(trim_quotes("foo\""), "foo\"");
+    }
+
+    #[test]
+    fn test_shell_escape() {
+        assert_eq!(shell_escape("simple").unwrap(), "simple");
+        assert_eq!(shell_escape("has space").unwrap(), "'has space'");
+        assert_eq!(shell_escape("it's").unwrap(), "'it'\"'\"'s'");
+    }
 }
