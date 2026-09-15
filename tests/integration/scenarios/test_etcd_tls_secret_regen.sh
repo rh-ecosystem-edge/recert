@@ -7,6 +7,9 @@ crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key server.crt server.key)
 
 setup_webhook_authenticator "$crypto_dir"
 
+# Trap cleanup before the first write to the shared etcd key
+trap 'etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" /kubernetes.io/secrets/default/app-tls >/dev/null' EXIT
+
 etcd_put_tls_secret "default" "app-tls" \
     "${crypto_dir}/server.crt" "${crypto_dir}/server.key"
 
@@ -38,4 +41,11 @@ assert_ne "$(sha256_file "${workdir}/from-etcd.key")" "$orig_key_hash" \
     "etcd tls.key should be regenerated"
 assert_chain_valid "${crypto_dir}/ca.crt" "${workdir}/from-etcd.crt" \
     "regenerated etcd leaf should verify against regenerated CA"
+
+# JSON-encoded resources committed to a live etcd must not be re-encoded as
+# protobuf on write-back. A protobuf value would start with a k8s\x00 magic
+# (truncated to "k8s" by the shell), JSON starts with '{'.
+assert_match "$(etcd_get "/kubernetes.io/secrets/default/app-tls")" '^\{' \
+    "rewritten TLS secret should stay JSON-encoded in etcd (not protobuf)"
+
 assert_summary_valid "${workdir}/summary.yaml"
