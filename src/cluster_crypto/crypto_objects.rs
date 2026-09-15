@@ -8,7 +8,6 @@ use super::{
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
-use p256::SecretKey;
 use pkcs1::DecodeRsaPrivateKey;
 use std::{
     io::Write,
@@ -220,15 +219,9 @@ pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<Crypto
         .write_all(pem.to_string().as_bytes())?;
 
     let output = command.wait_with_output()?;
-    let pem = pem::parse(output.stdout)?;
+    let pkcs8_pem = pem::parse(output.stdout)?;
 
-    let key = pem.to_string().parse::<SecretKey>()?;
-    let public_key = key.public_key();
-
-    let private_part = PrivateKey::Ec(Bytes::copy_from_slice(pem.contents()));
-    let public_part = PublicKey::Ec(Bytes::copy_from_slice(public_key.to_string().as_bytes()));
-
-    Ok(Some((private_part, public_part).into()))
+    process_pem_private_key(&pkcs8_pem).context("processing converted PKCS#8 key")
 }
 
 /// Given a certificate PEM, record it in the appropriate data structures.
@@ -301,6 +294,15 @@ mod tests {
                     }
                     _ => panic!("expected PrivateKey::Ec"),
                 }
+
+                let priv_pem = private_key.pem().expect("PrivateKey::pem() should succeed");
+                assert_eq!(
+                    priv_pem.tag(),
+                    "PRIVATE KEY",
+                    "PKCS#8 DER must use PRIVATE KEY tag, not EC PRIVATE KEY"
+                );
+                assert_eq!(priv_pem.contents(), parsed.contents(), "round-tripped DER should match original");
+
                 match &public_key {
                     PublicKey::Ec(pem_bytes) => {
                         let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");
@@ -342,6 +344,127 @@ mod tests {
                 assert!(matches!(private_key, PrivateKey::Rsa(_)), "expected PrivateKey::Rsa");
             }
             _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_ec_private_key_sec1_p256() {
+        assert_sec1_ec_key_round_trips("prime256v1");
+    }
+
+    #[test]
+    fn test_ec_serialize_uses_correct_pem_tag() {
+        let pkcs8_pem_bytes = generate_ec_pkcs8_pem("prime256v1");
+        let parsed = pem::parse(&pkcs8_pem_bytes).expect("failed to parse PEM");
+
+        let result = process_pem_private_key(&parsed).expect("process_pem_private_key failed");
+        let crypto_obj = result.expect("expected Some(CryptoObject)");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, _) => {
+                let serialized = serde_json::to_string(&private_key).expect("serialize failed");
+                assert!(
+                    serialized.contains("BEGIN PRIVATE KEY"),
+                    "serialized EC key should use PRIVATE KEY tag"
+                );
+                assert!(
+                    !serialized.contains("BEGIN EC PRIVATE KEY"),
+                    "serialized EC key must not use EC PRIVATE KEY tag"
+                );
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_private_key_corrupted_pkcs8() {
+        let garbage = pem::Pem::new("PRIVATE KEY", vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let result = process_pem_private_key(&garbage);
+        assert!(result.is_err(), "corrupted PKCS#8 DER should produce an error");
+    }
+
+    fn assert_sec1_ec_key_round_trips(curve: &str) {
+        let output = Command::new("openssl")
+            .args(["ecparam", "-name", curve, "-genkey", "-noout"])
+            .output()
+            .expect("failed to generate EC key");
+        assert!(output.status.success());
+
+        let parsed = pem::parse(&output.stdout).expect("failed to parse PEM");
+        assert_eq!(parsed.tag(), "EC PRIVATE KEY");
+
+        let result = process_pem_ec_private_key(&parsed).expect("process_pem_ec_private_key failed");
+        let crypto_obj = result.expect("expected Some(CryptoObject)");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, public_key) => {
+                match &private_key {
+                    PrivateKey::Ec(stored_bytes) => {
+                        assert_ne!(
+                            stored_bytes.as_ref(),
+                            parsed.contents(),
+                            "stored bytes should be PKCS#8 DER, not original SEC1 DER"
+                        );
+                        let reparsed = InMemorySigningKeyPair::from_pkcs8_der(stored_bytes.as_ref());
+                        assert!(reparsed.is_ok(), "stored bytes should be valid PKCS#8 DER");
+                    }
+                    _ => panic!("expected PrivateKey::Ec"),
+                }
+                match &public_key {
+                    PublicKey::Ec(pem_bytes) => {
+                        let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");
+                        assert_eq!(pub_pem.tag(), "PUBLIC KEY");
+                    }
+                    _ => panic!("expected PublicKey::Ec"),
+                }
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_pem_ec_private_key_sec1_p384() {
+        assert_sec1_ec_key_round_trips("secp384r1");
+    }
+
+    #[test]
+    fn test_ec_pkcs8_full_round_trip_der_equality() {
+        let pkcs8_pem_bytes = generate_ec_pkcs8_pem("prime256v1");
+        let parsed = pem::parse(&pkcs8_pem_bytes).expect("failed to parse PEM");
+
+        let result = process_pem_private_key(&parsed).expect("process_pem_private_key failed");
+        let crypto_obj = result.expect("expected Some(CryptoObject)");
+
+        match crypto_obj {
+            CryptoObject::PrivateKey(private_key, _) => {
+                let output_pem = private_key.pem().expect("pem() failed");
+                let external_certs = super::super::scanning::ExternalCerts::empty();
+                let reparsed = process_single_pem(&output_pem, &external_certs)
+                    .expect("re-parse failed")
+                    .expect("expected Some on re-parse");
+                match (&private_key, reparsed) {
+                    (PrivateKey::Ec(orig_bytes), CryptoObject::PrivateKey(PrivateKey::Ec(re_bytes), _)) => {
+                        assert_eq!(
+                            orig_bytes.as_ref(),
+                            re_bytes.as_ref(),
+                            "round-tripped DER bytes should match original"
+                        );
+                    }
+                    _ => panic!("type mismatch"),
+                }
+            }
+            _ => panic!("expected CryptoObject::PrivateKey"),
+        }
+    }
+
+    #[test]
+    fn test_process_single_pem_unknown_tag() {
+        let unknown = pem::Pem::new("WEIRD TAG", vec![0x01, 0x02]);
+        let external_certs = super::super::scanning::ExternalCerts::empty();
+        let result = process_single_pem(&unknown, &external_certs);
+        match result {
+            Err(e) => assert!(e.to_string().contains("unknown pem tag"), "error should mention unknown pem tag"),
+            Ok(_) => panic!("unknown PEM tag should produce an error"),
         }
     }
 }
