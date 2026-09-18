@@ -197,11 +197,16 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_ec_public_key_returns_false() {
-        let public_key = PublicKey::Ec(bytes::Bytes::from_static(
-            b"-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----",
-        ));
-        assert!(!verify("a.b.c", &public_key).unwrap());
+    fn test_verify_ec_public_key_bad_signature_returns_false() {
+        let key = crate::cluster_crypto::crypto_utils::generate_ec_key(x509_certificate::EcdsaCurve::Secp256r1).unwrap();
+        let private_key = key.to_private_key().unwrap();
+        let public_key = PublicKey::try_from(&private_key).unwrap();
+
+        // Well-formed ES256 JWT with a valid base64 signature that does not match the key.
+        let header = b64.encode(br#"{"alg":"ES256","typ":"JWT"}"#);
+        let payload = b64.encode(br#"{"sub":"test"}"#);
+        let jwt = format!("{}.{}.AA", header, payload);
+        assert!(!verify(&jwt, &public_key).unwrap());
     }
 
     #[test]
@@ -217,10 +222,17 @@ mod tests {
     }
 
     #[test]
-    fn test_resign_rejects_non_rs256() {
+    fn test_resign_overwrites_hs256_alg_with_key_alg() {
+        // resign replaces the incoming alg with the signing key's algorithm.
         let header = b64.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
         let jwt = format!("{}.{}.AA", header, b64.encode(br#"{"sub":"test"}"#));
-        assert!(resign(&jwt, rsa_signing_key()).unwrap_err().to_string().contains("unsupported alg"));
+        let resigned = resign(&jwt, rsa_signing_key()).unwrap();
+        let parts: Vec<_> = resigned.split('.').collect();
+        assert_eq!(parts.len(), 3);
+
+        let header: serde_json::Value = serde_json::from_slice(&b64.decode(parts[0]).unwrap()).unwrap();
+        assert_eq!(header["alg"], "RS256");
+        assert!(header.get("kid").and_then(|v| v.as_str()).is_some());
     }
 
     #[test]
@@ -234,12 +246,19 @@ mod tests {
     }
 
     #[test]
-    fn test_resign_rejects_ecdsa_key() {
+    fn test_resign_and_verify_es256_roundtrip() {
         let key = crate::cluster_crypto::crypto_utils::generate_ec_key(x509_certificate::EcdsaCurve::Secp256r1).unwrap();
-        assert!(resign(&unsigned_rs256_jwt(), &key)
-            .unwrap_err()
-            .to_string()
-            .contains("ecdsa unsupported"));
+        let resigned = resign(&unsigned_rs256_jwt(), &key).unwrap();
+        let parts: Vec<_> = resigned.split('.').collect();
+        assert_eq!(parts.len(), 3);
+
+        let header: serde_json::Value = serde_json::from_slice(&b64.decode(parts[0]).unwrap()).unwrap();
+        assert_eq!(header["alg"], "ES256");
+        assert!(header.get("kid").and_then(|v| v.as_str()).is_some());
+
+        let private_key = key.to_private_key().unwrap();
+        let public_key = PublicKey::try_from(&private_key).unwrap();
+        assert!(verify(&resigned, &public_key).unwrap());
     }
 
     #[test]
