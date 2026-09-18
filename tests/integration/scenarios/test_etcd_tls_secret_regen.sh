@@ -56,15 +56,19 @@ assert_ne "$(sha256_file "${workdir}/from-etcd.key")" "$orig_key_hash" \
 assert_chain_valid "${crypto_dir}/ca.crt" "${workdir}/from-etcd.crt" \
     "regenerated etcd leaf should verify against regenerated CA"
 
+# JSON-encoded resources committed to a live etcd must not be re-encoded as
+# protobuf on write-back. A protobuf value would start with a k8s\x00 magic
+# (truncated to "k8s" by the shell), JSON starts with '{'.
+assert_match "$(etcd_get "/kubernetes.io/secrets/default/app-tls")" '^\{' \
+    "rewritten TLS secret should stay JSON-encoded in etcd (not protobuf)"
+
 # The multi-byte UTF-8 byte-array field must survive the edit cycle intact. The
-# check searches the RAW etcd bytes (not JSON) because on this branch the rewritten
-# secret is committed back to etcd as protobuf, which `json.load` cannot parse; the
-# data field is carried verbatim as bytes under either encoding.
+# secret stays JSON on write-back, so parse it and compare the field's bytes.
 etcd_get "/kubernetes.io/secrets/default/app-tls" | python3 -c '
-import sys
-raw = sys.stdin.buffer.read()
-if b"\xe2\x9c\x93" not in raw:
-    raise SystemExit("utf8-field [0xE2,0x9C,0x93] missing from committed secret")
+import json, sys
+d = json.load(sys.stdin)
+if d["data"].get("utf8-field") != [0xE2, 0x9C, 0x93]:
+    raise SystemExit("utf8-field [0xE2,0x9C,0x93] missing or altered in committed secret: %r" % d["data"].get("utf8-field"))
 '
 
 assert_summary_valid "${workdir}/summary.yaml"
