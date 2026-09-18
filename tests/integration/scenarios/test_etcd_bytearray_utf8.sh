@@ -32,11 +32,16 @@ json.dump(d, sys.stdout, separators=(",", ":"))
 ')
 etcd_put_json "$ETCD_KEY" "$utf8_payload"
 
-precheck_etcd_key "$ETCD_KEY" "TLS secret with UTF-8 trailer seeded"
+precheck_etcd_key "$ETCD_KEY" "TLS secret with UTF-8 trailer seeded" >/dev/null
+# Seeded value is still JSON ByteArray (list of ints), so decode before searching.
 etcd_get "$ETCD_KEY" | python3 -c '
-import sys
+import json, sys
 raw = sys.stdin.buffer.read()
-if b"\xe2\x9c\x93" not in raw:
+d = json.loads(raw)
+crt = d["data"]["tls.crt"]
+if not isinstance(crt, list):
+    raise SystemExit("precheck: expected ByteArray tls.crt")
+if b"\xe2\x9c\x93" not in bytes(crt):
     raise SystemExit("precheck: utf8 trailer missing from seeded secret")
 '
 
@@ -62,12 +67,19 @@ assert_ne "$(sha256_file "${workdir}/from-etcd.crt")" "$orig_cert_hash" \
     "etcd tls.crt should be regenerated"
 
 # Discriminating assert: multi-byte UTF-8 trailer must survive PEM rewrite.
-# Search RAW etcd bytes (JSON or protobuf) for the original 3-byte sequence.
-# Per-byte `as char` expands E2 9C 93 into different UTF-8 — this fails on main.
+# After rewrite this branch commits Secrets as protobuf, so the 3-byte sequence
+# appears literally in the etcd value. Per-byte `as char` expands E2 9C 93 into
+# different UTF-8 — that fails on main.
 etcd_get "$ETCD_KEY" | python3 -c '
-import sys
+import json, sys
 raw = sys.stdin.buffer.read()
-if b"\xe2\x9c\x93" not in raw:
+stripped = raw.lstrip()
+if stripped.startswith(b"{") or stripped.startswith(b"["):
+    crt = bytes(json.loads(raw)["data"]["tls.crt"])
+    haystack = crt
+else:
+    haystack = raw
+if b"\xe2\x9c\x93" not in haystack:
     raise SystemExit(
         "utf8 trailer [0xE2,0x9C,0x93] missing after rewrite "
         "(ByteArray decode likely used per-byte as char)"
