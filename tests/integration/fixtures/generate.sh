@@ -89,11 +89,51 @@ openssl genrsa -out "${OUT_DIR}/custom.key" 2048 2>/dev/null
 openssl req -x509 -newkey rsa:2048 -keyout "${OUT_DIR}/replacement.key" \
     -out "${OUT_DIR}/replacement.crt" -days 365 -nodes -subj "/CN=rsa2048-root-ca" 2>/dev/null
 
-# RS256 JWT signed by the RSA-2048 CA key (file named token when copied into a crypto dir)
-header=$(printf '%s' '{"alg":"RS256","typ":"JWT","kid":"fixture"}' | b64url)
-payload=$(printf '%s' '{"sub":"recert-test","iss":"recert-integration"}' | b64url)
-sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha256 -sign "${OUT_DIR}/rsa2048-ca.key" -binary | b64url)
-printf '%s' "${header}.${payload}.${sig}" > "${OUT_DIR}/jwt-rs256"
+# Ed25519 CA + leaf (JWT EdDSA + algo scenario)
+generate_ca "ed25519" "ed25519"
+generate_leaf "ed25519-server" "ed25519" "ed25519" "ed25519.example.com"
+
+# Standalone keys + pubs (RSA PKCS#1 PUBLIC KEY and SPKI) for crypto-dir regen
+openssl genrsa -out "${OUT_DIR}/standalone-rsa.key" 2048 2>/dev/null
+openssl rsa -in "${OUT_DIR}/standalone-rsa.key" -RSAPublicKey_out -out "${OUT_DIR}/standalone-rsa.pub" 2>/dev/null
+openssl ecparam -name prime256v1 -genkey -noout -out "${OUT_DIR}/standalone-ec.key" 2>/dev/null
+openssl pkey -in "${OUT_DIR}/standalone-ec.key" -pubout -out "${OUT_DIR}/standalone-ec.pub" 2>/dev/null
+openssl genpkey -algorithm Ed25519 -out "${OUT_DIR}/standalone-ed25519.key" 2>/dev/null
+openssl pkey -in "${OUT_DIR}/standalone-ed25519.key" -pubout -out "${OUT_DIR}/standalone-ed25519.pub" 2>/dev/null
+
+# JWTs signed by matching CA keys (copied into crypto dirs as sa/token)
+sign_jwt() {
+    local alg="$1"
+    local key="$2"
+    local out="$3"
+    local header payload sig tmpdata
+    header=$(printf '%s' "{\"alg\":\"${alg}\",\"typ\":\"JWT\",\"kid\":\"fixture\"}" | b64url)
+    payload=$(printf '%s' '{"sub":"recert-test","iss":"recert-integration"}' | b64url)
+    case "$alg" in
+        RS256|ES256)
+            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha256 -sign "$key" -binary | b64url)
+            ;;
+        ES384)
+            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha384 -sign "$key" -binary | b64url)
+            ;;
+        EdDSA)
+            tmpdata=$(mktemp)
+            printf '%s' "${header}.${payload}" > "$tmpdata"
+            sig=$(openssl pkeyutl -sign -inkey "$key" -rawin -in "$tmpdata" 2>/dev/null | b64url)
+            rm -f "$tmpdata"
+            ;;
+        *)
+            echo "unsupported JWT alg for fixture: $alg" >&2
+            return 1
+            ;;
+    esac
+    printf '%s' "${header}.${payload}.${sig}" > "$out"
+}
+
+sign_jwt "RS256" "${OUT_DIR}/rsa2048-ca.key" "${OUT_DIR}/jwt-rs256"
+sign_jwt "ES256" "${OUT_DIR}/ec-p256-ca.key" "${OUT_DIR}/jwt-es256"
+sign_jwt "ES384" "${OUT_DIR}/ec-p384-ca.key" "${OUT_DIR}/jwt-es384"
+sign_jwt "EdDSA" "${OUT_DIR}/ed25519-ca.key" "${OUT_DIR}/jwt-eddsa"
 
 rm -f "${OUT_DIR}"/*.srl
 
