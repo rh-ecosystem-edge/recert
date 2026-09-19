@@ -85,6 +85,11 @@ cp "${OUT_DIR}/rsa2048-server.key" "${OUT_DIR}/server.key"
 # Standalone RSA key for --use-key tests
 openssl genrsa -out "${OUT_DIR}/custom.key" 2048 2>/dev/null
 
+# CA with a colon in the CN (system:admin-style) for use-key colon-CN tests
+openssl req -x509 -newkey rsa:2048 -keyout "${OUT_DIR}/system-admin-ca.key" \
+    -out "${OUT_DIR}/system-admin-ca.crt" -days 365 -nodes \
+    -subj "/CN=system:admin" 2>/dev/null
+
 # Replacement cert (same CN as RSA 2048 CA) for --use-cert tests
 openssl req -x509 -newkey rsa:2048 -keyout "${OUT_DIR}/replacement.key" \
     -out "${OUT_DIR}/replacement.crt" -days 365 -nodes -subj "/CN=rsa2048-root-ca" 2>/dev/null
