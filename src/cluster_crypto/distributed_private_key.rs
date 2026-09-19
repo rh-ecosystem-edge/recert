@@ -97,7 +97,7 @@ impl DistributedPrivateKey {
                 recreate_yaml_at_location_with_new_pem(
                     resource,
                     &k8slocation.yaml_location,
-                    &self.key_regenerated.clone().context("key was no regenerated")?.pem()?,
+                    &self.key_regenerated.as_ref().context("key was not regenerated")?.pem()?,
                     crate::file_utils::RecreateYamlEncoding::Json,
                 )?
                 .as_bytes()
@@ -111,7 +111,7 @@ impl DistributedPrivateKey {
     }
 
     async fn commit_filesystem_private_key(&self, filelocation: &FileLocation) -> Result<()> {
-        let private_key_pem = self.key_regenerated.clone().context("key was not regenerated")?.pem()?;
+        let private_key_pem = self.key_regenerated.as_ref().context("key was not regenerated")?.pem()?;
 
         commit_file(
             &filelocation.path,
