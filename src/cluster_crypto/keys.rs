@@ -236,6 +236,7 @@ impl PublicKey {
             .arg("-noout")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .context("running openssl")?;
 

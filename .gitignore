@@ -5,4 +5,5 @@
 bin/
 tests/integration/fixtures/generated/
 .integration-artifacts/
+e2e-failure/
 __pycache__/
