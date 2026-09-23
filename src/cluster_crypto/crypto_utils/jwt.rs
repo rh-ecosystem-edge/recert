@@ -3,6 +3,16 @@ use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as base64_url, Engine as _};
 use std::{io::Write, process::Command};
 
+/// The `openssl dgst` digest flag for JWT algorithms that are signed over a digest. EdDSA signs the
+/// raw message and is handled separately via `openssl pkeyutl`.
+fn digest_for_alg(alg: &str) -> Option<&'static str> {
+    match alg {
+        "RS256" | "ES256" => Some("-sha256"),
+        "ES384" => Some("-sha384"),
+        _ => None,
+    }
+}
+
 pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
     let pub_pem = public_key.pem()?.to_string();
 
@@ -36,59 +46,24 @@ pub(crate) fn verify(jwt: &str, public_key: &PublicKey) -> Result<bool> {
     header_payload_file.write_all(header_payload.as_bytes())?;
     header_payload_file.flush()?;
 
-    let output = match alg {
-        "RS256" => Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha256",
-                "-verify",
-                cert_file.path().to_str().context("cert path")?,
-                "-signature",
-                signature_file.path().to_str().context("sig path")?,
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        "ES256" => Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha256",
-                "-verify",
-                cert_file.path().to_str().context("cert path")?,
-                "-signature",
-                signature_file.path().to_str().context("sig path")?,
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        "ES384" => Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha384",
-                "-verify",
-                cert_file.path().to_str().context("cert path")?,
-                "-signature",
-                signature_file.path().to_str().context("sig path")?,
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        "EdDSA" => Command::new("openssl")
-            .args([
-                "pkeyutl",
-                "-verify",
-                "-inkey",
-                cert_file.path().to_str().context("cert path")?,
-                "-pubin",
-                "-rawin",
-                "-in",
-                header_payload_file.path().to_str().context("data path")?,
-                "-sigfile",
-                signature_file.path().to_str().context("sig path")?,
-            ])
-            .output()?,
-        _ => {
-            log::warn!("unsupported JWT alg {}", alg);
-            return Ok(false);
-        }
+    let cert_path = cert_file.path().to_str().context("cert path")?;
+    let sig_path = signature_file.path().to_str().context("sig path")?;
+    let data_path = header_payload_file.path().to_str().context("data path")?;
+
+    let mut command = Command::new("openssl");
+    match alg {
+        "EdDSA" => command.args([
+            "pkeyutl", "-verify", "-inkey", cert_path, "-pubin", "-rawin", "-in", data_path, "-sigfile", sig_path,
+        ]),
+        _ => match digest_for_alg(alg) {
+            Some(digest) => command.args(["dgst", digest, "-verify", cert_path, "-signature", sig_path, data_path]),
+            None => {
+                log::warn!("unsupported JWT alg {}", alg);
+                return Ok(false);
+            }
+        },
     };
+    let output = command.output()?;
 
     Ok(output.status.success())
 }
@@ -124,38 +99,18 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
     pem_file.write_all(private_key.pkcs8_pem.as_slice())?;
     pem_file.flush()?;
 
-    let output = match new_alg {
-        "RS256" | "ES256" => Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha256",
-                "-sign",
-                pem_file.path().to_str().context("pem path")?,
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        "ES384" => Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha384",
-                "-sign",
-                pem_file.path().to_str().context("pem path")?,
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        "EdDSA" => Command::new("openssl")
-            .args([
-                "pkeyutl",
-                "-sign",
-                "-inkey",
-                pem_file.path().to_str().context("pem path")?,
-                "-rawin",
-                "-in",
-                header_payload_file.path().to_str().context("data path")?,
-            ])
-            .output()?,
-        _ => bail!("unsupported JWT algorithm {}", new_alg),
+    let pem_path = pem_file.path().to_str().context("pem path")?;
+    let data_path = header_payload_file.path().to_str().context("data path")?;
+
+    let mut command = Command::new("openssl");
+    match new_alg {
+        "EdDSA" => command.args(["pkeyutl", "-sign", "-inkey", pem_path, "-rawin", "-in", data_path]),
+        _ => match digest_for_alg(new_alg) {
+            Some(digest) => command.args(["dgst", digest, "-sign", pem_path, data_path]),
+            None => bail!("unsupported JWT algorithm {}", new_alg),
+        },
     };
+    let output = command.output()?;
 
     if !output.status.success() {
         bail!("JWT signing failed: {}", String::from_utf8_lossy(&output.stderr));

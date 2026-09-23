@@ -145,8 +145,7 @@ impl DistributedPublicKey {
     async fn commit_filesystem_public_key(&self, filelocation: &FileLocation) -> Result<()> {
         let public_key_pem = match &self.key_regenerated.clone().context("key was not regenerated")? {
             PublicKey::Rsa(public_key_bytes) => pem::Pem::new("RSA PUBLIC KEY", public_key_bytes.as_ref()),
-            PublicKey::Ec(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing EC public key PEM")?,
-            PublicKey::Ed25519(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing Ed25519 public key PEM")?,
+            PublicKey::Ec(pem_bytes) | PublicKey::Ed25519(pem_bytes) => pem::parse(pem_bytes.as_ref()).context("parsing public key PEM")?,
         };
 
         commit_file(
