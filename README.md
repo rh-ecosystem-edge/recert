@@ -36,6 +36,17 @@ See [sno-relocation-poc](https://github.com/eranco74/sno-relocation-poc)
 
 See [hack/assets](hack/assets/README.md)
 
+## Testing
+
+| Suite | Command | Role |
+|-------|---------|------|
+| Unit | `make rust-test` (or `cargo test`) | Rust unit tests |
+| E2E crypto | `make e2e-test` | Fast host-runner crypto-dir smoke (RSA/ECDSA/Ed25519, JWT, standalone pubs). On failure, uploads `e2e-failure/` in CI. |
+| Integration | `make integration-test` | Containerized etcd + scenario suite. Owns config CLI, etcd, CN/SAN, PKCS#8 EC, multi-alg JWT, standalone keys, dry-run/force-expire. |
+
+See [tests/integration/README.md](tests/integration/README.md) for the full
+scenario index.
+
 # Image build
 
 ```bash
