@@ -37,6 +37,8 @@ mod distributed_public_key;
 mod json_crawl;
 mod jwt;
 mod signee;
+#[cfg(test)]
+mod test_utils;
 
 pub(crate) mod cert_key_pair;
 pub(crate) mod certificate;

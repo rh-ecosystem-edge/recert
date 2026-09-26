@@ -163,6 +163,15 @@ run_crypto_algo_test() {
         "${prefix}-ca.crt" "${prefix}-ca.key" \
         "${prefix}-server.crt" "${prefix}-server.key")
 
+    # OpenSSL 3 `req -newkey ec` writes PKCS#8. Force SEC1 here so this scenario
+    # checks that recert writes EC keys back in the traditional form.
+    if [[ "$prefix" == ec-* ]]; then
+        for key in "${prefix}-ca.key" "${prefix}-server.key"; do
+            openssl pkey -traditional -in "${crypto_dir}/${key}" -out "${crypto_dir}/${key}.sec1"
+            mv "${crypto_dir}/${key}.sec1" "${crypto_dir}/${key}"
+        done
+    fi
+
     local ca_cert_hash ca_key_hash server_cert_hash server_key_hash
     ca_cert_hash=$(sha256_file "${crypto_dir}/${prefix}-ca.crt")
     ca_key_hash=$(sha256_file "${crypto_dir}/${prefix}-ca.key")
@@ -182,6 +191,13 @@ EOF
         "$ca_cert_hash" "$ca_key_hash" "$expected_algo" "$expected_detail"
     assert_cert_regenerated "${label} server" "$crypto_dir" "${prefix}-server.crt" "${prefix}-server.key" \
         "$server_cert_hash" "$server_key_hash" "$expected_algo" "$expected_detail"
+
+    if [[ "$prefix" == ec-* ]]; then
+        assert_pem_tag "${crypto_dir}/${prefix}-ca.key" "EC PRIVATE KEY" \
+            "${label} regenerated CA key should stay SEC1"
+        assert_pem_tag "${crypto_dir}/${prefix}-server.key" "EC PRIVATE KEY" \
+            "${label} regenerated server key should stay SEC1"
+    fi
 
     # P-384 signing on main uses SHA-256, so openssl verify would fail
     if [[ "$expected_detail" != "secp384r1" ]]; then
