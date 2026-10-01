@@ -16,11 +16,13 @@ aliases:
     - rauhersu
   recert-approvers:
     - danmanor
+    - fontivan
     - mresvanis
     - omertuc
     - tsorya
   recert-reviewers:
     - danmanor
+    - fontivan
     - mresvanis
     - omertuc
     - tsorya
