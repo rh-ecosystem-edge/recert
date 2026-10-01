@@ -266,6 +266,8 @@ spec:
             - io.openshift.tags=operator
             - summary=recert
             - maintainer=rauherna@redhat.com,sskeard@redhat.com
+        - name: BUILDAH_FORMAT
+          value: $(params.buildah-format)
         - name: HTTP_PROXY
           value: $(tasks.init.results.http-proxy)
         - name: NO_PROXY
@@ -296,6 +298,8 @@ spec:
         - name: IMAGES
           value:
             - $(tasks.build-images.results.IMAGE_REF[*])
+        - name: BUILDAH_FORMAT
+          value: $(params.buildah-format)
       runAfter:
         - build-images
       taskRef:
