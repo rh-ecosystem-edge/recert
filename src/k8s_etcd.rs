@@ -17,7 +17,7 @@ pub(crate) struct EtcdResult {
 
 /// An etcd client wrapper backed by an in-memory hashmap. All reads are served from memory, with
 /// fallback to actual etcd for misses. All writes are strictly to memory, but supports eventually
-/// committing to an actual etcd instance of kubernetes. Values are not stored in the hasmap in
+/// committing to an actual etcd instance of kubernetes. Values are not stored in the hashmap in
 /// native etcd protobuf encoding, but instead are stored as decoded JSONs. Used by recert as a
 /// cache to dramatically speed up the process of certificate and key regeneration, as we we don't
 /// have to go through etcd for every single edit.
