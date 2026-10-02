@@ -6,7 +6,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
+ARTIFACT_DIR="${SCRIPT_DIR}/e2e-failure"
+STDERR_LOG="${TMPDIR}.stderr"
+
+preserve_e2e_artifacts() {
+    rm -rf "$ARTIFACT_DIR"
+    mkdir -p "$ARTIFACT_DIR"
+    # Post-failure tree + stderr only (skip .orig duplicate to keep upload light)
+    cp -a "$TMPDIR" "${ARTIFACT_DIR}/crypto-dir" 2>/dev/null || true
+    cp -a "$STDERR_LOG" "${ARTIFACT_DIR}/recert.stderr" 2>/dev/null || true
+}
+
+cleanup_e2e() {
+    local status=$?
+    if [[ "$status" -ne 0 ]]; then
+        preserve_e2e_artifacts
+    else
+        rm -rf "$ARTIFACT_DIR"
+    fi
+    rm -rf "$TMPDIR" "${TMPDIR}.orig" "$STDERR_LOG"
+}
+trap cleanup_e2e EXIT
 
 BINARY="${SCRIPT_DIR}/target/debug/recert"
 PASS=0
@@ -192,9 +212,9 @@ echo ""
 echo "=== Running recert ==="
 
 # Run recert against the crypto dir (no etcd)
-if ! "$BINARY" --crypto-dir "$TMPDIR" 2>"${TMPDIR}.stderr"; then
+if ! "$BINARY" --crypto-dir "$TMPDIR" 2>"$STDERR_LOG"; then
     echo "recert failed! stderr:"
-    cat "${TMPDIR}.stderr"
+    cat "$STDERR_LOG"
     exit 1
 fi
 echo "  recert completed successfully"

@@ -154,7 +154,7 @@ run_crypto_algo_test() {
     local label="$1"
     local prefix="$2"
     local expected_algo="$3"
-    local expected_detail="$4"
+    local expected_detail="${4:-}"
 
     local workdir
     workdir=$(setup_test_workdir "crypto_${prefix}")
@@ -183,11 +183,8 @@ EOF
     assert_cert_regenerated "${label} server" "$crypto_dir" "${prefix}-server.crt" "${prefix}-server.key" \
         "$server_cert_hash" "$server_key_hash" "$expected_algo" "$expected_detail"
 
-    # P-384 signing on main uses SHA-256, so openssl verify would fail
-    if [[ "$expected_detail" != "secp384r1" ]]; then
-        assert_chain_valid "${crypto_dir}/${prefix}-ca.crt" "${crypto_dir}/${prefix}-server.crt" \
-            "${label} regenerated leaf should verify against regenerated CA"
-    fi
+    assert_chain_valid "${crypto_dir}/${prefix}-ca.crt" "${crypto_dir}/${prefix}-server.crt" \
+        "${label} regenerated leaf should verify against regenerated CA"
 
     assert_summary_valid "${workdir}/summary.yaml"
 }
@@ -251,8 +248,13 @@ assert_cert_regenerated() {
 
     local actual_algo
     actual_algo=$(cert_key_algorithm "${crypto_dir}/${cert_file}")
-    assert_eq "$actual_algo" "$expected_algo" \
-        "${label} cert should preserve key algorithm"
+    # Case-insensitive: OpenSSL wording for Ed25519 varies slightly across builds
+    if [[ "${actual_algo,,}" != "${expected_algo,,}" ]]; then
+        echo "FAIL: ${label} cert should preserve key algorithm" >&2
+        echo "  expected: $expected_algo" >&2
+        echo "  actual:   $actual_algo" >&2
+        return 1
+    fi
 
     if [[ -n "$expected_detail" ]]; then
         if [[ "$expected_algo" == "rsaEncryption" ]]; then
@@ -345,35 +347,106 @@ b64url_decode_to_file() {
     printf '%s' "$padded" | tr '_-' '/+' | openssl base64 -d -A > "$dest"
 }
 
+jwt_header_field() {
+    local token="$1"
+    local field="$2"
+    local header="${token%%.*}"
+    local padded="$header"
+    local mod=$(( ${#padded} % 4 ))
+    if [[ $mod -eq 2 ]]; then
+        padded="${padded}=="
+    elif [[ $mod -eq 3 ]]; then
+        padded="${padded}="
+    fi
+    printf '%s' "$padded" | tr '_-' '/+' | openssl base64 -d -A \
+        | python3 -c "import json,sys; print(json.load(sys.stdin).get('$field',''))"
+}
+
+jwt_header_alg() { jwt_header_field "$1" "alg"; }
+jwt_header_kid() { jwt_header_field "$1" "kid"; }
+
 assert_jwt_verifies() {
     local cert="$1"
     local token="$2"
     local msg="${3:-JWT should verify with cert}"
-    local header payload sig
+    local header payload sig alg
     IFS='.' read -r header payload sig <<< "$token"
+    alg=$(jwt_header_field "$token" "alg")
     local tmpdir
     tmpdir=$(mktemp -d)
     printf '%s.%s' "$header" "$payload" > "${tmpdir}/signing_input"
     b64url_decode_to_file "$sig" "${tmpdir}/sig.bin"
     openssl x509 -in "$cert" -pubkey -noout > "${tmpdir}/pub.pem" 2>/dev/null
-    if ! openssl dgst -sha256 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
-        "${tmpdir}/signing_input" >/dev/null 2>&1; then
+
+    local failed=0
+    case "$alg" in
+        RS256|ES256)
+            openssl dgst -sha256 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
+                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+            ;;
+        ES384)
+            openssl dgst -sha384 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
+                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+            ;;
+        EdDSA)
+            openssl pkeyutl -verify -inkey "${tmpdir}/pub.pem" -pubin -rawin \
+                -in "${tmpdir}/signing_input" -sigfile "${tmpdir}/sig.bin" >/dev/null 2>&1 || failed=1
+            ;;
+        *)
+            echo "FAIL: $msg (unsupported JWT alg: ${alg:-empty})" >&2
+            rm -rf "$tmpdir"
+            return 1
+            ;;
+    esac
+
+    rm -rf "$tmpdir"
+    if [[ "$failed" -ne 0 ]]; then
         echo "FAIL: $msg" >&2
-        rm -rf "$tmpdir"
         return 1
     fi
-    rm -rf "$tmpdir"
 }
 
-jwt_header_kid() {
-    local token="$1"
-    local header
-    header="${token%%.*}"
-    local tmp
-    tmp=$(mktemp)
-    b64url_decode_to_file "$header" "$tmp"
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("kid",""))' < "$tmp"
-    rm -f "$tmp"
+# run_jwt_algo_test LABEL CA_CERT CA_KEY JWT_FIXTURE EXPECTED_ALG
+run_jwt_algo_test() {
+    local label="$1"
+    local ca_cert="$2"
+    local ca_key="$3"
+    local jwt_fixture="$4"
+    local expected_alg="$5"
+
+    local workdir
+    workdir=$(setup_test_workdir "crypto_jwt_${expected_alg,,}")
+    local crypto_dir
+    crypto_dir=$(setup_crypto_dir "$workdir" "$ca_cert" "$ca_key")
+    mkdir -p "${crypto_dir}/sa"
+    cp "${FIXTURES_DIR}/${jwt_fixture}" "${crypto_dir}/sa/token"
+
+    local token_before kid_before token_after kid_after
+    token_before=$(tr -d '\n' < "${crypto_dir}/sa/token")
+    assert_eq "$(jwt_header_alg "$token_before")" "$expected_alg" \
+        "fixture JWT alg should be ${expected_alg}"
+    assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$token_before" \
+        "precheck: fixture JWT should verify with original ${label} CA"
+    kid_before=$(jwt_header_kid "$token_before")
+
+    cat > "${workdir}/config.yaml" <<EOF
+crypto_dirs:
+  - ${crypto_dir}
+force_expire: true
+summary_file: ${workdir}/summary.yaml
+EOF
+
+    RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success > /dev/null
+
+    token_after=$(tr -d '\n' < "${crypto_dir}/sa/token")
+    assert_ne "$token_after" "$token_before" "${expected_alg} JWT should be re-signed"
+    assert_eq "$(jwt_header_alg "$token_after")" "$expected_alg" \
+        "re-signed JWT alg should stay ${expected_alg}"
+    kid_after=$(jwt_header_kid "$token_after")
+    assert_ne "$kid_after" "$kid_before" "JWT kid should change after key regeneration"
+    assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$token_after" \
+        "re-signed ${expected_alg} JWT should verify with regenerated ${label} CA"
+    assert_summary_valid "${workdir}/summary.yaml"
 }
 
 write_kubeconfig() {

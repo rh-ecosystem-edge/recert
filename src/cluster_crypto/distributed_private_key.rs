@@ -48,7 +48,6 @@ impl DistributedPrivateKey {
         }
 
         let regenerated_private_key = self_new_key_pair.to_private_key()?;
-        self.key_regenerated = Some(regenerated_private_key.clone());
 
         if let Some(public_key) = &self.associated_distributed_public_key {
             (*public_key).borrow_mut().regenerate(&regenerated_private_key)?;

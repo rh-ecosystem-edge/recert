@@ -355,7 +355,7 @@ pub(crate) fn ec_curve_from_public_key_der(spki_der: &[u8]) -> Result<EcdsaCurve
     bail!("failed to extract EC curve from SPKI DER")
 }
 
-fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+pub(crate) fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
     let mut child = StdCommand::new("openssl")
         .args(["pkcs8", "-topk8", "-nocrypt"])
         .stdin(Stdio::piped())
