@@ -102,3 +102,45 @@ pub(crate) fn json_to_k8s_cbor_bytes(json: JsonValue) -> Result<Vec<u8>> {
 
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_cbor_roundtrip_object() {
+        let json = serde_json::json!({
+            "kind": "Foo",
+            "count": 7,
+            "ok": true,
+            "missing": null,
+            "items": ["a", "b"]
+        });
+        let bytes = json_to_k8s_cbor_bytes(json.clone()).unwrap();
+        assert_eq!(&bytes[..3], [0xd9, 0xd9, 0xf7]);
+
+        let roundtrip = k8s_cbor_bytes_to_json(&bytes).unwrap();
+        assert_eq!(roundtrip["kind"], "Foo");
+        assert_eq!(roundtrip["count"], 7);
+        assert_eq!(roundtrip["ok"], true);
+        assert!(roundtrip["missing"].is_null());
+        assert_eq!(roundtrip["items"][0], "a");
+    }
+
+    #[test]
+    fn test_k8s_cbor_requires_self_describing_tag() {
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(&CborValue::Map(vec![]), &mut bytes).unwrap();
+        let err = k8s_cbor_bytes_to_json(&bytes).unwrap_err();
+        assert!(err.to_string().contains("self-describing tag"));
+    }
+
+    #[test]
+    fn test_k8s_cbor_rejects_other_root_tag() {
+        let tagged = CborValue::Tag(123, Box::new(CborValue::Null));
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(&tagged, &mut bytes).unwrap();
+        let err = k8s_cbor_bytes_to_json(&bytes).unwrap_err();
+        assert!(err.to_string().contains("Unsupported CBOR tag"));
+    }
+}
