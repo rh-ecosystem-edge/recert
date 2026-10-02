@@ -1057,3 +1057,18 @@ pub(crate) async fn chrony_config_rename(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_operand_log_level() {
+        assert_eq!(operand_log_level("Normal"), "2");
+        assert_eq!(operand_log_level("Debug"), "4");
+        assert_eq!(operand_log_level("Trace"), "6");
+        assert_eq!(operand_log_level("TraceAll"), "8");
+        assert_eq!(operand_log_level("unknown"), "2");
+        assert_eq!(operand_log_level(""), "2");
+    }
+}
