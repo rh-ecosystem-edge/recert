@@ -171,11 +171,11 @@ pub(crate) struct Cli {
 
     /// A list of CNs and the private keys to use for their certs. By default, new keys will be
     /// generated for all regenerated certificates, this option allows you to use existing keys
-    /// instead. Must come in pairs of CN and private key file path, separated by a space. For
-    /// example: --use-key foo:/etc/foo.key --use-key bar:/etc/bar.key will use the key in
-    /// /etc/foo.key for certs with CN "foo" and the key in /etc/bar.key for certs with CN "bar".
-    /// If more than one cert has the same CN, an error will occur and no certs will be
-    /// regenerated.
+    /// instead. Must come in pairs of CN and private key file path, separated by a colon. For
+    /// example: --use-key foo:/etc/foo.key --use-key system:admin:/etc/admin.key will use the key
+    /// in /etc/foo.key for certs with CN "foo" and the key in /etc/admin.key for certs with CN
+    /// "system:admin". CNs may contain colons. If more than one cert has the same CN, an error
+    /// will occur and no certs will be regenerated.
     ///
     /// When using a RECERT_CONFIG file, raw PEMS can be used instead of paths to key files.
     #[clap(long, value_parser = UseKey::parse)]
