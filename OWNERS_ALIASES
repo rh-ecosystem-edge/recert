@@ -15,10 +15,14 @@ aliases:
     - fontivan
     - rauhersu
   recert-approvers:
-    - omertuc
+    - danmanor
+    - fontivan
     - mresvanis
+    - omertuc
     - tsorya
   recert-reviewers:
-    - omertuc
+    - danmanor
+    - fontivan
     - mresvanis
+    - omertuc
     - tsorya
