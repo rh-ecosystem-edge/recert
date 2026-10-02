@@ -299,28 +299,25 @@ pub(crate) fn pubkey_pem_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+fn ec_curve_from_oid(curve_oid: &simple_asn1::OID) -> Result<EcdsaCurve> {
+    if *curve_oid == oid!(1, 2, 840, 10045, 3, 1, 7) {
+        Ok(EcdsaCurve::Secp256r1)
+    } else if *curve_oid == oid!(1, 3, 132, 0, 34) {
+        Ok(EcdsaCurve::Secp384r1)
+    } else {
+        bail!("unsupported EC curve OID: {:?}", curve_oid)
+    }
+}
+
 pub(crate) fn ec_curve_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<EcdsaCurve> {
     let blocks = simple_asn1::from_der(pkcs8_der).context("parsing PKCS#8 DER")?;
     let top = blocks.into_iter().next().context("empty ASN.1")?;
 
-    let p256_oid = oid!(1, 2, 840, 10045, 3, 1, 7);
-    let p384_oid = oid!(1, 3, 132, 0, 34);
-
+    // PKCS#8: SEQUENCE { INTEGER(version), SEQUENCE(algorithmIdentifier), OCTET STRING }
     if let simple_asn1::ASN1Block::Sequence(_, items) = top {
-        // PKCS#8: SEQUENCE { INTEGER(version), SEQUENCE(algorithmIdentifier), OCTET STRING }
-        if items.len() >= 2 {
-            if let simple_asn1::ASN1Block::Sequence(_, alg_items) = &items[1] {
-                if alg_items.len() >= 2 {
-                    if let simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid) = &alg_items[1] {
-                        if *curve_oid == p256_oid {
-                            return Ok(EcdsaCurve::Secp256r1);
-                        } else if *curve_oid == p384_oid {
-                            return Ok(EcdsaCurve::Secp384r1);
-                        } else {
-                            bail!("unsupported EC curve OID: {:?}", curve_oid);
-                        }
-                    }
-                }
+        if let Some(simple_asn1::ASN1Block::Sequence(_, alg_items)) = items.get(1) {
+            if let Some(simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid)) = alg_items.get(1) {
+                return ec_curve_from_oid(curve_oid);
             }
         }
     }
@@ -332,22 +329,11 @@ pub(crate) fn ec_curve_from_public_key_der(spki_der: &[u8]) -> Result<EcdsaCurve
     let blocks = simple_asn1::from_der(spki_der).context("parsing SPKI DER")?;
     let top = blocks.into_iter().next().context("empty ASN.1")?;
 
-    let p256_oid = oid!(1, 2, 840, 10045, 3, 1, 7);
-    let p384_oid = oid!(1, 3, 132, 0, 34);
-
     // SPKI: SEQUENCE { SEQUENCE(algorithmIdentifier), BIT STRING }
     if let simple_asn1::ASN1Block::Sequence(_, items) = top {
         if let Some(simple_asn1::ASN1Block::Sequence(_, alg_items)) = items.first() {
-            if alg_items.len() >= 2 {
-                if let simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid) = &alg_items[1] {
-                    if *curve_oid == p256_oid {
-                        return Ok(EcdsaCurve::Secp256r1);
-                    } else if *curve_oid == p384_oid {
-                        return Ok(EcdsaCurve::Secp384r1);
-                    } else {
-                        bail!("unsupported EC curve OID: {:?}", curve_oid);
-                    }
-                }
+            if let Some(simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid)) = alg_items.get(1) {
+                return ec_curve_from_oid(curve_oid);
             }
         }
     }
@@ -355,29 +341,35 @@ pub(crate) fn ec_curve_from_public_key_der(spki_der: &[u8]) -> Result<EcdsaCurve
     bail!("failed to extract EC curve from SPKI DER")
 }
 
-fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+fn openssl_stdin_text(args: &[&str], input: &[u8], failure_label: &'static str) -> Result<String> {
     let mut child = StdCommand::new("openssl")
-        .args(["pkcs8", "-topk8", "-nocrypt"])
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .context("spawning openssl pkcs8")?;
+        .with_context(|| format!("spawning openssl {failure_label}"))?;
 
-    child
-        .stdin
-        .take()
-        .context("failed to take openssl stdin pipe")?
-        .write_all(sec1_pem.as_bytes())?;
+    child.stdin.take().context("failed to take openssl stdin pipe")?.write_all(input)?;
 
-    let output = child.wait_with_output().context("waiting for openssl pkcs8")?;
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("waiting for openssl {failure_label}"))?;
     ensure!(
         output.status.success(),
-        "openssl pkcs8 -topk8 failed: {}",
+        "openssl {failure_label} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    String::from_utf8(output.stdout).context("openssl pkcs8 output not valid UTF-8")
+    String::from_utf8(output.stdout).with_context(|| format!("openssl {failure_label} output not valid UTF-8"))
+}
+
+pub(crate) fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+    openssl_stdin_text(&["pkcs8", "-topk8", "-nocrypt"], sec1_pem.as_bytes(), "pkcs8 -topk8")
+}
+
+pub(crate) fn pkcs8_der_to_sec1_pem(pkcs8_der: &[u8]) -> Result<String> {
+    openssl_stdin_text(&["pkey", "-traditional", "-inform", "DER"], pkcs8_der, "pkey -traditional")
 }
 
 pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
@@ -460,35 +452,25 @@ pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> 
 
     let temp_path = temp_file.path().to_str().context("getting temp file path")?;
 
-    let mut command = match &signing_key.in_memory_signing_key_pair {
-        InMemorySigningKeyPair::Ed25519(_) => StdCommand::new("openssl")
-            .args(["pkeyutl", "-sign", "-inkey", "/dev/stdin", "-rawin", "-in", temp_path])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("openssl pkeyutl")?,
+    let args: Vec<&str> = match &signing_key.in_memory_signing_key_pair {
+        InMemorySigningKeyPair::Ed25519(_) => vec!["pkeyutl", "-sign", "-inkey", "/dev/stdin", "-rawin", "-in", temp_path],
         InMemorySigningKeyPair::Ecdsa(_, curve, _) => {
             let digest = match curve {
                 EcdsaCurve::Secp256r1 => "-sha256",
                 EcdsaCurve::Secp384r1 => "-sha384",
             };
-            StdCommand::new("openssl")
-                .args(["dgst", digest, "-sign", "/dev/stdin", temp_path])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .context("openssl dgst")?
+            vec!["dgst", digest, "-sign", "/dev/stdin", temp_path]
         }
-        InMemorySigningKeyPair::Rsa(_, _) => StdCommand::new("openssl")
-            .args(["dgst", "-sha256", "-sign", "/dev/stdin", temp_path])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("openssl dgst")?,
+        InMemorySigningKeyPair::Rsa(_, _) => vec!["dgst", "-sha256", "-sign", "/dev/stdin", temp_path],
     };
+
+    let mut command = StdCommand::new("openssl")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl sign")?;
 
     command
         .stdin
@@ -572,6 +554,8 @@ pub(crate) fn ensure_openssl_version() -> Result<()> {
 mod test {
     #[allow(unused_imports)]
     use std::io::Write;
+
+    use crate::cluster_crypto::test_utils::generate_ed25519_pkcs8_pem;
 
     #[test]
     fn test_kid() {
@@ -735,6 +719,15 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
         assert!(!pkcs8_pem.contains("BEGIN EC PRIVATE KEY"));
     }
 
+    fn assert_pkcs8_der_to_sec1_pem_direct(curve: &str) {
+        let sec1_pem = generate_ec_sec1_pem(curve);
+        let pkcs8_pem = super::ec_sec1_to_pkcs8_pem(&sec1_pem).expect("ec_sec1_to_pkcs8_pem failed");
+        let pkcs8_der = pem::parse(pkcs8_pem).expect("converted PKCS#8 should parse").contents().to_vec();
+        let round_trip = super::pkcs8_der_to_sec1_pem(&pkcs8_der).expect("pkcs8_der_to_sec1_pem failed");
+        assert!(round_trip.contains("BEGIN EC PRIVATE KEY"));
+        assert!(!round_trip.contains("BEGIN PRIVATE KEY-----"));
+    }
+
     #[test]
     fn test_key_from_pem_ec_sec1() {
         assert_key_from_pem_ec_sec1("prime256v1");
@@ -742,13 +735,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
     #[test]
     fn test_key_from_pem_ed25519_pkcs8() {
-        let output = std::process::Command::new("openssl")
-            .args(["genpkey", "-algorithm", "Ed25519"])
-            .output()
-            .expect("failed to generate Ed25519 key");
-        assert!(output.status.success());
-
-        let pem_str = String::from_utf8(output.stdout).unwrap();
+        let pem_str = String::from_utf8(generate_ed25519_pkcs8_pem()).unwrap();
         assert!(pem_str.contains("BEGIN PRIVATE KEY"));
 
         let signing_key = super::key_from_pem(&pem_str).expect("key_from_pem should accept Ed25519 PKCS#8 keys");
@@ -826,42 +813,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
     #[test]
     fn test_sign_rsa() {
         let signing_key = super::generate_rsa_key(2048).expect("generate_rsa_key failed");
-        let data = b"test data to sign";
-
-        let signature = super::sign(&signing_key, data).expect("sign should succeed for RSA");
-        assert!(!signature.is_empty(), "signature should not be empty");
-
-        let mut key_file = tempfile::NamedTempFile::new().unwrap();
-        key_file.write_all(&signing_key.pkcs8_pem).unwrap();
-
-        let pubkey = super::pubkey_pem_from_pkcs8_der(&pem::parse(&signing_key.pkcs8_pem).unwrap().contents()).unwrap();
-        let mut pub_file = tempfile::NamedTempFile::new().unwrap();
-        pub_file.write_all(&pubkey).unwrap();
-
-        let mut sig_file = tempfile::NamedTempFile::new().unwrap();
-        sig_file.write_all(&signature).unwrap();
-
-        let mut data_file = tempfile::NamedTempFile::new().unwrap();
-        data_file.write_all(data).unwrap();
-
-        let verify_output = std::process::Command::new("openssl")
-            .args([
-                "dgst",
-                "-sha256",
-                "-verify",
-                pub_file.path().to_str().unwrap(),
-                "-signature",
-                sig_file.path().to_str().unwrap(),
-                data_file.path().to_str().unwrap(),
-            ])
-            .output()
-            .expect("openssl dgst -verify failed");
-
-        assert!(
-            verify_output.status.success(),
-            "RSA signature verification failed: {}",
-            String::from_utf8_lossy(&verify_output.stderr)
-        );
+        assert!(sign_and_verify(&signing_key, "-sha256"), "RSA signature verification failed");
     }
 
     #[test]
@@ -877,13 +829,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
     #[test]
     fn test_ed25519_pkcs8_to_v2_produces_valid_v2() {
-        let output = std::process::Command::new("openssl")
-            .args(["genpkey", "-algorithm", "Ed25519"])
-            .output()
-            .expect("failed to generate Ed25519 key");
-        assert!(output.status.success());
-
-        let parsed = pem::parse(&output.stdout).unwrap();
+        let parsed = pem::parse(generate_ed25519_pkcs8_pem()).unwrap();
         let v2 = super::ed25519_pkcs8_to_v2(parsed.contents()).expect("ed25519_pkcs8_to_v2 should succeed");
         assert_eq!(v2.len(), 85, "PKCS#8 v2 DER should be 85 bytes");
         assert_eq!(v2[4], 0x01, "version should be 1 for PKCS#8 v2");
@@ -930,7 +876,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
     fn test_try_from_signing_key_ec() {
         let signing_key = super::generate_ec_key(super::EcdsaCurve::Secp256r1).expect("generate_ec_key failed");
         let private_key = signing_key.to_private_key().expect("to_private_key should succeed for EC");
-        assert!(matches!(private_key, super::PrivateKey::Ec(_)), "expected PrivateKey::Ec");
+        assert!(matches!(private_key, super::PrivateKey::Ec { .. }), "expected PrivateKey::Ec");
     }
 
     #[test]
@@ -979,6 +925,22 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
     #[test]
     fn test_ec_sec1_to_pkcs8_pem_garbage() {
         let result = super::ec_sec1_to_pkcs8_pem("not a valid PEM");
+        assert!(result.is_err(), "garbage input should produce an error");
+    }
+
+    #[test]
+    fn test_pkcs8_der_to_sec1_pem_p256() {
+        assert_pkcs8_der_to_sec1_pem_direct("prime256v1");
+    }
+
+    #[test]
+    fn test_pkcs8_der_to_sec1_pem_p384() {
+        assert_pkcs8_der_to_sec1_pem_direct("secp384r1");
+    }
+
+    #[test]
+    fn test_pkcs8_der_to_sec1_pem_garbage() {
+        let result = super::pkcs8_der_to_sec1_pem(b"not a valid PEM");
         assert!(result.is_err(), "garbage input should produce an error");
     }
 
