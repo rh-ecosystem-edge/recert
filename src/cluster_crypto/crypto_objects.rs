@@ -1,19 +1,14 @@
 use super::{
     certificate::{self, Certificate},
     jwt,
-    keys::{PrivateKey, PublicKey},
+    keys::{EcPrivateKey, PrivateKey, PublicKey},
     locations::Location,
     scanning::ExternalCerts,
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
-use p256::SecretKey;
 use pkcs1::DecodeRsaPrivateKey;
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
 use x509_certificate::InMemorySigningKeyPair;
 
 #[allow(clippy::large_enum_variant)]
@@ -171,7 +166,7 @@ fn process_pem_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
         InMemorySigningKeyPair::Ecdsa(_, _, pkcs8_der) => {
             let pubkey_pem = super::crypto_utils::pubkey_pem_from_pkcs8_der(&pkcs8_der).context("extracting EC public key")?;
 
-            let private_part = PrivateKey::Ec(Bytes::from(pkcs8_der));
+            let private_part = PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::from(pkcs8_der)));
             let public_part = PublicKey::Ec(pubkey_pem.into());
 
             Some((private_part, public_part).into())
@@ -204,30 +199,8 @@ pub(crate) fn process_pem_rsa_private_key(pem: &pem::Pem) -> Result<Option<Crypt
 
 /// Given an EC private key PEM, record it in the appropriate data structures.
 pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
-    // First convert to pkcs#8 by shelling out to openssl pkcs8 -topk8 -nocrypt:
-    let mut command = Command::new("openssl")
-        .arg("pkcs8")
-        .arg("-topk8")
-        .arg("-nocrypt")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    command
-        .stdin
-        .take()
-        .context("failed to take openssl stdin pipe")?
-        .write_all(pem.to_string().as_bytes())?;
-
-    let output = command.wait_with_output()?;
-    let pem = pem::parse(output.stdout)?;
-
-    let key = pem.to_string().parse::<SecretKey>()?;
-    let public_key = key.public_key();
-
-    let private_part = PrivateKey::Ec(Bytes::copy_from_slice(pem.contents()));
-    let public_part = PublicKey::Ec(Bytes::copy_from_slice(public_key.to_string().as_bytes()));
-
+    let private_part = PrivateKey::Ec(EcPrivateKey::from_sec1_pem(pem).context("converting SEC1 to PKCS#8")?);
+    let public_part = PublicKey::try_from(&private_part)?;
     Ok(Some((private_part, public_part).into()))
 }
 
@@ -258,6 +231,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io::Write, process::{Command, Stdio}};
 
     fn generate_ec_pkcs8_pem(curve: &str) -> Vec<u8> {
         let ecparam = Command::new("openssl")
@@ -295,12 +269,14 @@ mod tests {
 
         match crypto_obj {
             CryptoObject::PrivateKey(private_key, public_key) => {
-                match &private_key {
-                    PrivateKey::Ec(bytes) => {
-                        assert_eq!(bytes.as_ref(), parsed.contents(), "stored bytes should be PKCS#8 DER");
-                    }
-                    _ => panic!("expected PrivateKey::Ec"),
-                }
+                let priv_pem = private_key.pem().expect("PrivateKey::pem() should succeed");
+                assert_eq!(
+                    priv_pem.tag(),
+                    "PRIVATE KEY",
+                    "PKCS#8 DER must use PRIVATE KEY tag, not EC PRIVATE KEY"
+                );
+                assert_eq!(priv_pem.contents(), parsed.contents(), "round-tripped DER should match original");
+
                 match &public_key {
                     PublicKey::Ec(pem_bytes) => {
                         let pub_pem = pem::parse(pem_bytes.as_ref()).expect("public key should be valid PEM");

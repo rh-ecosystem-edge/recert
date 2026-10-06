@@ -221,7 +221,7 @@ pub(crate) fn pubkey_pem_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
+pub(crate) fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
     let mut child = StdCommand::new("openssl")
         .args(["pkcs8", "-topk8", "-nocrypt"])
         .stdin(Stdio::piped())
@@ -244,6 +244,31 @@ fn ec_sec1_to_pkcs8_pem(sec1_pem: &str) -> Result<String> {
     );
 
     String::from_utf8(output.stdout).context("openssl pkcs8 output not valid UTF-8")
+}
+
+pub(crate) fn pkcs8_der_to_sec1_pem(pkcs8_der: &[u8]) -> Result<String> {
+    let mut child = StdCommand::new("openssl")
+        .args(["pkey", "-traditional", "-inform", "DER"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl pkey -traditional")?;
+
+    child
+        .stdin
+        .take()
+        .context("failed to take openssl stdin pipe")?
+        .write_all(pkcs8_der)?;
+
+    let output = child.wait_with_output().context("waiting for openssl pkey")?;
+    ensure!(
+        output.status.success(),
+        "openssl pkey -traditional failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).context("openssl pkey output not valid UTF-8")
 }
 
 pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
