@@ -103,7 +103,9 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
-                    (**distributed_private_key).borrow_mut().key_regenerated = Some(regenerated_private_key);
+                    let original_key = (**distributed_private_key).borrow().key.clone();
+                    (**distributed_private_key).borrow_mut().key_regenerated =
+                        Some(regenerated_private_key.with_encoding_of(&original_key));
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
@@ -201,8 +203,7 @@ impl CertKeyPair {
             bail!("unsupported key type");
         };
 
-        // Replace just the public key info in the to-be-signed part with the newly generated RSA
-        // key
+        // Replace just the public key info in the to-be-signed part with the newly generated key
         tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
             algorithm: KeyAlgorithm::from(&self_new_key_pair.in_memory_signing_key_pair).into(),
             subject_public_key: BitString::new(0, self_new_key_pair.in_memory_signing_key_pair.public_key_data()),
