@@ -62,3 +62,43 @@ impl Transformer for AesGcm {
         Ok(encrypted_data)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encrypt::transformer::Transformer;
+
+    #[tokio::test]
+    async fn test_aesgcm_roundtrip() {
+        let key = vec![0x11u8; 32];
+        let transformer = AesGcm::new("k8s:enc:aesgcm:v1:1:".to_string(), key);
+        let plaintext = b"secret-etcd-value".to_vec();
+
+        let ciphertext = transformer
+            .encrypt("/kubernetes.io/secrets/ns/name".to_string(), plaintext.clone())
+            .await
+            .unwrap();
+        assert!(ciphertext.starts_with(b"k8s:enc:aesgcm:v1:1:"));
+
+        let decrypted = transformer
+            .decrypt("/kubernetes.io/secrets/ns/name".to_string(), ciphertext)
+            .await
+            .unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[tokio::test]
+    async fn test_aesgcm_wrong_aad_fails() {
+        let key = vec![0x11u8; 32];
+        let transformer = AesGcm::new("k8s:enc:aesgcm:v1:1:".to_string(), key);
+        let ciphertext = transformer
+            .encrypt("/kubernetes.io/secrets/ns/name".to_string(), b"secret".to_vec())
+            .await
+            .unwrap();
+
+        assert!(transformer
+            .decrypt("/kubernetes.io/secrets/other/name".to_string(), ciphertext)
+            .await
+            .is_err());
+    }
+}

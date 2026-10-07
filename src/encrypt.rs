@@ -227,3 +227,77 @@ impl ResourceTransformers {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::STANDARD as b64, Engine as _};
+
+    fn valid_config_json() -> Vec<u8> {
+        let secret = b64.encode([0x11u8; 32]);
+        format!(
+            r#"{{
+                "kind": "EncryptionConfiguration",
+                "apiVersion": "apiserver.config.k8s.io/v1",
+                "resources": [{{
+                    "resources": ["secrets"],
+                    "providers": [
+                        {{"aesgcm": {{"keys": [{{"name": "1", "secret": "{secret}"}}]}}}},
+                        {{"identity": {{}}}}
+                    ]
+                }}]
+            }}"#
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn test_parse_from_file_valid() {
+        let config = EncryptionConfiguration::parse_from_file(valid_config_json()).unwrap();
+        assert_eq!(config.kind, KIND);
+        assert_eq!(config.apiVersion, API_VERSION);
+        assert_eq!(config.resources.len(), 1);
+        assert_eq!(config.resources[0].providers.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_from_file_rejects_wrong_kind() {
+        let json = br#"{"kind":"ConfigMap","apiVersion":"apiserver.config.k8s.io/v1","resources":[]}"#;
+        let err = EncryptionConfiguration::parse_from_file(json.to_vec()).unwrap_err();
+        assert!(err.to_string().contains("kind should equal"));
+    }
+
+    #[test]
+    fn test_parse_from_file_rejects_wrong_apiversion() {
+        let json = br#"{"kind":"EncryptionConfiguration","apiVersion":"v1","resources":[]}"#;
+        let err = EncryptionConfiguration::parse_from_file(json.to_vec()).unwrap_err();
+        assert!(err.to_string().contains("apiVersion should equal"));
+    }
+
+    #[test]
+    fn test_remove_redundant_providers_keeps_first() {
+        let mut config = EncryptionConfiguration::parse_from_file(valid_config_json()).unwrap();
+        config.remove_redundant_providers();
+        assert_eq!(config.resources[0].providers.len(), 1);
+        assert!(config.resources[0].providers[0].aesgcm.is_some());
+        assert!(config.resources[0].providers[0].identity.is_none());
+    }
+
+    #[test]
+    fn test_remove_redundant_providers_noop_when_single() {
+        let mut config = EncryptionConfiguration {
+            kind: KIND.to_string(),
+            apiVersion: API_VERSION.to_string(),
+            resources: vec![Resource {
+                resources: vec!["secrets".to_string()],
+                providers: vec![Provider {
+                    aesgcm: None,
+                    aescbc: None,
+                    identity: Some(Identity {}),
+                }],
+            }],
+        };
+        config.remove_redundant_providers();
+        assert_eq!(config.resources[0].providers.len(), 1);
+    }
+}
