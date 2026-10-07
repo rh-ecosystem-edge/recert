@@ -71,11 +71,54 @@ run_one_test() {
 
     local end_time
     end_time=$(date +%s)
-    echo $((end_time - start_time)) > "${RESULTS_DIR}/${test_name}.time"
-    echo "$rc" > "${RESULTS_DIR}/${test_name}.rc"
+    local elapsed=$((end_time - start_time))
+    echo "$elapsed" > "${RESULTS_DIR}/${test_name}.time"
     if [[ $rc -eq 124 ]]; then
         echo "TIMEOUT" > "${RESULTS_DIR}/${test_name}.status"
     fi
+    report_progress "$test_name" "$rc" "$elapsed"
+}
+
+render_bar() {
+    local completed="$1" failed="$2"
+    local width=30
+    local filled=$((completed * width / TOTAL_TESTS))
+    local suite_elapsed=$(($(date +%s) - SUITE_START))
+    local done_part todo_part
+    printf -v done_part '%*s' "$filled" ''
+    printf -v todo_part '%*s' $((width - filled)) ''
+    printf '[%s%s] %3d/%d  (%d failed)  %dm%02ds' "${done_part// /#}" "${todo_part// /-}" \
+        "$completed" "$TOTAL_TESTS" "$failed" \
+        $((suite_elapsed / 60)) $((suite_elapsed % 60))
+}
+
+# The .rc file is written under the lock so that the completed count is exact
+# even when parallel tests finish at the same moment.
+report_progress() {
+    local test_name="$1" rc="$2" elapsed="$3"
+    local status="PASS"
+    if [[ $rc -eq 124 ]]; then
+        status="TIMEOUT"
+    elif [[ $rc -ne 0 ]]; then
+        status="FAIL"
+    fi
+
+    (
+        flock 9
+        echo "$rc" > "${RESULTS_DIR}/${test_name}.rc"
+        rc_files=("$RESULTS_DIR"/*.rc)
+        printf -v line '[%2d/%d] %-7s %s (%ss)' "${#rc_files[@]}" "$TOTAL_TESTS" "$status" "$test_name" "$elapsed"
+        if [[ -n "$SHOW_BAR" ]]; then
+            failed=0
+            for f in "${rc_files[@]}"; do
+                [[ "$(<"$f")" == 0 ]] || failed=$((failed + 1))
+            done
+            printf '\r\033[K%s\n' "$line"
+            render_bar "${#rc_files[@]}" "$failed"
+        else
+            echo "$line"
+        fi
+    ) 9>"${RESULTS_DIR}/.progress.lock"
 }
 
 parallel_tests=()
@@ -99,6 +142,12 @@ for test_script in "${SCRIPT_DIR}"/scenarios/test_*.sh; do
     fi
 done
 
+TOTAL_TESTS=$((${#parallel_tests[@]} + ${#serial_tests[@]}))
+SHOW_BAR=""
+[[ -t 1 ]] && SHOW_BAR=1
+echo "Running ${TOTAL_TESTS} tests (${#parallel_tests[@]} parallel x${MAX_PARALLEL}, ${#serial_tests[@]} serial)"
+[[ -n "$SHOW_BAR" && $TOTAL_TESTS -gt 0 ]] && render_bar 0 0
+
 running=0
 for test_script in "${parallel_tests[@]}"; do
     test_name="$(basename "$test_script" .sh)"
@@ -119,6 +168,8 @@ done
 
 SUITE_END=$(date +%s)
 SUITE_ELAPSED=$((SUITE_END - SUITE_START))
+[[ -n "$SHOW_BAR" ]] && printf '\n'
+echo ""
 
 for rc_file in "$RESULTS_DIR"/*.rc; do
     [[ -f "$rc_file" ]] || continue
