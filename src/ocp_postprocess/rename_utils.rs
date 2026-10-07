@@ -923,3 +923,49 @@ pub(crate) async fn fix_filesystem_mcs_machine_config_content(new_content: &str,
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fix_apiserver_url_file_empty() {
+        assert_eq!(fix_apiserver_url_file(vec![], "new.example.com").unwrap(), "");
+    }
+
+    #[test]
+    fn test_fix_apiserver_url_file_rewrites_host() {
+        let original = b"FOO=bar\nKUBERNETES_SERVICE_HOST='api-int.old.example.com'\nBAZ=qux\n";
+        let updated = fix_apiserver_url_file(original.to_vec(), "new.example.com").unwrap();
+        assert!(updated.contains("KUBERNETES_SERVICE_HOST='api-int.new.example.com'"));
+        assert!(updated.contains("FOO=bar"));
+        assert!(updated.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_fix_apiserver_url_file_missing_line_errors() {
+        let err = fix_apiserver_url_file(b"FOO=bar\n".to_vec(), "new.example.com").unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("could not find line starting with KUBERNETES_SERVICE_HOST"));
+    }
+
+    #[test]
+    fn test_fix_oauth_metadata() {
+        let mut metadata = serde_json::json!({
+            "issuer": "https://oauth-openshift.apps.old.example.com",
+            "authorization_endpoint": "https://oauth-openshift.apps.old.example.com/oauth/authorize",
+            "token_endpoint": "https://oauth-openshift.apps.old.example.com/oauth/token"
+        });
+        fix_oauth_metadata(&mut metadata, "new.example.com").unwrap();
+        assert_eq!(metadata["issuer"], "https://oauth-openshift.apps.new.example.com");
+        assert_eq!(
+            metadata["authorization_endpoint"],
+            "https://oauth-openshift.apps.new.example.com/oauth/authorize"
+        );
+        assert_eq!(
+            metadata["token_endpoint"],
+            "https://oauth-openshift.apps.new.example.com/oauth/token"
+        );
+    }
+}
