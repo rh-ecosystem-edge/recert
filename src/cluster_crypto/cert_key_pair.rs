@@ -5,7 +5,7 @@ use super::{
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
-    keys::PublicKey,
+    keys::{PrivateKey, PublicKey},
     locations::{FileContentLocation, FileLocation, K8sLocation, Location},
     pem_utils,
     signee::Signee,
@@ -103,8 +103,10 @@ impl CertKeyPair {
                 // regenerated private key only in case there was one there to begin with. Otherwise we
                 // just discard it just like it was discarded during install time.
                 if let Some(distributed_private_key) = &mut self.distributed_private_key {
+                    let new_key: PrivateKey = (&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?;
+                    let original_key = (**distributed_private_key).borrow().key.clone();
                     (**distributed_private_key).borrow_mut().key_regenerated =
-                        Some((&new_cert_subject_signing_key.in_memory_signing_key_pair).try_into()?);
+                        Some(new_key.with_encoding_of(&original_key));
                 }
             }
             // User asked us to use their provided cert instead of this one, so we simply replace
