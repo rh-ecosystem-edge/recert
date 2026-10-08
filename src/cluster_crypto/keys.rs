@@ -2,25 +2,109 @@ use super::REDACT_SECRETS;
 use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
-use p256::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
-use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
+use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use rsa::RsaPrivateKey;
 use serde::Serialize;
 use std::{
     self,
     fmt::Formatter,
+    hash::{Hash, Hasher},
     io::Write,
     process::{Command, Stdio},
     sync::atomic::Ordering::Relaxed,
 };
 use x509_certificate::InMemorySigningKeyPair;
 
-#[derive(Hash, Eq, PartialEq, Clone)]
+/// PEM form an ECDSA private key was found in. PKCS#8 DER is what we store and use for key
+/// operations; this only controls how the key is written back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EcEncoding {
+    Sec1,
+    Pkcs8,
+}
+
+/// An ECDSA private key. Always stored as PKCS#8 DER internally; `encoding` controls how it is
+/// written back and is not part of key identity.
+#[derive(Clone, Debug)]
+pub(crate) struct EcPrivateKey {
+    pkcs8_der: Bytes,
+    encoding: EcEncoding,
+}
+
+impl PartialEq for EcPrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.pkcs8_der == other.pkcs8_der
+    }
+}
+
+impl Eq for EcPrivateKey {}
+
+impl Hash for EcPrivateKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pkcs8_der.hash(state);
+    }
+}
+
+impl EcPrivateKey {
+    pub(crate) fn from_pkcs8_der(der: Bytes) -> Self {
+        Self {
+            pkcs8_der: der,
+            encoding: EcEncoding::Pkcs8,
+        }
+    }
+
+    pub(crate) fn from_sec1_pem(pem: &pem::Pem) -> Result<Self> {
+        let pkcs8_pem_str = super::crypto_utils::ec_sec1_to_pkcs8_pem(&pem.to_string()).context("converting SEC1 to PKCS#8")?;
+        let pkcs8_pem = pem::parse(pkcs8_pem_str).context("parsing converted PKCS#8 PEM")?;
+        Ok(Self {
+            pkcs8_der: Bytes::copy_from_slice(pkcs8_pem.contents()),
+            encoding: EcEncoding::Sec1,
+        })
+    }
+
+    pub(crate) fn pkcs8_der(&self) -> &[u8] {
+        &self.pkcs8_der
+    }
+
+    pub(crate) fn pem(&self) -> Result<pem::Pem> {
+        match self.encoding {
+            EcEncoding::Pkcs8 => Ok(pem::Pem::new("PRIVATE KEY", self.pkcs8_der.as_ref())),
+            EcEncoding::Sec1 => {
+                let sec1_pem = super::crypto_utils::pkcs8_der_to_sec1_pem(&self.pkcs8_der).context("converting PKCS#8 to SEC1")?;
+                pem::parse(sec1_pem).context("parsing SEC1 PEM")
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum PrivateKey {
     Rsa(RsaPrivateKey),
-    Ec(Bytes),
+    Ec(EcPrivateKey),
+}
+
+impl PartialEq for PrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Rsa(left), Self::Rsa(right)) => left == right,
+            (Self::Ec(left), Self::Ec(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for PrivateKey {}
+
+impl Hash for PrivateKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Rsa(key) => key.hash(state),
+            Self::Ec(ec) => ec.hash(state),
+        }
+    }
 }
 
 impl Serialize for PrivateKey {
@@ -40,7 +124,7 @@ impl Serialize for PrivateKey {
                         .unwrap_or("failed to serialize RSA private key".to_string().into()),
                 ),
             ),
-            Self::Ec(ec_bytes) => serializer.serialize_str(&pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()).to_string()),
+            Self::Ec(ec) => serializer.serialize_str(&ec.pem().map_err(serde::ser::Error::custom)?.to_string()),
         }
     }
 }
@@ -50,7 +134,7 @@ impl TryFrom<&InMemorySigningKeyPair> for PrivateKey {
 
     fn try_from(value: &InMemorySigningKeyPair) -> std::result::Result<Self, Self::Error> {
         Ok(match value {
-            InMemorySigningKeyPair::Ecdsa(_, _, vec) => PrivateKey::Ec(Bytes::copy_from_slice(vec.as_ref())),
+            InMemorySigningKeyPair::Ecdsa(_, _, vec) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::copy_from_slice(vec.as_ref()))),
             InMemorySigningKeyPair::Ed25519(_) => todo!(),
             InMemorySigningKeyPair::Rsa(_, vec) => {
                 let rsa_private_key = RsaPrivateKey::from_pkcs1_der(vec.as_ref()).context(format!(
@@ -73,11 +157,19 @@ impl std::fmt::Debug for PrivateKey {
 }
 
 impl PrivateKey {
+    /// Copy output encoding from `original` onto `self`. No-op unless both keys are EC.
+    pub(crate) fn with_encoding_of(mut self, original: &PrivateKey) -> Self {
+        if let (PrivateKey::Ec(new_ec), PrivateKey::Ec(orig_ec)) = (&mut self, original) {
+            new_ec.encoding = orig_ec.encoding;
+        }
+        self
+    }
+
     pub(crate) fn pem(&self) -> Result<pem::Pem> {
-        Ok(match &self {
-            PrivateKey::Rsa(rsa_private_key) => pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes()),
-            PrivateKey::Ec(ec_bytes) => pem::Pem::new("EC PRIVATE KEY", ec_bytes.as_ref()),
-        })
+        match &self {
+            PrivateKey::Rsa(rsa_private_key) => Ok(pem::Pem::new("RSA PRIVATE KEY", rsa_private_key.to_pkcs1_der()?.as_bytes())),
+            PrivateKey::Ec(ec) => ec.pem(),
+        }
     }
 }
 
@@ -111,12 +203,7 @@ impl TryFrom<&PrivateKey> for PublicKey {
             PrivateKey::Rsa(private_key) => PublicKey::from_rsa_bytes(&bytes::Bytes::copy_from_slice(
                 private_key.to_public_key().to_public_key_der()?.as_bytes(),
             )),
-            PrivateKey::Ec(ec_bytes) => {
-                let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, ec_bytes, &ring::rand::SystemRandom::new())
-                    .ok()
-                    .context("failed to make pair from pkcs8")?;
-                PublicKey::Ec(Bytes::copy_from_slice(pair.public_key().as_ref()))
-            }
+            PrivateKey::Ec(ec) => PublicKey::Ec(super::crypto_utils::pubkey_pem_from_pkcs8_der(ec.pkcs8_der())?.into()),
         })
     }
 }
