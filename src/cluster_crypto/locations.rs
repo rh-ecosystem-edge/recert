@@ -7,127 +7,121 @@ use std::{
     fmt::{Debug, Display},
 };
 
+const SINGULAR_PLURAL_ENTRIES: &[(&str, &str)] = &[
+    ("apiserver", "apiservers"),
+    ("servicemonitor", "servicemonitors"),
+    ("consolelink", "consolelinks"),
+    ("helmchartrepository", "helmchartrepositories"),
+    ("controlplanemachineset", "controlplanemachinesets"),
+    ("performanceprofile", "performanceprofiles"),
+    ("oauth", "oauths"),
+    // TODO: This is a weird one, the resource kind is OAuthClient but the keys are e.g.
+    // openshift.io/oauth/clients/openshift-challenging-client
+    ("oauthclient", "oauth/clients"),
+    ("serviceca", "servicecas"),
+    ("metal3remediationtemplate", "metal3remediationtemplates"),
+    ("prometheus", "prometheuses"),
+    ("hostfirmwaresettings", "hostfirmwaresettings"),
+    ("hardwaredata", "hardwaredata"),
+    ("machineset", "machinesets"),
+    ("olmconfig", "olmconfigs"),
+    ("egressrouter", "egressrouters"),
+    ("installplan", "installplans"),
+    ("podnetworkconnectivitycheck", "podnetworkconnectivitychecks"),
+    ("dnsrecord", "dnsrecords"),
+    ("imagepruner", "imagepruners"),
+    ("operatorpki", "operatorpkis"),
+    ("cloudcredential", "cloudcredentials"),
+    ("controllerconfig", "controllerconfigs"),
+    ("imagetagmirrorset", "imagetagmirrorsets"),
+    ("preprovisioningimage", "preprovisioningimages"),
+    ("clustercsidriver", "clustercsidrivers"),
+    ("probe", "probes"),
+    ("subscription", "subscriptions"),
+    ("proxy", "proxies"),
+    ("network", "networks"),
+    ("clusterresourcequota", "clusterresourcequotas"),
+    ("kubeletconfig", "kubeletconfigs"),
+    ("build", "builds"),
+    ("imagecontentpolicy", "imagecontentpolicies"),
+    ("authentication", "authentications"),
+    ("ippool", "ippools"),
+    ("kubescheduler", "kubeschedulers"),
+    ("bmceventsubscription", "bmceventsubscriptions"),
+    ("imagedigestmirrorset", "imagedigestmirrorsets"),
+    ("node", "nodes"),
+    ("openshiftapiserver", "openshiftapiservers"),
+    ("ingresscontroller", "ingresscontrollers"),
+    ("machineconfigpool", "machineconfigpools"),
+    ("openshiftcontrollermanager", "openshiftcontrollermanagers"),
+    ("consoleplugin", "consoleplugins"),
+    ("volumesnapshotcontent", "volumesnapshotcontents"),
+    ("volumesnapshotclass", "volumesnapshotclasses"),
+    ("consolenotification", "consolenotifications"),
+    ("config", "configs"),
+    ("consoleyamlsample", "consoleyamlsamples"),
+    ("machinehealthcheck", "machinehealthchecks"),
+    ("rangeallocation", "rangeallocations"),
+    ("machine", "machines"),
+    ("credentialsrequest", "credentialsrequests"),
+    ("podmonitor", "podmonitors"),
+    ("clusterautoscaler", "clusterautoscalers"),
+    ("overlappingrangeipreservation", "overlappingrangeipreservations"),
+    ("operatorcondition", "operatorconditions"),
+    ("operator", "operators"),
+    ("dns", "dnses"),
+    ("scheduler", "schedulers"),
+    ("storage", "storages"),
+    ("metal3remediation", "metal3remediations"),
+    ("alertmanager", "alertmanagers"),
+    ("insightsoperator", "insightsoperators"),
+    ("egressip", "egressips"),
+    ("consoleexternalloglink", "consoleexternalloglinks"),
+    ("console", "consoles"),
+    ("volumesnapshot", "volumesnapshots"),
+    ("operatorgroup", "operatorgroups"),
+    ("machineautoscaler", "machineautoscalers"),
+    ("containerruntimeconfig", "containerruntimeconfigs"),
+    ("project", "projects"),
+    ("kubestorageversionmigrator", "kubestorageversionmigrators"),
+    ("firmwareschema", "firmwareschemas"),
+    ("prometheusrule", "prometheusrules"),
+    ("apirequestcount", "apirequestcounts"),
+    ("egressqos", "egressqoses"),
+    ("imagecontentsourcepolicy", "imagecontentsourcepolicies"),
+    ("projecthelmchartrepository", "projecthelmchartrepositories"),
+    ("profile", "profiles"),
+    ("catalogsource", "catalogsources"),
+    ("securitycontextconstraints", "securitycontextconstraints"),
+    ("egressfirewall", "egressfirewalls"),
+    ("clusterserviceversion", "clusterserviceversions"),
+    ("kubeapiserver", "kubeapiservers"),
+    ("ingress", "ingresses"),
+    ("operatorhub", "operatorhubs"),
+    ("alertmanagerconfig", "alertmanagerconfigs"),
+    ("featuregate", "featuregates"),
+    ("image", "images"),
+    ("kubecontrollermanager", "kubecontrollermanagers"),
+    ("consolequickstart", "consolequickstarts"),
+    ("machineconfig", "machineconfigs"),
+    ("storageversionmigration", "storageversionmigrations"),
+    ("provisioning", "provisionings"),
+    ("storagestate", "storagestates"),
+    ("rolebindingrestriction", "rolebindingrestrictions"),
+    ("thanosruler", "thanosrulers"),
+    ("baremetalhost", "baremetalhosts"),
+    ("clusteroperator", "clusteroperators"),
+    ("network-attachment-definition", "network-attachment-definitions"),
+    ("infrastructure", "infrastructures"),
+    ("consoleclidownload", "consoleclidownloads"),
+    ("tuned", "tuneds"),
+    ("csisnapshotcontroller", "csisnapshotcontrollers"),
+    ("clusterversion", "clusterversions"),
+    ("etcd", "etcds"),
+];
+
 lazy_static! {
-    static ref SINGULAR_PLURAL_MAP: HashMap<&'static str, &'static str> = {
-        HashMap::from([
-            ("apiserver", "apiservers"),
-            ("servicemonitor", "servicemonitors"),
-            ("consolelink", "consolelinks"),
-            ("helmchartrepository", "helmchartrepositories"),
-            ("controlplanemachineset", "controlplanemachinesets"),
-            ("performanceprofile", "performanceprofiles"),
-            ("oauth", "oauths"),
-            // TODO: This is a weird one, the resource kind is OAuthClient but the keys are e.g.
-            // openshift.io/oauth/clients/openshift-challenging-client
-            ("oauthclient", "oauth/clients"),
-            ("serviceca", "servicecas"),
-            ("metal3remediationtemplate", "metal3remediationtemplates"),
-            ("prometheus", "prometheuses"),
-            ("hostfirmwaresettings", "hostfirmwaresettings"),
-            ("hardwaredata", "hardwaredata"),
-            ("machineset", "machinesets"),
-            ("olmconfig", "olmconfigs"),
-            ("egressrouter", "egressrouters"),
-            ("installplan", "installplans"),
-            ("podnetworkconnectivitycheck", "podnetworkconnectivitychecks"),
-            ("dnsrecord", "dnsrecords"),
-            ("imagepruner", "imagepruners"),
-            ("operatorpki", "operatorpkis"),
-            ("cloudcredential", "cloudcredentials"),
-            ("controllerconfig", "controllerconfigs"),
-            ("imagetagmirrorset", "imagetagmirrorsets"),
-            ("preprovisioningimage", "preprovisioningimages"),
-            ("clustercsidriver", "clustercsidrivers"),
-            ("probe", "probes"),
-            ("subscription", "subscriptions"),
-            ("proxy", "proxies"),
-            ("network", "networks"),
-            ("clusterresourcequota", "clusterresourcequotas"),
-            ("kubeletconfig", "kubeletconfigs"),
-            ("build", "builds"),
-            ("imagecontentpolicy", "imagecontentpolicies"),
-            ("authentication", "authentications"),
-            ("ippool", "ippools"),
-            ("kubescheduler", "kubeschedulers"),
-            ("bmceventsubscription", "bmceventsubscriptions"),
-            ("imagedigestmirrorset", "imagedigestmirrorsets"),
-            ("node", "nodes"),
-            ("openshiftapiserver", "openshiftapiservers"),
-            ("ingresscontroller", "ingresscontrollers"),
-            ("machineconfigpool", "machineconfigpools"),
-            ("openshiftcontrollermanager", "openshiftcontrollermanagers"),
-            ("consoleplugin", "consoleplugins"),
-            ("volumesnapshotcontent", "volumesnapshotcontents"),
-            ("volumesnapshotclass", "volumesnapshotclasses"),
-            ("network", "networks"),
-            ("consolenotification", "consolenotifications"),
-            ("config", "configs"),
-            ("consoleyamlsample", "consoleyamlsamples"),
-            ("machinehealthcheck", "machinehealthchecks"),
-            ("config", "configs"),
-            ("rangeallocation", "rangeallocations"),
-            ("machine", "machines"),
-            ("credentialsrequest", "credentialsrequests"),
-            ("podmonitor", "podmonitors"),
-            ("clusterautoscaler", "clusterautoscalers"),
-            ("overlappingrangeipreservation", "overlappingrangeipreservations"),
-            ("operatorcondition", "operatorconditions"),
-            ("operator", "operators"),
-            ("dns", "dnses"),
-            ("scheduler", "schedulers"),
-            ("storage", "storages"),
-            ("metal3remediation", "metal3remediations"),
-            ("alertmanager", "alertmanagers"),
-            ("insightsoperator", "insightsoperators"),
-            ("egressip", "egressips"),
-            ("consoleexternalloglink", "consoleexternalloglinks"),
-            ("console", "consoles"),
-            ("volumesnapshot", "volumesnapshots"),
-            ("operatorgroup", "operatorgroups"),
-            ("machineautoscaler", "machineautoscalers"),
-            ("containerruntimeconfig", "containerruntimeconfigs"),
-            ("project", "projects"),
-            ("kubestorageversionmigrator", "kubestorageversionmigrators"),
-            ("firmwareschema", "firmwareschemas"),
-            ("config", "configs"),
-            ("prometheusrule", "prometheusrules"),
-            ("apirequestcount", "apirequestcounts"),
-            ("egressqos", "egressqoses"),
-            ("imagecontentsourcepolicy", "imagecontentsourcepolicies"),
-            ("projecthelmchartrepository", "projecthelmchartrepositories"),
-            ("profile", "profiles"),
-            ("catalogsource", "catalogsources"),
-            ("securitycontextconstraints", "securitycontextconstraints"),
-            ("egressfirewall", "egressfirewalls"),
-            ("clusterserviceversion", "clusterserviceversions"),
-            ("kubeapiserver", "kubeapiservers"),
-            ("ingress", "ingresses"),
-            ("operatorhub", "operatorhubs"),
-            ("alertmanagerconfig", "alertmanagerconfigs"),
-            ("featuregate", "featuregates"),
-            ("image", "images"),
-            ("console", "consoles"),
-            ("dns", "dnses"),
-            ("kubecontrollermanager", "kubecontrollermanagers"),
-            ("consolequickstart", "consolequickstarts"),
-            ("machineconfig", "machineconfigs"),
-            ("storageversionmigration", "storageversionmigrations"),
-            ("provisioning", "provisionings"),
-            ("storagestate", "storagestates"),
-            ("rolebindingrestriction", "rolebindingrestrictions"),
-            ("thanosruler", "thanosrulers"),
-            ("baremetalhost", "baremetalhosts"),
-            ("clusteroperator", "clusteroperators"),
-            ("network-attachment-definition", "network-attachment-definitions"),
-            ("infrastructure", "infrastructures"),
-            ("consoleclidownload", "consoleclidownloads"),
-            ("tuned", "tuneds"),
-            ("authentication", "authentications"),
-            ("csisnapshotcontroller", "csisnapshotcontrollers"),
-            ("clusterversion", "clusterversions"),
-            ("etcd", "etcds"),
-        ])
-    };
+    static ref SINGULAR_PLURAL_MAP: HashMap<&'static str, &'static str> = HashMap::from_iter(SINGULAR_PLURAL_ENTRIES.iter().copied());
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -569,5 +563,78 @@ impl std::fmt::Display for K8sLocation {
             "{}/{}:{}",
             self.resource_location, self.yaml_location.json_pointer, self.yaml_location.value
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn singular_plural_entries_has_no_duplicate_keys() {
+        let mut seen = std::collections::HashSet::new();
+        let duplicates: Vec<_> = SINGULAR_PLURAL_ENTRIES
+            .iter()
+            .filter(|(key, _)| !seen.insert(key))
+            .map(|(key, _)| *key)
+            .collect();
+        assert!(duplicates.is_empty(), "duplicate keys in SINGULAR_PLURAL_ENTRIES: {:?}", duplicates);
+    }
+
+    #[test]
+    fn as_etcd_key_regular_k8s_resource_namespaced() {
+        let loc = K8sResourceLocation::new(Some("openshift-config"), "ConfigMap", "my-config", "v1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/configmaps/openshift-config/my-config");
+    }
+
+    #[test]
+    fn as_etcd_key_regular_k8s_resource_cluster_scoped() {
+        let loc = K8sResourceLocation::new(None, "Node", "master-0", "v1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/nodes/master-0");
+    }
+
+    #[test]
+    fn as_etcd_key_openshift_route() {
+        let loc = K8sResourceLocation::new(Some("openshift-console"), "Route", "console", "route.openshift.io/v1");
+        assert_eq!(loc.as_etcd_key(), "/openshift.io/routes/openshift-console/console");
+    }
+
+    #[test]
+    fn as_etcd_key_openshift_oauth() {
+        let loc = K8sResourceLocation::new(None, "OAuthClient", "openshift-challenging-client", "oauth.openshift.io/v1");
+        assert_eq!(loc.as_etcd_key(), "/openshift.io/oauth/clients/openshift-challenging-client");
+    }
+
+    #[test]
+    fn as_etcd_key_operator_openshift_io_prefix() {
+        let loc = K8sResourceLocation::new(None, "IngressController", "default", "operator.openshift.io/v1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/operator.openshift.io/ingresscontrollers/default");
+    }
+
+    #[test]
+    fn as_etcd_key_config_openshift_io_prefix() {
+        let loc = K8sResourceLocation::new(None, "Infrastructure", "cluster", "config.openshift.io/v1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/config.openshift.io/infrastructures/cluster");
+    }
+
+    #[test]
+    fn as_etcd_key_monitoring_coreos_prefix() {
+        let loc = K8sResourceLocation::new(Some("openshift-monitoring"), "Prometheus", "k8s", "monitoring.coreos.com/v1");
+        assert_eq!(
+            loc.as_etcd_key(),
+            "/kubernetes.io/monitoring.coreos.com/prometheuses/openshift-monitoring/k8s"
+        );
+    }
+
+    #[test]
+    fn as_etcd_key_irregular_plural_from_map() {
+        let loc = K8sResourceLocation::new(None, "Proxy", "cluster", "config.openshift.io/v1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/config.openshift.io/proxies/cluster");
+    }
+
+    #[test]
+    fn as_etcd_key_unknown_kind_falls_back_to_appending_s() {
+        let loc = K8sResourceLocation::new(Some("default"), "SomeCustomResource", "my-cr", "example.com/v1beta1");
+        assert_eq!(loc.as_etcd_key(), "/kubernetes.io/somecustomresources/default/my-cr");
     }
 }
