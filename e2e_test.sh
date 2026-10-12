@@ -177,20 +177,30 @@ verify_jwt() {
     echo -n "$padded" | base64 -d > "$sig_file" 2>/dev/null
     echo -n "$header_payload" > "$data_file"
 
+    # recert now writes JOSE-form (R||S) signatures for EC; convert to DER for openssl dgst -verify.
+    local der_sig_file
+    der_sig_file=$(mktemp)
     local result=1
     case "$algo" in
-        rsa-*|ec-p256)
-            openssl dgst -sha256 -verify "$pubkey_file" -signature "$sig_file" "$data_file" >/dev/null 2>&1&& result=0
+        rsa-*)
+            openssl dgst -sha256 -verify "$pubkey_file" -signature "$sig_file" "$data_file" >/dev/null 2>&1 && result=0
+            ;;
+        ec-p256)
+            python3 "${SCRIPT_DIR}/tests/integration/lib/ecdsa_jws.py" jose-to-der ES256 < "$sig_file" > "$der_sig_file" 2>/dev/null \
+                && openssl dgst -sha256 -verify "$pubkey_file" -signature "$der_sig_file" "$data_file" >/dev/null 2>&1 \
+                && result=0
             ;;
         ec-p384)
-            openssl dgst -sha384 -verify "$pubkey_file" -signature "$sig_file" "$data_file" >/dev/null 2>&1 && result=0
+            python3 "${SCRIPT_DIR}/tests/integration/lib/ecdsa_jws.py" jose-to-der ES384 < "$sig_file" > "$der_sig_file" 2>/dev/null \
+                && openssl dgst -sha384 -verify "$pubkey_file" -signature "$der_sig_file" "$data_file" >/dev/null 2>&1 \
+                && result=0
             ;;
         ed25519)
             openssl pkeyutl -verify -inkey "$pubkey_file" -pubin -rawin -in "$data_file" -sigfile "$sig_file" >/dev/null 2>&1 && result=0
             ;;
     esac
 
-    rm -f "$pubkey_file" "$sig_file" "$data_file"
+    rm -f "$pubkey_file" "$sig_file" "$der_sig_file" "$data_file"
     return $result
 }
 

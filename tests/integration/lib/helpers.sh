@@ -366,6 +366,10 @@ b64url_decode_to_file() {
     printf '%s' "$padded" | tr '_-' '/+' | openssl base64 -d -A > "$dest"
 }
 
+b64url() {
+    openssl base64 -e -A | tr '+/' '-_' | tr -d '='
+}
+
 jwt_header_field() {
     local token="$1"
     local field="$2"
@@ -384,6 +388,7 @@ jwt_header_field() {
 jwt_header_alg() { jwt_header_field "$1" "alg"; }
 jwt_header_kid() { jwt_header_field "$1" "kid"; }
 
+# ECDSA JWT signatures must be in the fixed-width JWS R||S form (RFC 7518 section 3.4).
 assert_jwt_verifies() {
     local cert="$1"
     local token="$2"
@@ -397,15 +402,20 @@ assert_jwt_verifies() {
     b64url_decode_to_file "$sig" "${tmpdir}/sig.bin"
     openssl x509 -in "$cert" -pubkey -noout > "${tmpdir}/pub.pem" 2>/dev/null
 
-    local failed=0
+    local failed=0 digest
     case "$alg" in
-        RS256|ES256)
-            openssl dgst -sha256 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
-                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
-            ;;
-        ES384)
-            openssl dgst -sha384 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
-                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+        RS256|ES256|ES384)
+            digest="-sha256"
+            if [[ "$alg" == "ES384" ]]; then digest="-sha384"; fi
+            if [[ "$alg" == ES* ]]; then
+                python3 "${INTEGRATION_LIB_DIR}/ecdsa_jws.py" jose-to-der "$alg" \
+                    < "${tmpdir}/sig.bin" > "${tmpdir}/sig.der" \
+                    && mv "${tmpdir}/sig.der" "${tmpdir}/sig.bin" || failed=1
+            fi
+            if [[ "$failed" -eq 0 ]]; then
+                openssl dgst "$digest" -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
+                    "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+            fi
             ;;
         EdDSA)
             openssl pkeyutl -verify -inkey "${tmpdir}/pub.pem" -pubin -rawin \
@@ -425,13 +435,30 @@ assert_jwt_verifies() {
     fi
 }
 
-# run_jwt_algo_test LABEL CA_CERT CA_KEY JWT_FIXTURE EXPECTED_ALG
+# Rewrites a token's raw DER ECDSA signature (as emitted by older recert versions) into JWS form.
+# Fails unless the signature is strictly well-formed DER.
+jwt_legacy_der_to_jws() {
+    local token="$1"
+    local alg="$2"
+    local tmp
+    tmp=$(mktemp)
+    b64url_decode_to_file "${token##*.}" "$tmp"
+    local sig
+    sig=$(python3 "${INTEGRATION_LIB_DIR}/ecdsa_jws.py" der-to-jose "$alg" < "$tmp" | b64url) \
+        || { rm -f "$tmp"; return 1; }
+    rm -f "$tmp"
+    printf '%s.%s' "${token%.*}" "$sig"
+}
+
+# run_jwt_algo_test LABEL CA_CERT CA_KEY JWT_FIXTURE EXPECTED_ALG [LEGACY_DER_JWT_FIXTURE]
+# The optional legacy fixture is re-signed in the same recert run and must come out in JWS form.
 run_jwt_algo_test() {
     local label="$1"
     local ca_cert="$2"
     local ca_key="$3"
     local jwt_fixture="$4"
     local expected_alg="$5"
+    local legacy_der_fixture="${6:-}"
 
     local workdir
     workdir=$(setup_test_workdir "crypto_jwt_${expected_alg,,}")
@@ -439,14 +466,32 @@ run_jwt_algo_test() {
     crypto_dir=$(setup_crypto_dir "$workdir" "$ca_cert" "$ca_key")
     mkdir -p "${crypto_dir}/sa"
     cp "${FIXTURES_DIR}/${jwt_fixture}" "${crypto_dir}/sa/token"
+    local token_files=("${crypto_dir}/sa/token")
+    # recert only scans JWTs in files named exactly "token".
+    local legacy_file="${crypto_dir}/legacy-sa/token"
+    if [[ -n "$legacy_der_fixture" ]]; then
+        mkdir -p "$(dirname "$legacy_file")"
+        cp "${FIXTURES_DIR}/${legacy_der_fixture}" "$legacy_file"
+        token_files+=("$legacy_file")
+    fi
 
-    local token_before kid_before token_after kid_after
-    token_before=$(tr -d '\n' < "${crypto_dir}/sa/token")
-    assert_eq "$(jwt_header_alg "$token_before")" "$expected_alg" \
-        "fixture JWT alg should be ${expected_alg}"
-    assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$token_before" \
-        "precheck: fixture JWT should verify with original ${label} CA"
-    kid_before=$(jwt_header_kid "$token_before")
+    local token_file name token precheck_token
+    local -A tokens_before
+    for token_file in "${token_files[@]}"; do
+        name="${token_file#"${crypto_dir}/"}"
+        token=$(tr -d '\n' < "$token_file")
+        assert_eq "$(jwt_header_alg "$token")" "$expected_alg" "fixture ${name} alg should be ${expected_alg}"
+        precheck_token="$token"
+        if [[ "$token_file" == "$legacy_file" ]]; then
+            precheck_token=$(jwt_legacy_der_to_jws "$token" "$expected_alg") || {
+                echo "FAIL: precheck: fixture ${name} is not a strictly well-formed DER ECDSA signature" >&2
+                return 1
+            }
+        fi
+        assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$precheck_token" \
+            "precheck: fixture ${name} should verify with original ${label} CA"
+        tokens_before[$token_file]="$token"
+    done
 
     cat > "${workdir}/config.yaml" <<EOF
 crypto_dirs:
@@ -457,14 +502,16 @@ EOF
 
     RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success > /dev/null
 
-    token_after=$(tr -d '\n' < "${crypto_dir}/sa/token")
-    assert_ne "$token_after" "$token_before" "${expected_alg} JWT should be re-signed"
-    assert_eq "$(jwt_header_alg "$token_after")" "$expected_alg" \
-        "re-signed JWT alg should stay ${expected_alg}"
-    kid_after=$(jwt_header_kid "$token_after")
-    assert_ne "$kid_after" "$kid_before" "JWT kid should change after key regeneration"
-    assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$token_after" \
-        "re-signed ${expected_alg} JWT should verify with regenerated ${label} CA"
+    for token_file in "${token_files[@]}"; do
+        name="${token_file#"${crypto_dir}/"}"
+        token=$(tr -d '\n' < "$token_file")
+        assert_ne "$token" "${tokens_before[$token_file]}" "${name} should be re-signed"
+        assert_eq "$(jwt_header_alg "$token")" "$expected_alg" "re-signed ${name} alg should stay ${expected_alg}"
+        assert_ne "$(jwt_header_kid "$token")" "$(jwt_header_kid "${tokens_before[$token_file]}")" \
+            "${name} kid should change after key regeneration"
+        assert_jwt_verifies "${crypto_dir}/${ca_cert}" "$token" \
+            "re-signed ${name} should verify with regenerated ${label} CA"
+    done
     assert_summary_valid "${workdir}/summary.yaml"
 }
 
