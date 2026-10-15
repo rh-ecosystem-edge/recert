@@ -11,3 +11,7 @@ elif command -v brew >/dev/null 2>&1; then \
 else \
 	echo "Warning: Could not detect package manager. Please install dependencies manually."; \
 fi
+
+if ! command -v cargo-vendor-filterer >/dev/null 2>&1; then \
+	cargo install cargo-vendor-filterer; \
+fi

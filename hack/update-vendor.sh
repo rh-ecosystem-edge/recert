@@ -22,7 +22,7 @@ cd "$PROJECT_DIR"
 # while fetching crates. This lets the command refresh vendor/ after
 # Cargo.toml or Cargo.lock changes without requiring a privileged mount or a
 # modified Cargo config.
-"$VENDOR_FILTERER" --locked "$TEMP_DIR/vendor"
+"$VENDOR_FILTERER" "$TEMP_DIR/vendor"
 
 rm -rf "$PROJECT_DIR/vendor"
 mv "$TEMP_DIR/vendor" "$PROJECT_DIR/vendor"
