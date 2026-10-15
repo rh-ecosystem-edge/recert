@@ -54,16 +54,7 @@
                     "digest",
                     "replacement",
                     "rollback"
-                ],
-                "postUpgradeTasks": {
-                    "commands": [
-                        "make rust-vendor-update"
-                    ],
-                    "executionMode": "update",
-                    "fileFilters": [
-                        "vendor/**"
-                    ]
-                }
+                ]
             }
         ]
     },
