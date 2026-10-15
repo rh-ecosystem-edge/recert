@@ -200,10 +200,9 @@ rust-check: ## Check Rust code compilation
 	@echo "Compilation check completed successfully."
 
 .PHONY: rust-vendor-check
-rust-vendor-check: ## Verify the committed Cargo vendor tree matches the lockfile
-	@echo "Checking vendored Rust dependencies..."
-	$(PROJECT_DIR)/hack/check-vendor.sh
-	@echo "Vendored dependency check completed successfully."
+rust-vendor-check: rust-vendor-update ## Verify committed vendor tree is up to date (re-vendors then checks git tree)
+	@echo "Checking vendored dependencies are committed..."
+	$(PROJECT_DIR)/hack/check-git-tree.sh
 
 .PHONY: rust-clippy
 rust-clippy: ## Run Rust linter (clippy)
