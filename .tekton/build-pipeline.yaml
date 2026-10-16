@@ -241,9 +241,6 @@ spec:
         - name: BUILD_ARGS
           value:
             - $(params.build-args[*])
-        - name: BUILD_ARGS_FILES
-          value:
-            - $(params.build-args-file)
         - name: PRIVILEGED_NESTED
           value: $(params.privileged-nested)
         - name: SOURCE_ARTIFACT
@@ -280,6 +277,9 @@ spec:
           value: $(params.rewrite-timestamp)
         - name: OMIT_HISTORY
           value: $(params.omit-history)
+        - name: BUILD_ARGS_FILES
+          value:
+            - $(params.build-args-file)
       runAfter:
         - prefetch-dependencies
       taskRef:
