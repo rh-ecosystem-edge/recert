@@ -7,10 +7,11 @@ license = "ISC"
 name = "untrusted"
 readme = "README.md"
 repository = "https://github.com/briansmith/untrusted"
-version = "0.9.0"
+version = "0.7.1"
 
 [lib]
 name = "untrusted"
+path = "src/untrusted.rs"
 
 [profile.bench]
 opt-level = 2

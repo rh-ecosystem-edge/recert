@@ -1,12 +1,11 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
-
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86) && defined(__ELF__)
-.text
-#ifdef BORINGSSL_DISPATCH_TEST
+#if defined(__i386__)
+#if defined(BORINGSSL_PREFIX)
+#include <boringssl_prefix_symbols_asm.h>
 #endif
+.text
 .align	64
 .L_vpaes_consts:
 .long	218628480,235210255,168496130,67568393
@@ -331,28 +330,16 @@ _vpaes_schedule_mangle:
 	movdqu	%xmm3,(%edx)
 	ret
 .size	_vpaes_schedule_mangle,.-_vpaes_schedule_mangle
-.globl	vpaes_set_encrypt_key
-.hidden	vpaes_set_encrypt_key
-.type	vpaes_set_encrypt_key,@function
+.globl	GFp_vpaes_set_encrypt_key
+.hidden	GFp_vpaes_set_encrypt_key
+.type	GFp_vpaes_set_encrypt_key,@function
 .align	16
-vpaes_set_encrypt_key:
-.L_vpaes_set_encrypt_key_begin:
+GFp_vpaes_set_encrypt_key:
+.L_GFp_vpaes_set_encrypt_key_begin:
 	pushl	%ebp
 	pushl	%ebx
 	pushl	%esi
 	pushl	%edi
-#ifdef BORINGSSL_DISPATCH_TEST
-	pushl	%ebx
-	pushl	%edx
-	call	.L012pic
-.L012pic:
-	popl	%ebx
-	leal	BORINGSSL_function_hit+5-.L012pic(%ebx),%ebx
-	movl	$1,%edx
-	movb	%dl,(%ebx)
-	popl	%edx
-	popl	%ebx
-#endif
 	movl	20(%esp),%esi
 	leal	-56(%esp),%ebx
 	movl	24(%esp),%eax
@@ -366,9 +353,9 @@ vpaes_set_encrypt_key:
 	movl	%ebx,240(%edx)
 	movl	$48,%ecx
 	movl	$0,%edi
-	leal	.L_vpaes_consts+0x30-.L013pic_point,%ebp
+	leal	.L_vpaes_consts+0x30-.L012pic_point,%ebp
 	call	_vpaes_schedule_core
-.L013pic_point:
+.L012pic_point:
 	movl	48(%esp),%esp
 	xorl	%eax,%eax
 	popl	%edi
@@ -376,32 +363,20 @@ vpaes_set_encrypt_key:
 	popl	%ebx
 	popl	%ebp
 	ret
-.size	vpaes_set_encrypt_key,.-.L_vpaes_set_encrypt_key_begin
-.globl	vpaes_encrypt
-.hidden	vpaes_encrypt
-.type	vpaes_encrypt,@function
+.size	GFp_vpaes_set_encrypt_key,.-.L_GFp_vpaes_set_encrypt_key_begin
+.globl	GFp_vpaes_encrypt
+.hidden	GFp_vpaes_encrypt
+.type	GFp_vpaes_encrypt,@function
 .align	16
-vpaes_encrypt:
-.L_vpaes_encrypt_begin:
+GFp_vpaes_encrypt:
+.L_GFp_vpaes_encrypt_begin:
 	pushl	%ebp
 	pushl	%ebx
 	pushl	%esi
 	pushl	%edi
-#ifdef BORINGSSL_DISPATCH_TEST
-	pushl	%ebx
-	pushl	%edx
-	call	.L014pic
-.L014pic:
-	popl	%ebx
-	leal	BORINGSSL_function_hit+4-.L014pic(%ebx),%ebx
-	movl	$1,%edx
-	movb	%dl,(%ebx)
-	popl	%edx
-	popl	%ebx
-#endif
-	leal	.L_vpaes_consts+0x30-.L015pic_point,%ebp
+	leal	.L_vpaes_consts+0x30-.L013pic_point,%ebp
 	call	_vpaes_preheat
-.L015pic_point:
+.L013pic_point:
 	movl	20(%esp),%esi
 	leal	-56(%esp),%ebx
 	movl	24(%esp),%edi
@@ -418,5 +393,6 @@ vpaes_encrypt:
 	popl	%ebx
 	popl	%ebp
 	ret
-.size	vpaes_encrypt,.-.L_vpaes_encrypt_begin
-#endif  // !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86) && defined(__ELF__)
+.size	GFp_vpaes_encrypt,.-.L_GFp_vpaes_encrypt_begin
+#endif
+.section	.note.GNU-stack,"",@progbits

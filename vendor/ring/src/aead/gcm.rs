@@ -12,42 +12,31 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use super::{
-    block::{Block, BLOCK_LEN},
-    Aad,
-};
-use crate::{cpu, polyfill::ArraySplitMap};
-use core::ops::BitXorAssign;
+use super::{Aad, Block, BLOCK_LEN};
+use crate::cpu;
 
 #[cfg(not(target_arch = "aarch64"))]
 mod gcm_nohw;
 
-#[derive(Clone)]
-pub struct Key {
-    h_table: HTable,
-    cpu_features: cpu::Features,
-}
+pub struct Key(HTable);
 
 impl Key {
     pub(super) fn new(h_be: Block, cpu_features: cpu::Features) -> Self {
-        let h: [u64; 2] = h_be.as_ref().array_split_map(u64::from_be_bytes);
+        let h = h_be.u64s_be_to_native();
 
-        let mut key = Self {
-            h_table: HTable {
-                Htable: [u128 { hi: 0, lo: 0 }; HTABLE_LEN],
-            },
-            cpu_features,
-        };
-        let h_table = &mut key.h_table;
+        let mut key = Self(HTable {
+            Htable: [u128 { hi: 0, lo: 0 }; HTABLE_LEN],
+        });
+        let h_table = &mut key.0;
 
         match detect_implementation(cpu_features) {
             #[cfg(target_arch = "x86_64")]
             Implementation::CLMUL if has_avx_movbe(cpu_features) => {
-                prefixed_extern! {
-                    fn gcm_init_avx(HTable: &mut HTable, h: &[u64; 2]);
+                extern "C" {
+                    fn GFp_gcm_init_avx(HTable: &mut HTable, h: &[u64; 2]);
                 }
                 unsafe {
-                    gcm_init_avx(h_table, &h);
+                    GFp_gcm_init_avx(h_table, &h);
                 }
             }
 
@@ -58,21 +47,21 @@ impl Key {
                 target_arch = "x86"
             ))]
             Implementation::CLMUL => {
-                prefixed_extern! {
-                    fn gcm_init_clmul(Htable: &mut HTable, h: &[u64; 2]);
+                extern "C" {
+                    fn GFp_gcm_init_clmul(Htable: &mut HTable, h: &[u64; 2]);
                 }
                 unsafe {
-                    gcm_init_clmul(h_table, &h);
+                    GFp_gcm_init_clmul(h_table, &h);
                 }
             }
 
             #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
             Implementation::NEON => {
-                prefixed_extern! {
-                    fn gcm_init_neon(Htable: &mut HTable, h: &[u64; 2]);
+                extern "C" {
+                    fn GFp_gcm_init_neon(Htable: &mut HTable, h: &[u64; 2]);
                 }
                 unsafe {
-                    gcm_init_neon(h_table, &h);
+                    GFp_gcm_init_neon(h_table, &h);
                 }
             }
 
@@ -92,13 +81,14 @@ pub struct Context {
 }
 
 impl Context {
-    pub(crate) fn new(key: &Key, aad: Aad<&[u8]>) -> Self {
-        let mut ctx = Self {
+    pub(crate) fn new(key: &Key, aad: Aad<&[u8]>, cpu_features: cpu::Features) -> Self {
+        let mut ctx = Context {
             inner: ContextInner {
                 Xi: Xi(Block::zero()),
-                Htable: key.h_table.clone(),
+                _unused: Block::zero(),
+                Htable: key.0.clone(),
             },
-            cpu_features: key.cpu_features,
+            cpu_features,
         };
 
         for ad in aad.0.chunks(BLOCK_LEN) {
@@ -113,42 +103,33 @@ impl Context {
     /// Access to `inner` for the integrated AES-GCM implementations only.
     #[cfg(target_arch = "x86_64")]
     #[inline]
-    pub(super) fn inner(&mut self) -> (&HTable, &mut Xi) {
-        (&self.inner.Htable, &mut self.inner.Xi)
+    pub(super) fn inner(&mut self) -> &mut ContextInner {
+        &mut self.inner
     }
 
     pub fn update_blocks(&mut self, input: &[u8]) {
-        // Th assembly functions take the input length in bytes, not blocks.
-        let input_bytes = input.len();
+        debug_assert!(input.len() > 0);
+        debug_assert_eq!(input.len() % BLOCK_LEN, 0);
 
-        debug_assert_eq!(input_bytes % BLOCK_LEN, 0);
-        debug_assert!(input_bytes > 0);
-
-        let input = input.as_ptr() as *const [u8; BLOCK_LEN];
-        // SAFETY:
-        // - `[[u8; BLOCK_LEN]]` has the same bit validity as `[u8]`.
-        // - `[[u8; BLOCK_LEN]]` has the same alignment requirement as `[u8]`.
-        // - `input_bytes / BLOCK_LEN` ensures that the total length in bytes of
-        //   the new `[[u8; BLOCK_LEN]]` will not be longer than the original
-        //   `[u8]`.
-        let input = unsafe { core::slice::from_raw_parts(input, input_bytes / BLOCK_LEN) };
-
+        // Although these functions take `Xi` and `h_table` as separate
+        // parameters, one or more of them might assume that they are part of
+        // the same `ContextInner` structure.
         let xi = &mut self.inner.Xi;
         let h_table = &self.inner.Htable;
 
         match detect_implementation(self.cpu_features) {
             #[cfg(target_arch = "x86_64")]
             Implementation::CLMUL if has_avx_movbe(self.cpu_features) => {
-                prefixed_extern! {
-                    fn gcm_ghash_avx(
+                extern "C" {
+                    fn GFp_gcm_ghash_avx(
                         xi: &mut Xi,
                         Htable: &HTable,
-                        inp: *const [u8; BLOCK_LEN],
+                        inp: *const u8,
                         len: crate::c::size_t,
                     );
                 }
                 unsafe {
-                    gcm_ghash_avx(xi, h_table, input.as_ptr(), input_bytes);
+                    GFp_gcm_ghash_avx(xi, h_table, input.as_ptr(), input.len());
                 }
             }
 
@@ -159,31 +140,31 @@ impl Context {
                 target_arch = "x86"
             ))]
             Implementation::CLMUL => {
-                prefixed_extern! {
-                    fn gcm_ghash_clmul(
+                extern "C" {
+                    fn GFp_gcm_ghash_clmul(
                         xi: &mut Xi,
                         Htable: &HTable,
-                        inp: *const [u8; BLOCK_LEN],
+                        inp: *const u8,
                         len: crate::c::size_t,
                     );
                 }
                 unsafe {
-                    gcm_ghash_clmul(xi, h_table, input.as_ptr(), input_bytes);
+                    GFp_gcm_ghash_clmul(xi, h_table, input.as_ptr(), input.len());
                 }
             }
 
             #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
             Implementation::NEON => {
-                prefixed_extern! {
-                    fn gcm_ghash_neon(
+                extern "C" {
+                    fn GFp_gcm_ghash_neon(
                         xi: &mut Xi,
                         Htable: &HTable,
-                        inp: *const [u8; BLOCK_LEN],
+                        inp: *const u8,
                         len: crate::c::size_t,
                     );
                 }
                 unsafe {
-                    gcm_ghash_neon(xi, h_table, input.as_ptr(), input_bytes);
+                    GFp_gcm_ghash_neon(xi, h_table, input.as_ptr(), input.len());
                 }
             }
 
@@ -211,21 +192,21 @@ impl Context {
                 target_arch = "x86"
             ))]
             Implementation::CLMUL => {
-                prefixed_extern! {
-                    fn gcm_gmult_clmul(xi: &mut Xi, Htable: &HTable);
+                extern "C" {
+                    fn GFp_gcm_gmult_clmul(xi: &mut Xi, Htable: &HTable);
                 }
                 unsafe {
-                    gcm_gmult_clmul(xi, h_table);
+                    GFp_gcm_gmult_clmul(xi, h_table);
                 }
             }
 
             #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
             Implementation::NEON => {
-                prefixed_extern! {
-                    fn gcm_gmult_neon(xi: &mut Xi, Htable: &HTable);
+                extern "C" {
+                    fn GFp_gcm_gmult_neon(xi: &mut Xi, Htable: &HTable);
                 }
                 unsafe {
-                    gcm_gmult_neon(xi, h_table);
+                    GFp_gcm_gmult_neon(xi, h_table);
                 }
             }
 
@@ -238,14 +219,14 @@ impl Context {
 
     pub(super) fn pre_finish<F>(self, f: F) -> super::Tag
     where
-        F: FnOnce(Block) -> super::Tag,
+        F: FnOnce(Xi) -> super::Tag,
     {
-        f(self.inner.Xi.0)
+        f(self.inner.Xi)
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub(super) fn is_avx2(&self) -> bool {
-        match detect_implementation(self.cpu_features) {
+    pub(super) fn is_avx2(&self, cpu_features: cpu::Features) -> bool {
+        match detect_implementation(cpu_features) {
             Implementation::CLMUL => has_avx_movbe(self.cpu_features),
             _ => false,
         }
@@ -255,7 +236,7 @@ impl Context {
 // The alignment is required by non-Rust code that uses `GCM128_CONTEXT`.
 #[derive(Clone)]
 #[repr(C, align(16))]
-pub(super) struct HTable {
+struct HTable {
     Htable: [u128; HTABLE_LEN],
 }
 
@@ -271,10 +252,10 @@ const HTABLE_LEN: usize = 16;
 #[repr(transparent)]
 pub struct Xi(Block);
 
-impl BitXorAssign<Block> for Xi {
+impl Xi {
     #[inline]
     fn bitxor_assign(&mut self, a: Block) {
-        self.0 ^= a;
+        self.0.bitxor_assign(a)
     }
 }
 
@@ -289,12 +270,12 @@ impl From<Xi> for Block {
 // Some assembly language code, in particular the MOVEBE+AVX2 X86-64
 // implementation, requires this exact layout.
 #[repr(C, align(16))]
-struct ContextInner {
+pub(super) struct ContextInner {
     Xi: Xi,
+    _unused: Block,
     Htable: HTable,
 }
 
-#[allow(clippy::upper_case_acronyms)]
 enum Implementation {
     #[cfg(any(
         target_arch = "aarch64",

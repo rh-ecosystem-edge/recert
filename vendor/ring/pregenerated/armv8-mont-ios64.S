@@ -1,18 +1,23 @@
 // This file is generated from a similarly-named Perl script in the BoringSSL
 // source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if !defined(__has_feature)
+#define __has_feature(x) 0
+#endif
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64) && defined(__APPLE__)
-#include <ring-core/arm_arch.h>
+#if !defined(OPENSSL_NO_ASM)
+#include <GFp/arm_arch.h>
 
 .text
 
-.globl	_bn_mul_mont
-.private_extern	_bn_mul_mont
+.globl	_GFp_bn_mul_mont
+.private_extern	_GFp_bn_mul_mont
 
 .align	5
-_bn_mul_mont:
+_GFp_bn_mul_mont:
 	AARCH64_SIGN_LINK_REGISTER
 	tst	x5,#7
 	b.eq	__bn_sqr8x_mont
@@ -1422,4 +1427,4 @@ Lmul4x_done:
 .byte	77,111,110,116,103,111,109,101,114,121,32,77,117,108,116,105,112,108,105,99,97,116,105,111,110,32,102,111,114,32,65,82,77,118,56,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	2
 .align	4
-#endif  // !OPENSSL_NO_ASM && defined(OPENSSL_AARCH64) && defined(__APPLE__)
+#endif  // !OPENSSL_NO_ASM

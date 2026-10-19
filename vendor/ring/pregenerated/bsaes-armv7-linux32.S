@@ -1,9 +1,15 @@
 // This file is generated from a similarly-named Perl script in the BoringSSL
 // source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if !defined(__has_feature)
+#define __has_feature(x) 0
+#endif
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_ARM) && defined(__ELF__)
+#if !defined(OPENSSL_NO_ASM)
+#if defined(__arm__)
 @ Copyright 2012-2016 The OpenSSL Project Authors. All Rights Reserved.
 @
 @ Licensed under the OpenSSL license (the "License").  You may not use
@@ -56,7 +62,7 @@
 @ Add CBC, CTR and XTS subroutines and adapt for kernel use; courtesy of Ard.
 
 #ifndef __KERNEL__
-# include <ring-core/arm_arch.h>
+# include <GFp/arm_arch.h>
 
 # define VFP_ABI_PUSH	vstmdb	sp!,{d8-d15}
 # define VFP_ABI_POP	vldmia	sp!,{d8-d15}
@@ -605,11 +611,11 @@ _bsaes_key_convert:
 	@ don't save last round key
 	bx	lr
 .size	_bsaes_key_convert,.-_bsaes_key_convert
-.globl	bsaes_ctr32_encrypt_blocks
-.hidden	bsaes_ctr32_encrypt_blocks
-.type	bsaes_ctr32_encrypt_blocks,%function
+.globl	GFp_bsaes_ctr32_encrypt_blocks
+.hidden	GFp_bsaes_ctr32_encrypt_blocks
+.type	GFp_bsaes_ctr32_encrypt_blocks,%function
 .align	5
-bsaes_ctr32_encrypt_blocks:
+GFp_bsaes_ctr32_encrypt_blocks:
 	@ In OpenSSL, short inputs fall back to aes_nohw_* here. We patch this
 	@ out to retain a constant-time implementation.
 	mov	ip, sp
@@ -789,6 +795,8 @@ bsaes_ctr32_encrypt_blocks:
 
 	@ OpenSSL contains aes_nohw_* fallback code here. We patch this
 	@ out to retain a constant-time implementation.
-.size	bsaes_ctr32_encrypt_blocks,.-bsaes_ctr32_encrypt_blocks
+.size	GFp_bsaes_ctr32_encrypt_blocks,.-GFp_bsaes_ctr32_encrypt_blocks
 #endif
-#endif  // !OPENSSL_NO_ASM && defined(OPENSSL_ARM) && defined(__ELF__)
+#endif
+#endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits

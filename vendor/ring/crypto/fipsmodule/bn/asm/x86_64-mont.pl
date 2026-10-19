@@ -65,7 +65,7 @@ open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\"";
 # output, so this isn't useful anyway.
 $addx = 1;
 
-# void bn_mul_mont(
+# void GFp_bn_mul_mont(
 $rp="%rdi";	# BN_ULONG *rp,
 $ap="%rsi";	# const BN_ULONG *ap,
 $bp="%rdx";	# const BN_ULONG *bp,
@@ -85,14 +85,13 @@ $m1="%rbp";
 $code=<<___;
 .text
 
-.extern	OPENSSL_ia32cap_P
+.extern	GFp_ia32cap_P
 
-.globl	bn_mul_mont
-.type	bn_mul_mont,\@function,6
+.globl	GFp_bn_mul_mont
+.type	GFp_bn_mul_mont,\@function,6
 .align	16
-bn_mul_mont:
+GFp_bn_mul_mont:
 .cfi_startproc
-	_CET_ENDBR
 	mov	${num}d,${num}d
 	mov	%rsp,%rax
 .cfi_def_cfa_register	%rax
@@ -102,8 +101,7 @@ bn_mul_mont:
 	jb	.Lmul_enter
 ___
 $code.=<<___ if ($addx);
-	leaq	OPENSSL_ia32cap_P(%rip),%r11
-	mov	8(%r11),%r11d
+	mov	GFp_ia32cap_P+8(%rip),%r11d
 ___
 $code.=<<___;
 	cmp	$ap,$bp
@@ -348,7 +346,7 @@ $code.=<<___;
 .Lmul_epilogue:
 	ret
 .cfi_endproc
-.size	bn_mul_mont,.-bn_mul_mont
+.size	GFp_bn_mul_mont,.-GFp_bn_mul_mont
 ___
 {{{
 my @A=("%r10","%r11");
@@ -820,10 +818,10 @@ my @A1=("%r12","%r13");
 my ($a0,$a1,$ai)=("%r14","%r15","%rbx");
 
 $code.=<<___	if ($addx);
-.extern	bn_sqrx8x_internal		# see x86_64-mont5 module
+.extern	GFp_bn_sqrx8x_internal		# see x86_64-mont5 module
 ___
 $code.=<<___;
-.extern	bn_sqr8x_internal		# see x86_64-mont5 module
+.extern	GFp_bn_sqr8x_internal		# see x86_64-mont5 module
 
 .type	bn_sqr8x_mont,\@function,6
 .align	32
@@ -908,13 +906,12 @@ bn_sqr8x_mont:
 	movq	%r10, %xmm3		# -$num
 ___
 $code.=<<___ if ($addx);
-	leaq	OPENSSL_ia32cap_P(%rip),%rax
-	mov	8(%rax),%eax
+	mov	GFp_ia32cap_P+8(%rip),%eax
 	and	\$0x80100,%eax
 	cmp	\$0x80100,%eax
 	jne	.Lsqr8x_nox
 
-	call	bn_sqrx8x_internal	# see x86_64-mont5 module
+	call	GFp_bn_sqrx8x_internal	# see x86_64-mont5 module
 					# %rax	top-most carry
 					# %rbp	nptr
 					# %rcx	-8*num
@@ -930,7 +927,7 @@ $code.=<<___ if ($addx);
 .Lsqr8x_nox:
 ___
 $code.=<<___;
-	call	bn_sqr8x_internal	# see x86_64-mont5 module
+	call	GFp_bn_sqr8x_internal	# see x86_64-mont5 module
 					# %rax	top-most carry
 					# %rbp	nptr
 					# %r8	-8*num
@@ -1535,9 +1532,9 @@ sqr_handler:
 
 .section	.pdata
 .align	4
-	.rva	.LSEH_begin_bn_mul_mont
-	.rva	.LSEH_end_bn_mul_mont
-	.rva	.LSEH_info_bn_mul_mont
+	.rva	.LSEH_begin_GFp_bn_mul_mont
+	.rva	.LSEH_end_GFp_bn_mul_mont
+	.rva	.LSEH_info_GFp_bn_mul_mont
 
 	.rva	.LSEH_begin_bn_mul4x_mont
 	.rva	.LSEH_end_bn_mul4x_mont
@@ -1555,7 +1552,7 @@ ___
 $code.=<<___;
 .section	.xdata
 .align	8
-.LSEH_info_bn_mul_mont:
+.LSEH_info_GFp_bn_mul_mont:
 	.byte	9,0,0,0
 	.rva	mul_handler
 	.rva	.Lmul_body,.Lmul_epilogue	# HandlerData[]
@@ -1579,4 +1576,4 @@ ___
 }
 
 print $code;
-close STDOUT or die "error closing STDOUT: $!";
+close STDOUT or die "error closing STDOUT";

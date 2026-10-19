@@ -1,16 +1,19 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64) && defined(__ELF__)
+#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)
 .text	
-.extern	OPENSSL_ia32cap_P
-.hidden OPENSSL_ia32cap_P
+.extern	GFp_ia32cap_P
+.hidden GFp_ia32cap_P
 
 chacha20_poly1305_constants:
 
-.section	.rodata
 .align	64
 .Lchacha20_consts:
 .byte	'e','x','p','a','n','d',' ','3','2','-','b','y','t','e',' ','k'
@@ -48,7 +51,6 @@ chacha20_poly1305_constants:
 .byte	0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00
 .byte	0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00
 .byte	0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
-.text	
 
 .type	poly_hash_ad_internal,@function
 .align	64
@@ -104,7 +106,7 @@ poly_hash_ad_internal:
 	adcq	%r9,%r11
 	adcq	$0,%r12
 
-	ret
+	.byte	0xf3,0xc3
 .Lhash_ad_loop:
 
 	cmpq	$16,%r8
@@ -213,17 +215,16 @@ poly_hash_ad_internal:
 
 
 .Lhash_ad_done:
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
 .size	poly_hash_ad_internal, .-poly_hash_ad_internal
 
-.globl	chacha20_poly1305_open
-.hidden chacha20_poly1305_open
-.type	chacha20_poly1305_open,@function
+.globl	GFp_chacha20_poly1305_open
+.hidden GFp_chacha20_poly1305_open
+.type	GFp_chacha20_poly1305_open,@function
 .align	64
-chacha20_poly1305_open:
+GFp_chacha20_poly1305_open:
 .cfi_startproc	
-_CET_ENDBR
 	pushq	%rbp
 .cfi_adjust_cfa_offset	8
 .cfi_offset	%rbp,-16
@@ -257,7 +258,7 @@ _CET_ENDBR
 	movq	%r8,0+0+32(%rbp)
 	movq	%rbx,8+0+32(%rbp)
 
-	movl	OPENSSL_ia32cap_P+8(%rip),%eax
+	movl	GFp_ia32cap_P+8(%rip),%eax
 	andl	$288,%eax
 	xorl	$288,%eax
 	jz	chacha20_poly1305_open_avx2
@@ -1862,7 +1863,7 @@ _CET_ENDBR
 	popq	%rbp
 .cfi_adjust_cfa_offset	-8
 .cfi_restore	%rbp
-	ret
+	.byte	0xf3,0xc3
 
 .Lopen_sse_128:
 .cfi_restore_state	
@@ -2094,7 +2095,7 @@ _CET_ENDBR
 	movdqa	%xmm10,%xmm6
 	movdqa	%xmm14,%xmm10
 	jmp	.Lopen_sse_128_xor_hash
-.size	chacha20_poly1305_open, .-chacha20_poly1305_open
+.size	GFp_chacha20_poly1305_open, .-GFp_chacha20_poly1305_open
 .cfi_endproc	
 
 
@@ -2102,14 +2103,12 @@ _CET_ENDBR
 
 
 
-
-.globl	chacha20_poly1305_seal
-.hidden chacha20_poly1305_seal
-.type	chacha20_poly1305_seal,@function
+.globl	GFp_chacha20_poly1305_seal
+.hidden GFp_chacha20_poly1305_seal
+.type	GFp_chacha20_poly1305_seal,@function
 .align	64
-chacha20_poly1305_seal:
+GFp_chacha20_poly1305_seal:
 .cfi_startproc	
-_CET_ENDBR
 	pushq	%rbp
 .cfi_adjust_cfa_offset	8
 .cfi_offset	%rbp,-16
@@ -2144,7 +2143,7 @@ _CET_ENDBR
 	movq	%rbx,8+0+32(%rbp)
 	movq	%rdx,%rbx
 
-	movl	OPENSSL_ia32cap_P+8(%rip),%eax
+	movl	GFp_ia32cap_P+8(%rip),%eax
 	andl	$288,%eax
 	xorl	$288,%eax
 	jz	chacha20_poly1305_seal_avx2
@@ -3928,7 +3927,7 @@ process_extra_in_trailer:
 	popq	%rbp
 .cfi_adjust_cfa_offset	-8
 .cfi_restore	%rbp
-	ret
+	.byte	0xf3,0xc3
 
 .Lseal_sse_128:
 .cfi_restore_state	
@@ -4100,7 +4099,7 @@ process_extra_in_trailer:
 	movq	%r8,%r8
 	call	poly_hash_ad_internal
 	jmp	.Lseal_sse_128_tail_xor
-.size	chacha20_poly1305_seal, .-chacha20_poly1305_seal
+.size	GFp_chacha20_poly1305_seal, .-GFp_chacha20_poly1305_seal
 .cfi_endproc	
 
 
@@ -8916,3 +8915,4 @@ chacha20_poly1305_seal_avx2:
 .cfi_endproc	
 .size	chacha20_poly1305_seal_avx2, .-chacha20_poly1305_seal_avx2
 #endif
+.section	.note.GNU-stack,"",@progbits

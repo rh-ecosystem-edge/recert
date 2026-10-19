@@ -1,16 +1,17 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
-
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86) && defined(__ELF__)
+#if defined(__i386__)
+#if defined(BORINGSSL_PREFIX)
+#include <boringssl_prefix_symbols_asm.h>
+#endif
 .text
-.globl	ChaCha20_ctr32
-.hidden	ChaCha20_ctr32
-.type	ChaCha20_ctr32,@function
+.globl	GFp_ChaCha20_ctr32
+.hidden	GFp_ChaCha20_ctr32
+.type	GFp_ChaCha20_ctr32,@function
 .align	16
-ChaCha20_ctr32:
-.L_ChaCha20_ctr32_begin:
+GFp_ChaCha20_ctr32:
+.L_GFp_ChaCha20_ctr32_begin:
 	pushl	%ebp
 	pushl	%ebx
 	pushl	%esi
@@ -21,7 +22,7 @@ ChaCha20_ctr32:
 	call	.Lpic_point
 .Lpic_point:
 	popl	%eax
-	leal	OPENSSL_ia32cap_P-.Lpic_point(%eax),%ebp
+	leal	GFp_ia32cap_P-.Lpic_point(%eax),%ebp
 	testl	$16777216,(%ebp)
 	jz	.L001x86
 	testl	$512,4(%ebp)
@@ -378,7 +379,7 @@ ChaCha20_ctr32:
 	popl	%ebx
 	popl	%ebp
 	ret
-.size	ChaCha20_ctr32,.-.L_ChaCha20_ctr32_begin
+.size	GFp_ChaCha20_ctr32,.-.L_GFp_ChaCha20_ctr32_begin
 .hidden	_ChaCha20_ssse3
 .type	_ChaCha20_ssse3,@function
 .align	16
@@ -968,4 +969,5 @@ _ChaCha20_ssse3:
 .byte	44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32
 .byte	60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111
 .byte	114,103,62,0
-#endif  // !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86) && defined(__ELF__)
+#endif
+.section	.note.GNU-stack,"",@progbits

@@ -1,26 +1,27 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64) && defined(__ELF__)
+#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)
 .text	
 
-.extern	OPENSSL_ia32cap_P
-.hidden OPENSSL_ia32cap_P
-.globl	sha256_block_data_order
-.hidden sha256_block_data_order
-.type	sha256_block_data_order,@function
+.extern	GFp_ia32cap_P
+.hidden GFp_ia32cap_P
+.globl	GFp_sha256_block_data_order
+.hidden GFp_sha256_block_data_order
+.type	GFp_sha256_block_data_order,@function
 .align	16
-sha256_block_data_order:
+GFp_sha256_block_data_order:
 .cfi_startproc	
-_CET_ENDBR
-	leaq	OPENSSL_ia32cap_P(%rip),%r11
+	leaq	GFp_ia32cap_P(%rip),%r11
 	movl	0(%r11),%r9d
 	movl	4(%r11),%r10d
 	movl	8(%r11),%r11d
-	testl	$536870912,%r11d
-	jnz	.Lshaext_shortcut
 	andl	$1073741824,%r9d
 	andl	$268435968,%r10d
 	orl	%r9d,%r10d
@@ -1731,10 +1732,9 @@ _CET_ENDBR
 	leaq	(%rsi),%rsp
 .cfi_def_cfa_register	%rsp
 .Lepilogue:
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-.size	sha256_block_data_order,.-sha256_block_data_order
-.section	.rodata
+.size	GFp_sha256_block_data_order,.-GFp_sha256_block_data_order
 .align	64
 .type	K256,@object
 K256:
@@ -1778,219 +1778,9 @@ K256:
 .long	0xffffffff,0xffffffff,0x03020100,0x0b0a0908
 .long	0xffffffff,0xffffffff,0x03020100,0x0b0a0908
 .byte	83,72,65,50,53,54,32,98,108,111,99,107,32,116,114,97,110,115,102,111,114,109,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
-.text	
-.type	sha256_block_data_order_shaext,@function
+.type	GFp_sha256_block_data_order_ssse3,@function
 .align	64
-sha256_block_data_order_shaext:
-.cfi_startproc	
-.Lshaext_shortcut:
-	leaq	K256+128(%rip),%rcx
-	movdqu	(%rdi),%xmm1
-	movdqu	16(%rdi),%xmm2
-	movdqa	512-128(%rcx),%xmm7
-
-	pshufd	$0x1b,%xmm1,%xmm0
-	pshufd	$0xb1,%xmm1,%xmm1
-	pshufd	$0x1b,%xmm2,%xmm2
-	movdqa	%xmm7,%xmm8
-.byte	102,15,58,15,202,8
-	punpcklqdq	%xmm0,%xmm2
-	jmp	.Loop_shaext
-
-.align	16
-.Loop_shaext:
-	movdqu	(%rsi),%xmm3
-	movdqu	16(%rsi),%xmm4
-	movdqu	32(%rsi),%xmm5
-.byte	102,15,56,0,223
-	movdqu	48(%rsi),%xmm6
-
-	movdqa	0-128(%rcx),%xmm0
-	paddd	%xmm3,%xmm0
-.byte	102,15,56,0,231
-	movdqa	%xmm2,%xmm10
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	nop
-	movdqa	%xmm1,%xmm9
-.byte	15,56,203,202
-
-	movdqa	32-128(%rcx),%xmm0
-	paddd	%xmm4,%xmm0
-.byte	102,15,56,0,239
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	leaq	64(%rsi),%rsi
-.byte	15,56,204,220
-.byte	15,56,203,202
-
-	movdqa	64-128(%rcx),%xmm0
-	paddd	%xmm5,%xmm0
-.byte	102,15,56,0,247
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm6,%xmm7
-.byte	102,15,58,15,253,4
-	nop
-	paddd	%xmm7,%xmm3
-.byte	15,56,204,229
-.byte	15,56,203,202
-
-	movdqa	96-128(%rcx),%xmm0
-	paddd	%xmm6,%xmm0
-.byte	15,56,205,222
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm3,%xmm7
-.byte	102,15,58,15,254,4
-	nop
-	paddd	%xmm7,%xmm4
-.byte	15,56,204,238
-.byte	15,56,203,202
-	movdqa	128-128(%rcx),%xmm0
-	paddd	%xmm3,%xmm0
-.byte	15,56,205,227
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm4,%xmm7
-.byte	102,15,58,15,251,4
-	nop
-	paddd	%xmm7,%xmm5
-.byte	15,56,204,243
-.byte	15,56,203,202
-	movdqa	160-128(%rcx),%xmm0
-	paddd	%xmm4,%xmm0
-.byte	15,56,205,236
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm5,%xmm7
-.byte	102,15,58,15,252,4
-	nop
-	paddd	%xmm7,%xmm6
-.byte	15,56,204,220
-.byte	15,56,203,202
-	movdqa	192-128(%rcx),%xmm0
-	paddd	%xmm5,%xmm0
-.byte	15,56,205,245
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm6,%xmm7
-.byte	102,15,58,15,253,4
-	nop
-	paddd	%xmm7,%xmm3
-.byte	15,56,204,229
-.byte	15,56,203,202
-	movdqa	224-128(%rcx),%xmm0
-	paddd	%xmm6,%xmm0
-.byte	15,56,205,222
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm3,%xmm7
-.byte	102,15,58,15,254,4
-	nop
-	paddd	%xmm7,%xmm4
-.byte	15,56,204,238
-.byte	15,56,203,202
-	movdqa	256-128(%rcx),%xmm0
-	paddd	%xmm3,%xmm0
-.byte	15,56,205,227
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm4,%xmm7
-.byte	102,15,58,15,251,4
-	nop
-	paddd	%xmm7,%xmm5
-.byte	15,56,204,243
-.byte	15,56,203,202
-	movdqa	288-128(%rcx),%xmm0
-	paddd	%xmm4,%xmm0
-.byte	15,56,205,236
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm5,%xmm7
-.byte	102,15,58,15,252,4
-	nop
-	paddd	%xmm7,%xmm6
-.byte	15,56,204,220
-.byte	15,56,203,202
-	movdqa	320-128(%rcx),%xmm0
-	paddd	%xmm5,%xmm0
-.byte	15,56,205,245
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm6,%xmm7
-.byte	102,15,58,15,253,4
-	nop
-	paddd	%xmm7,%xmm3
-.byte	15,56,204,229
-.byte	15,56,203,202
-	movdqa	352-128(%rcx),%xmm0
-	paddd	%xmm6,%xmm0
-.byte	15,56,205,222
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm3,%xmm7
-.byte	102,15,58,15,254,4
-	nop
-	paddd	%xmm7,%xmm4
-.byte	15,56,204,238
-.byte	15,56,203,202
-	movdqa	384-128(%rcx),%xmm0
-	paddd	%xmm3,%xmm0
-.byte	15,56,205,227
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm4,%xmm7
-.byte	102,15,58,15,251,4
-	nop
-	paddd	%xmm7,%xmm5
-.byte	15,56,204,243
-.byte	15,56,203,202
-	movdqa	416-128(%rcx),%xmm0
-	paddd	%xmm4,%xmm0
-.byte	15,56,205,236
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	movdqa	%xmm5,%xmm7
-.byte	102,15,58,15,252,4
-.byte	15,56,203,202
-	paddd	%xmm7,%xmm6
-
-	movdqa	448-128(%rcx),%xmm0
-	paddd	%xmm5,%xmm0
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-.byte	15,56,205,245
-	movdqa	%xmm8,%xmm7
-.byte	15,56,203,202
-
-	movdqa	480-128(%rcx),%xmm0
-	paddd	%xmm6,%xmm0
-	nop
-.byte	15,56,203,209
-	pshufd	$0x0e,%xmm0,%xmm0
-	decq	%rdx
-	nop
-.byte	15,56,203,202
-
-	paddd	%xmm10,%xmm2
-	paddd	%xmm9,%xmm1
-	jnz	.Loop_shaext
-
-	pshufd	$0xb1,%xmm2,%xmm2
-	pshufd	$0x1b,%xmm1,%xmm7
-	pshufd	$0xb1,%xmm1,%xmm1
-	punpckhqdq	%xmm2,%xmm1
-.byte	102,15,58,15,215,8
-
-	movdqu	%xmm1,(%rdi)
-	movdqu	%xmm2,16(%rdi)
-	ret
-.cfi_endproc	
-.size	sha256_block_data_order_shaext,.-sha256_block_data_order_shaext
-.type	sha256_block_data_order_ssse3,@function
-.align	64
-sha256_block_data_order_ssse3:
+GFp_sha256_block_data_order_ssse3:
 .cfi_startproc	
 .Lssse3_shortcut:
 	movq	%rsp,%rax
@@ -3098,12 +2888,12 @@ sha256_block_data_order_ssse3:
 	leaq	(%rsi),%rsp
 .cfi_def_cfa_register	%rsp
 .Lepilogue_ssse3:
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-.size	sha256_block_data_order_ssse3,.-sha256_block_data_order_ssse3
-.type	sha256_block_data_order_avx,@function
+.size	GFp_sha256_block_data_order_ssse3,.-GFp_sha256_block_data_order_ssse3
+.type	GFp_sha256_block_data_order_avx,@function
 .align	64
-sha256_block_data_order_avx:
+GFp_sha256_block_data_order_avx:
 .cfi_startproc	
 .Lavx_shortcut:
 	movq	%rsp,%rax
@@ -4173,7 +3963,8 @@ sha256_block_data_order_avx:
 	leaq	(%rsi),%rsp
 .cfi_def_cfa_register	%rsp
 .Lepilogue_avx:
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-.size	sha256_block_data_order_avx,.-sha256_block_data_order_avx
+.size	GFp_sha256_block_data_order_avx,.-GFp_sha256_block_data_order_avx
 #endif
+.section	.note.GNU-stack,"",@progbits

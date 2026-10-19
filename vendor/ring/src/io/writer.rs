@@ -23,9 +23,9 @@ pub(super) struct LengthMeasurement {
     len: usize,
 }
 
-impl From<LengthMeasurement> for usize {
-    fn from(len: LengthMeasurement) -> usize {
-        len.len
+impl Into<usize> for LengthMeasurement {
+    fn into(self) -> usize {
+        self.len
     }
 }
 
@@ -58,10 +58,10 @@ impl Writer {
     }
 }
 
-impl From<Writer> for Box<[u8]> {
-    fn from(writer: Writer) -> Self {
-        assert_eq!(writer.requested_capacity, writer.bytes.len());
-        writer.bytes.into_boxed_slice()
+impl Into<Box<[u8]>> for Writer {
+    fn into(self) -> Box<[u8]> {
+        assert_eq!(self.requested_capacity, self.bytes.len());
+        self.bytes.into_boxed_slice()
     }
 }
 

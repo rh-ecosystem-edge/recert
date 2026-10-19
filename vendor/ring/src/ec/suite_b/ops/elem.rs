@@ -13,10 +13,7 @@
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 use crate::{
-    arithmetic::{
-        limbs_from_hex,
-        montgomery::{Encoding, ProductEncoding},
-    },
+    arithmetic::montgomery::{Encoding, ProductEncoding},
     limb::{Limb, LIMB_BITS},
 };
 use core::marker::PhantomData;
@@ -43,14 +40,6 @@ impl<M, E: Encoding> Elem<M, E> {
     pub fn zero() -> Self {
         Self {
             limbs: [0; MAX_LIMBS],
-            m: PhantomData,
-            encoding: PhantomData,
-        }
-    }
-
-    pub const fn from_hex(hex: &str) -> Self {
-        Elem {
-            limbs: limbs_from_hex(hex),
             m: PhantomData,
             encoding: PhantomData,
         }

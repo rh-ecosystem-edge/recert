@@ -1,14 +1,10 @@
 ; This file is generated from a similarly-named Perl script in the BoringSSL
 ; source tree. Do not edit by hand.
 
-%ifidn __OUTPUT_FORMAT__, win64
 default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
-%define _CET_ENDBR
-
-%include "ring_core_generated/prefix_symbols_nasm.inc"
 section	.text code align=64
 
 
@@ -110,7 +106,7 @@ DB	102,15,56,0,195
 	movdqa	xmm1,XMMWORD[64+r10*1+r11]
 	pxor	xmm0,xmm4
 DB	102,15,56,0,193
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -285,7 +281,7 @@ DB	102,65,15,56,0,243
 	pxor	xmm6,xmm12
 DB	102,15,56,0,193
 DB	102,15,56,0,241
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -414,7 +410,7 @@ $L$schedule_mangle_last_dec:
 	pxor	xmm5,xmm5
 	pxor	xmm6,xmm6
 	pxor	xmm7,xmm7
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -492,7 +488,7 @@ DB	102,15,56,0,195
 
 	pxor	xmm0,xmm7
 	movdqa	xmm7,xmm0
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -518,7 +514,7 @@ DB	102,15,56,0,208
 	movdqa	xmm0,XMMWORD[16+r11]
 DB	102,15,56,0,193
 	pxor	xmm0,xmm2
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -568,28 +564,27 @@ DB	102,15,56,0,217
 	add	r8,-16
 	and	r8,0x30
 	movdqu	XMMWORD[rdx],xmm3
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
 
 
 
-global	vpaes_set_encrypt_key
+global	GFp_vpaes_set_encrypt_key
 
 ALIGN	16
-vpaes_set_encrypt_key:
+GFp_vpaes_set_encrypt_key:
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
 	mov	QWORD[16+rsp],rsi
 	mov	rax,rsp
-$L$SEH_begin_vpaes_set_encrypt_key:
+$L$SEH_begin_GFp_vpaes_set_encrypt_key:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
 
 
 
-_CET_ENDBR
 %ifdef BORINGSSL_DISPATCH_TEST
 EXTERN	BORINGSSL_function_hit
 	mov	BYTE[((BORINGSSL_function_hit+5))],1
@@ -630,29 +625,24 @@ $L$enc_key_epilogue:
 	xor	eax,eax
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
-	ret
+	DB	0F3h,0C3h		;repret
 
-$L$SEH_end_vpaes_set_encrypt_key:
+$L$SEH_end_GFp_vpaes_set_encrypt_key:
 
-global	vpaes_encrypt
+global	GFp_vpaes_encrypt
 
 ALIGN	16
-vpaes_encrypt:
+GFp_vpaes_encrypt:
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
 	mov	QWORD[16+rsp],rsi
 	mov	rax,rsp
-$L$SEH_begin_vpaes_encrypt:
+$L$SEH_begin_GFp_vpaes_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
 
 
 
-_CET_ENDBR
-%ifdef BORINGSSL_DISPATCH_TEST
-EXTERN	BORINGSSL_function_hit
-	mov	BYTE[((BORINGSSL_function_hit+4))],1
-%endif
 	lea	rsp,[((-184))+rsp]
 	movaps	XMMWORD[16+rsp],xmm6
 	movaps	XMMWORD[32+rsp],xmm7
@@ -683,17 +673,17 @@ $L$enc_body:
 $L$enc_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
-	ret
+	DB	0F3h,0C3h		;repret
 
-$L$SEH_end_vpaes_encrypt:
-global	vpaes_ctr32_encrypt_blocks
+$L$SEH_end_GFp_vpaes_encrypt:
+global	GFp_vpaes_ctr32_encrypt_blocks
 
 ALIGN	16
-vpaes_ctr32_encrypt_blocks:
+GFp_vpaes_ctr32_encrypt_blocks:
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
 	mov	QWORD[16+rsp],rsi
 	mov	rax,rsp
-$L$SEH_begin_vpaes_ctr32_encrypt_blocks:
+$L$SEH_begin_GFp_vpaes_ctr32_encrypt_blocks:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -702,7 +692,6 @@ $L$SEH_begin_vpaes_ctr32_encrypt_blocks:
 
 
 
-_CET_ENDBR
 
 	xchg	rdx,rcx
 	test	rcx,rcx
@@ -783,9 +772,9 @@ $L$ctr32_epilogue:
 $L$ctr32_abort:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
-	ret
+	DB	0F3h,0C3h		;repret
 
-$L$SEH_end_vpaes_ctr32_encrypt_blocks:
+$L$SEH_end_GFp_vpaes_ctr32_encrypt_blocks:
 
 
 
@@ -804,7 +793,7 @@ _vpaes_preheat:
 	movdqa	xmm12,XMMWORD[64+r10]
 	movdqa	xmm15,XMMWORD[80+r10]
 	movdqa	xmm14,XMMWORD[96+r10]
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 
@@ -813,7 +802,6 @@ _vpaes_preheat:
 
 
 
-section	.rdata rdata align=8
 ALIGN	64
 _vpaes_consts:
 $L$k_inv:
@@ -879,14 +867,12 @@ $L$ctr_add_one:
 $L$ctr_add_two:
 	DQ	0x0000000000000000,0x0000000200000000
 
-	DB	86,101,99,116,111,114,32,80,101,114,109,117,116,97,116,105
-	DB	111,110,32,65,69,83,32,102,111,114,32,120,56,54,95,54
-	DB	52,47,83,83,83,69,51,44,32,77,105,107,101,32,72,97
-	DB	109,98,117,114,103,32,40,83,116,97,110,102,111,114,100,32
-	DB	85,110,105,118,101,114,115,105,116,121,41,0
+DB	86,101,99,116,111,114,32,80,101,114,109,117,116,97,116,105
+DB	111,110,32,65,69,83,32,102,111,114,32,120,56,54,95,54
+DB	52,47,83,83,83,69,51,44,32,77,105,107,101,32,72,97
+DB	109,98,117,114,103,32,40,83,116,97,110,102,111,114,100,32
+DB	85,110,105,118,101,114,115,105,116,121,41,0
 ALIGN	64
-
-section	.text
 
 EXTERN	__imp_RtlVirtualUnwind
 
@@ -964,37 +950,33 @@ $L$in_prologue:
 	pop	rbx
 	pop	rdi
 	pop	rsi
-	ret
+	DB	0F3h,0C3h		;repret
 
 
 section	.pdata rdata align=4
 ALIGN	4
-	DD	$L$SEH_begin_vpaes_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_end_vpaes_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_info_vpaes_set_encrypt_key wrt ..imagebase
+	DD	$L$SEH_begin_GFp_vpaes_set_encrypt_key wrt ..imagebase
+	DD	$L$SEH_end_GFp_vpaes_set_encrypt_key wrt ..imagebase
+	DD	$L$SEH_info_GFp_vpaes_set_encrypt_key wrt ..imagebase
 
-	DD	$L$SEH_begin_vpaes_encrypt wrt ..imagebase
-	DD	$L$SEH_end_vpaes_encrypt wrt ..imagebase
-	DD	$L$SEH_info_vpaes_encrypt wrt ..imagebase
-	DD	$L$SEH_begin_vpaes_ctr32_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_end_vpaes_ctr32_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_info_vpaes_ctr32_encrypt_blocks wrt ..imagebase
+	DD	$L$SEH_begin_GFp_vpaes_encrypt wrt ..imagebase
+	DD	$L$SEH_end_GFp_vpaes_encrypt wrt ..imagebase
+	DD	$L$SEH_info_GFp_vpaes_encrypt wrt ..imagebase
+	DD	$L$SEH_begin_GFp_vpaes_ctr32_encrypt_blocks wrt ..imagebase
+	DD	$L$SEH_end_GFp_vpaes_ctr32_encrypt_blocks wrt ..imagebase
+	DD	$L$SEH_info_GFp_vpaes_ctr32_encrypt_blocks wrt ..imagebase
 
 section	.xdata rdata align=8
 ALIGN	8
-$L$SEH_info_vpaes_set_encrypt_key:
-	DB	9,0,0,0
+$L$SEH_info_GFp_vpaes_set_encrypt_key:
+DB	9,0,0,0
 	DD	se_handler wrt ..imagebase
 	DD	$L$enc_key_body wrt ..imagebase,$L$enc_key_epilogue wrt ..imagebase
-$L$SEH_info_vpaes_encrypt:
-	DB	9,0,0,0
+$L$SEH_info_GFp_vpaes_encrypt:
+DB	9,0,0,0
 	DD	se_handler wrt ..imagebase
 	DD	$L$enc_body wrt ..imagebase,$L$enc_epilogue wrt ..imagebase
-$L$SEH_info_vpaes_ctr32_encrypt_blocks:
-	DB	9,0,0,0
+$L$SEH_info_GFp_vpaes_ctr32_encrypt_blocks:
+DB	9,0,0,0
 	DD	se_handler wrt ..imagebase
 	DD	$L$ctr32_body wrt ..imagebase,$L$ctr32_epilogue wrt ..imagebase
-%else
-; Work around https://bugzilla.nasm.us/show_bug.cgi?id=3392738
-ret
-%endif

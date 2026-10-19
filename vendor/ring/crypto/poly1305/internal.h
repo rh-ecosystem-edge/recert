@@ -15,8 +15,8 @@
 #ifndef OPENSSL_HEADER_POLY1305_INTERNAL_H
 #define OPENSSL_HEADER_POLY1305_INTERNAL_H
 
-#include <ring-core/base.h>
-#include <ring-core/poly1305.h>
+#include <GFp/base.h>
+#include <GFp/poly1305.h>
 
 #if defined(OPENSSL_ARM) && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_APPLE)
 #define OPENSSL_POLY1305_NEON

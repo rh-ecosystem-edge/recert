@@ -12,7 +12,8 @@
 // OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use crate::{arithmetic::limbs_from_hex, digest, error, limb};
+use crate::{digest, error, limb};
+use core::convert::TryInto;
 
 #[repr(transparent)]
 pub struct Scalar([u8; SCALAR_LEN]);
@@ -24,7 +25,7 @@ impl Scalar {
     // that not in the range [0, n).
     pub fn from_bytes_checked(bytes: [u8; SCALAR_LEN]) -> Result<Self, error::Unspecified> {
         const ORDER: [limb::Limb; SCALAR_LEN / limb::LIMB_BYTES] =
-            limbs_from_hex("1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed");
+            limbs![0x5cf5d3ed, 0x5812631a, 0xa2f79cd6, 0x14def9de, 0, 0, 0, 0x10000000];
 
         // `bytes` is in little-endian order.
         let mut reversed = bytes;
@@ -43,12 +44,12 @@ impl Scalar {
 
     // Constructs a `Scalar` from `digest` reduced modulo n.
     pub fn from_sha512_digest_reduced(digest: digest::Digest) -> Self {
-        prefixed_extern! {
-            fn x25519_sc_reduce(s: &mut UnreducedScalar);
+        extern "C" {
+            fn GFp_x25519_sc_reduce(s: &mut UnreducedScalar);
         }
         let mut unreduced = [0u8; digest::SHA512_OUTPUT_LEN];
         unreduced.copy_from_slice(digest.as_ref());
-        unsafe { x25519_sc_reduce(&mut unreduced) };
+        unsafe { GFp_x25519_sc_reduce(&mut unreduced) };
         Self((&unreduced[..SCALAR_LEN]).try_into().unwrap())
     }
 }
@@ -58,11 +59,11 @@ pub struct MaskedScalar([u8; SCALAR_LEN]);
 
 impl MaskedScalar {
     pub fn from_bytes_masked(bytes: [u8; SCALAR_LEN]) -> Self {
-        prefixed_extern! {
-            fn x25519_sc_mask(a: &mut [u8; SCALAR_LEN]);
+        extern "C" {
+            fn GFp_x25519_sc_mask(a: &mut [u8; SCALAR_LEN]);
         }
         let mut r = Self(bytes);
-        unsafe { x25519_sc_mask(&mut r.0) };
+        unsafe { GFp_x25519_sc_mask(&mut r.0) };
         r
     }
 }

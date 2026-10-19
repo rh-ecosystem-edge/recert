@@ -1,34 +1,29 @@
 ; This file is generated from a similarly-named Perl script in the BoringSSL
 ; source tree. Do not edit by hand.
 
-%ifidn __OUTPUT_FORMAT__, win64
 default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
-%define _CET_ENDBR
-
-%include "ring_core_generated/prefix_symbols_nasm.inc"
 section	.text code align=64
 
 
-EXTERN	OPENSSL_ia32cap_P
-global	sha512_block_data_order
+EXTERN	GFp_ia32cap_P
+global	GFp_sha512_block_data_order
 
 ALIGN	16
-sha512_block_data_order:
+GFp_sha512_block_data_order:
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
 	mov	QWORD[16+rsp],rsi
 	mov	rax,rsp
-$L$SEH_begin_sha512_block_data_order:
+$L$SEH_begin_GFp_sha512_block_data_order:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
 
 
 
-_CET_ENDBR
-	lea	r11,[OPENSSL_ia32cap_P]
+	lea	r11,[GFp_ia32cap_P]
 	mov	r9d,DWORD[r11]
 	mov	r10d,DWORD[4+r11]
 	mov	r11d,DWORD[8+r11]
@@ -1742,10 +1737,9 @@ $L$rounds_16_xx:
 $L$epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
-	ret
+	DB	0F3h,0C3h		;repret
 
-$L$SEH_end_sha512_block_data_order:
-section	.rdata rdata align=8
+$L$SEH_end_GFp_sha512_block_data_order:
 ALIGN	64
 
 K512:
@@ -1832,20 +1826,18 @@ K512:
 
 	DQ	0x0001020304050607,0x08090a0b0c0d0e0f
 	DQ	0x0001020304050607,0x08090a0b0c0d0e0f
-	DB	83,72,65,53,49,50,32,98,108,111,99,107,32,116,114,97
-	DB	110,115,102,111,114,109,32,102,111,114,32,120,56,54,95,54
-	DB	52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121
-	DB	32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46
-	DB	111,114,103,62,0
-section	.text
-
+DB	83,72,65,53,49,50,32,98,108,111,99,107,32,116,114,97
+DB	110,115,102,111,114,109,32,102,111,114,32,120,56,54,95,54
+DB	52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121
+DB	32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46
+DB	111,114,103,62,0
 
 ALIGN	64
-sha512_block_data_order_avx:
+GFp_sha512_block_data_order_avx:
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
 	mov	QWORD[16+rsp],rsi
 	mov	rax,rsp
-$L$SEH_begin_sha512_block_data_order_avx:
+$L$SEH_begin_GFp_sha512_block_data_order_avx:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -3024,9 +3016,9 @@ $L$avx_00_47:
 $L$epilogue_avx:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
-	ret
+	DB	0F3h,0C3h		;repret
 
-$L$SEH_end_sha512_block_data_order_avx:
+$L$SEH_end_GFp_sha512_block_data_order_avx:
 EXTERN	__imp_RtlVirtualUnwind
 
 ALIGN	16
@@ -3121,27 +3113,23 @@ $L$in_prologue:
 	pop	rbx
 	pop	rdi
 	pop	rsi
-	ret
+	DB	0F3h,0C3h		;repret
 
 section	.pdata rdata align=4
 ALIGN	4
-	DD	$L$SEH_begin_sha512_block_data_order wrt ..imagebase
-	DD	$L$SEH_end_sha512_block_data_order wrt ..imagebase
-	DD	$L$SEH_info_sha512_block_data_order wrt ..imagebase
-	DD	$L$SEH_begin_sha512_block_data_order_avx wrt ..imagebase
-	DD	$L$SEH_end_sha512_block_data_order_avx wrt ..imagebase
-	DD	$L$SEH_info_sha512_block_data_order_avx wrt ..imagebase
+	DD	$L$SEH_begin_GFp_sha512_block_data_order wrt ..imagebase
+	DD	$L$SEH_end_GFp_sha512_block_data_order wrt ..imagebase
+	DD	$L$SEH_info_GFp_sha512_block_data_order wrt ..imagebase
+	DD	$L$SEH_begin_GFp_sha512_block_data_order_avx wrt ..imagebase
+	DD	$L$SEH_end_GFp_sha512_block_data_order_avx wrt ..imagebase
+	DD	$L$SEH_info_GFp_sha512_block_data_order_avx wrt ..imagebase
 section	.xdata rdata align=8
 ALIGN	8
-$L$SEH_info_sha512_block_data_order:
-	DB	9,0,0,0
+$L$SEH_info_GFp_sha512_block_data_order:
+DB	9,0,0,0
 	DD	se_handler wrt ..imagebase
 	DD	$L$prologue wrt ..imagebase,$L$epilogue wrt ..imagebase
-$L$SEH_info_sha512_block_data_order_avx:
-	DB	9,0,0,0
+$L$SEH_info_GFp_sha512_block_data_order_avx:
+DB	9,0,0,0
 	DD	se_handler wrt ..imagebase
 	DD	$L$prologue_avx wrt ..imagebase,$L$epilogue_avx wrt ..imagebase
-%else
-; Work around https://bugzilla.nasm.us/show_bug.cgi?id=3392738
-ret
-%endif

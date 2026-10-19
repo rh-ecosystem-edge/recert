@@ -69,9 +69,6 @@ $PREFIX="vpaes";
 my  ($round, $base, $magic, $key, $const, $inp, $out)=
     ("eax",  "ebx", "ecx",  "edx","ebp",  "esi","edi");
 
-&preprocessor_ifdef("BORINGSSL_DISPATCH_TEST")
-&external_label("BORINGSSL_function_hit");
-&preprocessor_endif();
 &static_label("_vpaes_consts");
 &static_label("_vpaes_schedule_low_round");
 
@@ -558,9 +555,7 @@ $k_deskew=0x180;	# deskew tables: inverts the sbox's "skew"
 #
 # Interface to OpenSSL
 #
-&function_begin("${PREFIX}_set_encrypt_key");
-	record_function_hit(5);
-
+&function_begin("GFp_${PREFIX}_set_encrypt_key");
 	&mov	($inp,&wparam(0));		# inp
 	&lea	($base,&DWP(-56,"esp"));
 	&mov	($round,&wparam(1));		# bits
@@ -582,11 +577,9 @@ $k_deskew=0x180;	# deskew tables: inverts the sbox's "skew"
 
 	&mov	("esp",&DWP(48,"esp"));
 	&xor	("eax","eax");
-&function_end("${PREFIX}_set_encrypt_key");
+&function_end("GFp_${PREFIX}_set_encrypt_key");
 
-&function_begin("${PREFIX}_encrypt");
-	record_function_hit(4);
-
+&function_begin("GFp_${PREFIX}_encrypt");
 	&lea	($const,&DWP(&label("_vpaes_consts")."+0x30-".&label("pic_point")));
 	&call	("_vpaes_preheat");
 &set_label("pic_point");
@@ -603,8 +596,8 @@ $k_deskew=0x180;	# deskew tables: inverts the sbox's "skew"
 	&movdqu	(&QWP(0,$out),"xmm0");
 
 	&mov	("esp",&DWP(48,"esp"));
-&function_end("${PREFIX}_encrypt");
+&function_end("GFp_${PREFIX}_encrypt");
 
 &asm_finish();
 
-close STDOUT or die "error closing STDOUT: $!";
+close STDOUT or die "error closing STDOUT";

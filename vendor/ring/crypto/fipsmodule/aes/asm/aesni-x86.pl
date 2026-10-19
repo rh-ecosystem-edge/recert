@@ -67,10 +67,10 @@
 # Goldmont	3.84/1.39	1.39	1.63	1.31	1.70
 # Bulldozer	5.80/0.98	1.05	1.24	0.93	1.23
 
-$PREFIX="aes_hw";	# if $PREFIX is set to "AES", the script
+$PREFIX="GFp_aes_hw";	# if $PREFIX is set to "AES", the script
 			# generates drop-in replacement for
 			# crypto/aes/asm/aes-586.pl:-)
-$AESNI_PREFIX="aes_hw";
+$AESNI_PREFIX="GFp_aes_hw";
 $inline=1;		# inline _aesni_[en|de]crypt
 
 $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
@@ -83,10 +83,7 @@ open OUT,">$output";
 
 &asm_init($ARGV[0]);
 
-&external_label("OPENSSL_ia32cap_P");
-&preprocessor_ifdef("BORINGSSL_DISPATCH_TEST")
-&external_label("BORINGSSL_function_hit");
-&preprocessor_endif();
+&external_label("GFp_ia32cap_P");
 &static_label("key_const");
 
 if ($PREFIX eq $AESNI_PREFIX)	{ $movekey=\&movups; }
@@ -195,8 +192,6 @@ sub aesni_generate1	# fully unrolled loop
 # void $PREFIX_encrypt (const void *inp,void *out,const AES_KEY *key);
 &aesni_generate1("enc") if (!$inline);
 &function_begin_B("${PREFIX}_encrypt");
-	&record_function_hit(1);
-
 	&mov	("eax",&wparam(0));
 	&mov	($key,&wparam(2));
 	&movups	($inout0,&QWP(0,"eax"));
@@ -424,8 +419,6 @@ if ($PREFIX eq $AESNI_PREFIX) {
 #	80	saved %esp
 
 &function_begin("${PREFIX}_ctr32_encrypt_blocks");
-	&record_function_hit(0);
-
 	&mov	($inp,&wparam(0));
 	&mov	($out,&wparam(1));
 	&mov	($len,&wparam(2));
@@ -695,7 +688,7 @@ if ($PREFIX eq $AESNI_PREFIX) {
 	&blindpop("ebx");
 	&lea	("ebx",&DWP(&label("key_const")."-".&label("pic"),"ebx"));
 
-	&picmeup("ebp","OPENSSL_ia32cap_P","ebx",&label("key_const"));
+	&picmeup("ebp","GFp_ia32cap_P","ebx",&label("key_const"));
 	&movups	("xmm0",&QWP(0,"eax"));	# pull first 128 bits of *userKey
 	&xorps	("xmm4","xmm4");	# low dword of xmm4 is assumed 0
 	&mov	("ebp",&DWP(4,"ebp"));
@@ -959,8 +952,6 @@ if ($PREFIX eq $AESNI_PREFIX) {
 # int $PREFIX_set_encrypt_key (const unsigned char *userKey, int bits,
 #                              AES_KEY *key)
 &function_begin_B("${PREFIX}_set_encrypt_key");
-	&record_function_hit(3);
-
 	&mov	("eax",&wparam(0));
 	&mov	($rounds,&wparam(1));
 	&mov	($key,&wparam(2));
@@ -977,4 +968,4 @@ if ($PREFIX eq $AESNI_PREFIX) {
 
 &asm_finish();
 
-close STDOUT or die "error closing STDOUT: $!";
+close STDOUT or die "error closing STDOUT";

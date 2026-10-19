@@ -1,9 +1,15 @@
 // This file is generated from a similarly-named Perl script in the BoringSSL
 // source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if !defined(__has_feature)
+#define __has_feature(x) 0
+#endif
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_ARM) && defined(__ELF__)
+#if !defined(OPENSSL_NO_ASM)
+#if defined(__arm__)
 .syntax	unified
 
 .arch	armv7-a
@@ -192,11 +198,11 @@ _vpaes_encrypt_core:
 	bx	lr
 .size	_vpaes_encrypt_core,.-_vpaes_encrypt_core
 
-.globl	vpaes_encrypt
-.hidden	vpaes_encrypt
-.type	vpaes_encrypt,%function
+.globl	GFp_vpaes_encrypt
+.hidden	GFp_vpaes_encrypt
+.type	GFp_vpaes_encrypt,%function
 .align	4
-vpaes_encrypt:
+GFp_vpaes_encrypt:
 	@ _vpaes_encrypt_core uses r8-r11. Round up to r7-r11 to maintain stack
 	@ alignment.
 	stmdb	sp!, {r7,r8,r9,r10,r11,lr}
@@ -210,7 +216,7 @@ vpaes_encrypt:
 
 	vldmia	sp!, {d8,d9,d10,d11}
 	ldmia	sp!, {r7,r8,r9,r10,r11, pc}	@ return
-.size	vpaes_encrypt,.-vpaes_encrypt
+.size	GFp_vpaes_encrypt,.-GFp_vpaes_encrypt
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @@                                                    @@
 @@                  AES key schedule                  @@
@@ -538,11 +544,11 @@ _vpaes_schedule_mangle:
 	bx	lr
 .size	_vpaes_schedule_mangle,.-_vpaes_schedule_mangle
 
-.globl	vpaes_set_encrypt_key
-.hidden	vpaes_set_encrypt_key
-.type	vpaes_set_encrypt_key,%function
+.globl	GFp_vpaes_set_encrypt_key
+.hidden	GFp_vpaes_set_encrypt_key
+.type	GFp_vpaes_set_encrypt_key,%function
 .align	4
-vpaes_set_encrypt_key:
+GFp_vpaes_set_encrypt_key:
 	stmdb	sp!, {r7,r8,r9,r10,r11, lr}
 	vstmdb	sp!, {d8,d9,d10,d11,d12,d13,d14,d15}
 
@@ -557,7 +563,7 @@ vpaes_set_encrypt_key:
 
 	vldmia	sp!, {d8,d9,d10,d11,d12,d13,d14,d15}
 	ldmia	sp!, {r7,r8,r9,r10,r11, pc}	@ return
-.size	vpaes_set_encrypt_key,.-vpaes_set_encrypt_key
+.size	GFp_vpaes_set_encrypt_key,.-GFp_vpaes_set_encrypt_key
 
 @ Additional constants for converting to bsaes.
 .type	_vpaes_convert_consts,%object
@@ -598,12 +604,12 @@ _vpaes_convert_consts:
 .quad	0x9cb8436798bc4763, 0x6440bb9f6044bf9b
 .quad	0x1f30062936192f00, 0xb49bad829db284ab
 
-@ void vpaes_encrypt_key_to_bsaes(AES_KEY *bsaes, const AES_KEY *vpaes);
-.globl	vpaes_encrypt_key_to_bsaes
-.hidden	vpaes_encrypt_key_to_bsaes
-.type	vpaes_encrypt_key_to_bsaes,%function
+@ void GFp_vpaes_encrypt_key_to_bsaes(AES_KEY *bsaes, const AES_KEY *vpaes);
+.globl	GFp_vpaes_encrypt_key_to_bsaes
+.hidden	GFp_vpaes_encrypt_key_to_bsaes
+.type	GFp_vpaes_encrypt_key_to_bsaes,%function
 .align	4
-vpaes_encrypt_key_to_bsaes:
+GFp_vpaes_encrypt_key_to_bsaes:
 	stmdb	sp!, {r11, lr}
 
 	@ See _vpaes_schedule_core for the key schedule logic. In particular,
@@ -694,12 +700,12 @@ vpaes_encrypt_key_to_bsaes:
 	veor	q2, q2, q2
 
 	ldmia	sp!, {r11, pc}	@ return
-.size	vpaes_encrypt_key_to_bsaes,.-vpaes_encrypt_key_to_bsaes
-.globl	vpaes_ctr32_encrypt_blocks
-.hidden	vpaes_ctr32_encrypt_blocks
-.type	vpaes_ctr32_encrypt_blocks,%function
+.size	GFp_vpaes_encrypt_key_to_bsaes,.-GFp_vpaes_encrypt_key_to_bsaes
+.globl	GFp_vpaes_ctr32_encrypt_blocks
+.hidden	GFp_vpaes_ctr32_encrypt_blocks
+.type	GFp_vpaes_ctr32_encrypt_blocks,%function
 .align	4
-vpaes_ctr32_encrypt_blocks:
+GFp_vpaes_ctr32_encrypt_blocks:
 	mov	ip, sp
 	stmdb	sp!, {r7,r8,r9,r10,r11, lr}
 	@ This function uses q4-q7 (d8-d15), which are callee-saved.
@@ -738,5 +744,7 @@ vpaes_ctr32_encrypt_blocks:
 .Lctr32_done:
 	vldmia	sp!, {d8,d9,d10,d11,d12,d13,d14,d15}
 	ldmia	sp!, {r7,r8,r9,r10,r11, pc}	@ return
-.size	vpaes_ctr32_encrypt_blocks,.-vpaes_ctr32_encrypt_blocks
-#endif  // !OPENSSL_NO_ASM && defined(OPENSSL_ARM) && defined(__ELF__)
+.size	GFp_vpaes_ctr32_encrypt_blocks,.-GFp_vpaes_ctr32_encrypt_blocks
+#endif
+#endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits

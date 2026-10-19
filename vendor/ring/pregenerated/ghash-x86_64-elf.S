@@ -1,20 +1,22 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64) && defined(__ELF__)
+#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)
 .text	
-.extern	OPENSSL_ia32cap_P
-.hidden OPENSSL_ia32cap_P
-.globl	gcm_init_clmul
-.hidden gcm_init_clmul
-.type	gcm_init_clmul,@function
+.extern	GFp_ia32cap_P
+.hidden GFp_ia32cap_P
+.globl	GFp_gcm_init_clmul
+.hidden GFp_gcm_init_clmul
+.type	GFp_gcm_init_clmul,@function
 .align	16
-gcm_init_clmul:
+GFp_gcm_init_clmul:
 .cfi_startproc	
-
-_CET_ENDBR
 .L_init_clmul:
 	movdqu	(%rsi),%xmm2
 	pshufd	$78,%xmm2,%xmm2
@@ -165,17 +167,15 @@ _CET_ENDBR
 	movdqu	%xmm0,64(%rdi)
 .byte	102,15,58,15,227,8
 	movdqu	%xmm4,80(%rdi)
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-
-.size	gcm_init_clmul,.-gcm_init_clmul
-.globl	gcm_gmult_clmul
-.hidden gcm_gmult_clmul
-.type	gcm_gmult_clmul,@function
+.size	GFp_gcm_init_clmul,.-GFp_gcm_init_clmul
+.globl	GFp_gcm_gmult_clmul
+.hidden GFp_gcm_gmult_clmul
+.type	GFp_gcm_gmult_clmul,@function
 .align	16
-gcm_gmult_clmul:
+GFp_gcm_gmult_clmul:
 .cfi_startproc	
-_CET_ENDBR
 .L_gmult_clmul:
 	movdqu	(%rdi),%xmm0
 	movdqa	.Lbswap_mask(%rip),%xmm5
@@ -221,17 +221,15 @@ _CET_ENDBR
 	pxor	%xmm1,%xmm0
 .byte	102,15,56,0,197
 	movdqu	%xmm0,(%rdi)
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-.size	gcm_gmult_clmul,.-gcm_gmult_clmul
-.globl	gcm_ghash_clmul
-.hidden gcm_ghash_clmul
-.type	gcm_ghash_clmul,@function
+.size	GFp_gcm_gmult_clmul,.-GFp_gcm_gmult_clmul
+.globl	GFp_gcm_ghash_clmul
+.hidden GFp_gcm_ghash_clmul
+.type	GFp_gcm_ghash_clmul,@function
 .align	32
-gcm_ghash_clmul:
+GFp_gcm_ghash_clmul:
 .cfi_startproc	
-
-_CET_ENDBR
 .L_ghash_clmul:
 	movdqa	.Lbswap_mask(%rip),%xmm10
 
@@ -244,7 +242,7 @@ _CET_ENDBR
 	jz	.Lodd_tail
 
 	movdqu	16(%rsi),%xmm6
-	leaq	OPENSSL_ia32cap_P(%rip),%rax
+	leaq	GFp_ia32cap_P(%rip),%rax
 	movl	4(%rax),%eax
 	cmpq	$0x30,%rcx
 	jb	.Lskip4x
@@ -610,17 +608,15 @@ _CET_ENDBR
 .Ldone:
 .byte	102,65,15,56,0,194
 	movdqu	%xmm0,(%rdi)
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-
-.size	gcm_ghash_clmul,.-gcm_ghash_clmul
-.globl	gcm_init_avx
-.hidden gcm_init_avx
-.type	gcm_init_avx,@function
+.size	GFp_gcm_ghash_clmul,.-GFp_gcm_ghash_clmul
+.globl	GFp_gcm_init_avx
+.hidden GFp_gcm_init_avx
+.type	GFp_gcm_init_avx,@function
 .align	32
-gcm_init_avx:
+GFp_gcm_init_avx:
 .cfi_startproc	
-_CET_ENDBR
 	vzeroupper
 
 	vmovdqu	(%rsi),%xmm2
@@ -722,17 +718,15 @@ _CET_ENDBR
 	vmovdqu	%xmm5,-16(%rdi)
 
 	vzeroupper
-	ret
-
+	.byte	0xf3,0xc3
 .cfi_endproc	
-.size	gcm_init_avx,.-gcm_init_avx
-.globl	gcm_ghash_avx
-.hidden gcm_ghash_avx
-.type	gcm_ghash_avx,@function
+.size	GFp_gcm_init_avx,.-GFp_gcm_init_avx
+.globl	GFp_gcm_ghash_avx
+.hidden GFp_gcm_ghash_avx
+.type	GFp_gcm_ghash_avx,@function
 .align	32
-gcm_ghash_avx:
+GFp_gcm_ghash_avx:
 .cfi_startproc	
-_CET_ENDBR
 	vzeroupper
 
 	vmovdqu	(%rdi),%xmm10
@@ -1103,11 +1097,9 @@ _CET_ENDBR
 	vpshufb	%xmm13,%xmm10,%xmm10
 	vmovdqu	%xmm10,(%rdi)
 	vzeroupper
-	ret
+	.byte	0xf3,0xc3
 .cfi_endproc	
-
-.size	gcm_ghash_avx,.-gcm_ghash_avx
-.section	.rodata
+.size	GFp_gcm_ghash_avx,.-GFp_gcm_ghash_avx
 .align	64
 .Lbswap_mask:
 .byte	15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0
@@ -1119,5 +1111,5 @@ _CET_ENDBR
 
 .byte	71,72,65,83,72,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	64
-.text	
 #endif
+.section	.note.GNU-stack,"",@progbits

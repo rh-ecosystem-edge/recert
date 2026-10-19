@@ -1,14 +1,17 @@
-// This file is generated from a similarly-named Perl script in the BoringSSL
-// source tree. Do not edit by hand.
+# This file is generated from a similarly-named Perl script in the BoringSSL
+# source tree. Do not edit by hand.
 
-#include <ring-core/asm_base.h>
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer) && !defined(OPENSSL_NO_ASM)
+#define OPENSSL_NO_ASM
+#endif
+#endif
 
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64) && defined(__APPLE__)
+#if defined(__x86_64__) && !defined(OPENSSL_NO_ASM)
 .text	
 
 
 
-.section	__DATA,__const
 .p2align	6
 L$zero:
 .long	0,0,0,0
@@ -38,17 +41,15 @@ L$incz:
 L$sixteen:
 .long	16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16
 .byte	67,104,97,67,104,97,50,48,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
-.text	
-.globl	_ChaCha20_ctr32
-.private_extern _ChaCha20_ctr32
+.globl	_GFp_ChaCha20_ctr32
+.private_extern _GFp_ChaCha20_ctr32
 
 .p2align	6
-_ChaCha20_ctr32:
+_GFp_ChaCha20_ctr32:
 
-_CET_ENDBR
 	cmpq	$0,%rdx
 	je	L$no_data
-	movq	_OPENSSL_ia32cap_P+4(%rip),%r10
+	movq	_GFp_ia32cap_P+4(%rip),%r10
 	testl	$512,%r10d
 	jnz	L$ChaCha20_ssse3
 
@@ -320,7 +321,7 @@ L$done:
 	leaq	(%rsi),%rsp
 
 L$no_data:
-	ret
+	.byte	0xf3,0xc3
 
 
 
@@ -457,7 +458,7 @@ L$done_ssse3:
 	leaq	(%r9),%rsp
 
 L$ssse3_epilogue:
-	ret
+	.byte	0xf3,0xc3
 
 
 
@@ -1009,7 +1010,7 @@ L$done4x:
 	leaq	(%r9),%rsp
 
 L$4x_epilogue:
-	ret
+	.byte	0xf3,0xc3
 
 
 
@@ -1615,7 +1616,7 @@ L$done8x:
 	leaq	(%r9),%rsp
 
 L$8x_epilogue:
-	ret
+	.byte	0xf3,0xc3
 
 
 #endif
