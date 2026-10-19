@@ -1,15 +1,15 @@
 use crate::cluster_crypto::certificate::{attribute_value_string, time_from_chrono, time_to_chrono, COMMON_NAME};
 use crate::cnsanreplace::CnSanReplaceRules;
 use anyhow::bail;
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use der::{
     asn1::{Ia5String, OctetString, PrintableStringRef, SetOfVec},
     oid::AssociatedOid,
     Any, Decode, Encode, Tag, Tagged,
 };
-use x509_cert::ext::pkix::name::GeneralName::{DnsName, IpAddress};
-use x509_cert::ext::pkix::SubjectAltName;
+use x509_cert::ext::pkix::name::GeneralName::{self, DnsName, IpAddress};
+use x509_cert::ext::pkix::{AuthorityKeyIdentifier, SubjectAltName};
 use x509_cert::{name::Name, TbsCertificate};
 
 pub(crate) fn mutate_cert(
@@ -117,6 +117,26 @@ pub(crate) fn mutate_cert_common_name(name: &mut Name, cn_san_replace_rules: &Cn
     Ok(())
 }
 
+/// An AKID can identify the issuer by the issuer's own issuer name and serial number
+/// (authorityCertIssuer + authorityCertSerialNumber) rather than (or in addition to) a key
+/// identifier. If CN replacement renames that issuer's issuer, the name in the AKID goes stale and
+/// the chain breaks. Go never writes this form (so OCP certs don't have it), so rather than
+/// supporting it we refuse to produce a broken cert.
+pub(crate) fn ensure_akid_issuer_unaffected(akid: &AuthorityKeyIdentifier, cn_san_replace_rules: &CnSanReplaceRules) -> Result<()> {
+    for general_name in akid.authority_cert_issuer.iter().flatten() {
+        if let GeneralName::DirectoryName(name) = general_name {
+            let mut renamed = name.clone();
+            mutate_cert_common_name(&mut renamed, cn_san_replace_rules).context("mutating AKID authority cert issuer")?;
+            ensure!(
+                renamed == *name,
+                "CN replacement would rename the issuer named in this cert's authority key identifier, which is not supported"
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn mutate_cert_subject_alternative_name(
     tbs_certificate: &mut TbsCertificate,
     cn_san_replace_rules: &CnSanReplaceRules,
@@ -205,6 +225,26 @@ mod tests {
         mutate_cert_common_name(&mut name, &rules(&["something:else"])).unwrap();
         assert_eq!(name, original);
         assert!(mutate_cert_common_name(&mut name, &rules(&["hi:bye"])).is_err());
+    }
+
+    #[test]
+    fn test_ensure_akid_issuer_unaffected() {
+        let akid = |issuer: &str| AuthorityKeyIdentifier {
+            key_identifier: None,
+            authority_cert_issuer: Some(vec![GeneralName::DirectoryName(Name::from_str(issuer).unwrap())]),
+            authority_cert_serial_number: None,
+        };
+        let rules = rules(&["old.example.com:new.example.com"]);
+
+        assert!(ensure_akid_issuer_unaffected(&akid("CN=unrelated"), &rules).is_ok());
+        assert!(ensure_akid_issuer_unaffected(&akid("CN=old.example.com,O=Org"), &rules).is_err());
+        // Key identifier only, the usual form
+        let key_id_only = AuthorityKeyIdentifier {
+            key_identifier: Some(OctetString::new(vec![1, 2, 3]).unwrap()),
+            authority_cert_issuer: None,
+            authority_cert_serial_number: None,
+        };
+        assert!(ensure_akid_issuer_unaffected(&key_id_only, &rules).is_ok());
     }
 
     #[test]

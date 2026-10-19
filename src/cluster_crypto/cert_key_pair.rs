@@ -215,6 +215,7 @@ impl CertKeyPair {
         // fix_akid looks it up
         let akid = key_identifiers::get_akid(&tbs_certificate).context("getting akid")?;
         if let Some(mut akid) = akid {
+            cert_mutations::ensure_akid_issuer_unaffected(&akid, &crypto_customizations.cn_san_replace_rules)?;
             fix_akid(&mut akid, skid_edits, serial_number_edits)?;
 
             key_identifiers::set_akid(&mut tbs_certificate, akid).context("setting akid")?;
