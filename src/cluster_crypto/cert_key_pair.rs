@@ -32,7 +32,7 @@ use tokio::{self, io::AsyncReadExt};
 use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
 use x509_certificate::{
     rfc5280::{self, AlgorithmIdentifier, CertificateSerialNumber},
-    CapturedX509Certificate, EcdsaCurve, KeyAlgorithm, Sign, X509Certificate,
+    CapturedX509Certificate, EcdsaCurve, X509Certificate,
 };
 
 pub(crate) mod cert_mutations;
@@ -205,8 +205,8 @@ impl CertKeyPair {
 
         // Replace just the public key info in the to-be-signed part with the newly generated key
         tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
-            algorithm: KeyAlgorithm::from(&self_new_key_pair.in_memory_signing_key_pair).into(),
-            subject_public_key: BitString::new(0, self_new_key_pair.in_memory_signing_key_pair.public_key_data()),
+            algorithm: self_new_key_pair.key_algorithm().into(),
+            subject_public_key: BitString::new(0, self_new_key_pair.public_key_data()),
         };
 
         // If we weren't given a key to sign with, we use the new key we just generated
@@ -219,7 +219,7 @@ impl CertKeyPair {
 
         // TODO: No need to change the signature algorithm once we know how to re-sign ECDSA,
         // we're only forced to change this because we make all certs RSA
-        let signature_algorithm: AlgorithmIdentifier = signing_key.in_memory_signing_key_pair.signature_algorithm()?.into();
+        let signature_algorithm: AlgorithmIdentifier = signing_key.signature_algorithm().into();
         tbs_certificate.signature = signature_algorithm.clone();
 
         // Fix SKID

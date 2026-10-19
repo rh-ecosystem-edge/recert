@@ -23,6 +23,9 @@ RHEL9_ORG_ID ?= ""
 # This can be set from the command line if the default is not correct for your environment.
 REGISTRY_AUTH_FILE ?= $(shell echo $${XDG_RUNTIME_DIR:-/run/user/$$(id -u)})/containers/auth.json
 
+# CONTAINER_ENGINE is the tool used to build and run the test containers (e.g. docker or podman)
+CONTAINER_ENGINE ?= docker
+
 # YAMLLINT_VERSION defines the yamllint version to download from GitHub releases.
 YAMLLINT_VERSION ?= 1.35.1
 
@@ -58,9 +61,14 @@ e2e-test: ## Run e2e crypto tests
 
 .PHONY: integration-test
 integration-test: ## Run integration tests in a container
-	docker build -f Dockerfile.integration -t recert-integration .
+	$(CONTAINER_ENGINE) build -f Dockerfile.integration -t recert-integration .
 	mkdir -p "$(PROJECT_DIR)/.integration-artifacts"
-	docker run --rm -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration
+	$(CONTAINER_ENGINE) run --rm -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration
+
+.PHONY: fips-test
+fips-test: ## Run unit and e2e tests in a container with the RHEL 9 OpenSSL FIPS provider forced on
+	$(CONTAINER_ENGINE) build -f Dockerfile.fips -t recert-fips .
+	$(CONTAINER_ENGINE) run --rm recert-fips
 
 # Konflux targets
 

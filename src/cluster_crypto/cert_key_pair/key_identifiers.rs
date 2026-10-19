@@ -359,11 +359,20 @@ mod tests {
         assert!(!pems.is_empty(), "no PEM files found in {}", testdata.display());
 
         for path in &pems {
-            let pem = std::fs::read(path).unwrap();
-            let cert = CapturedX509Certificate::from_pem(&pem).unwrap();
-            cert.verify_signed_by_certificate(&cert).unwrap_or_else(|e| {
-                panic!("{}: not self-signed: {e}", path.display());
-            });
+            // -check_ss_sig is required, otherwise openssl trusts the cert (as it is in the trust
+            // store) without checking its self-signature
+            let output = std::process::Command::new("openssl")
+                .args(["verify", "-no_check_time", "-check_ss_sig", "-no-CApath", "-CAfile"])
+                .arg(path)
+                .arg(path)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}: not self-signed: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stdout)
+            );
         }
     }
 }

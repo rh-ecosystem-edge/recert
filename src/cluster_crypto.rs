@@ -27,7 +27,6 @@ use std::{
     collections::hash_map::Entry::{Occupied, Vacant},
     sync::atomic::AtomicBool,
 };
-use x509_certificate::X509CertificateError;
 
 mod crypto_objects;
 mod distributed_cert;
@@ -191,52 +190,41 @@ impl ClusterCryptoObjects {
     }
 
     fn fill_cert_key_signers(&mut self) -> Result<()> {
-        for cert_key_pair in &self.cert_key_pairs {
-            let mut true_signing_cert: Option<Rc<RefCell<CertKeyPair>>> = None;
-            if !(*(**cert_key_pair).borrow().distributed_cert)
-                .borrow()
-                .certificate
-                .cert
-                .subject_is_issuer()
-            {
-                for potential_signing_cert_key_pair in &self.cert_key_pairs {
-                    match (*(**cert_key_pair).borrow().distributed_cert)
-                        .borrow()
-                        .certificate
-                        .cert
-                        .verify_signed_by_certificate(
-                            &(*(*potential_signing_cert_key_pair).borrow().distributed_cert)
-                                .borrow()
-                                .certificate
-                                .cert,
-                        ) {
-                        Ok(_) => true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair)),
-                        Err(X509CertificateError::CertificateSignatureVerificationFailed) => {}
-                        Err(X509CertificateError::UnsupportedSignatureVerification(..)) => {
-                            // This is a hack to get around the fact this lib doesn't support
-                            // all signature algorithms yet.
-                            if crypto_utils::openssl_is_signed(
-                                &(*(*potential_signing_cert_key_pair).borrow().distributed_cert).borrow().certificate,
-                                &(*(**cert_key_pair).borrow().distributed_cert).borrow().certificate,
-                            )
-                            .context("checking signature")?
-                            {
-                                true_signing_cert = Some(Rc::clone(potential_signing_cert_key_pair));
-                            }
-                        }
-                        unknown_err => unknown_err?,
-                    }
-                }
+        let certs = self
+            .cert_key_pairs
+            .iter()
+            .map(|cert_key_pair| {
+                let cert_key_pair = (**cert_key_pair).borrow();
+                let distributed_cert = (*cert_key_pair.distributed_cert).borrow();
+                (
+                    distributed_cert.certificate.cert.constructed_data().to_vec(),
+                    distributed_cert.certificate.cert.subject_is_issuer(),
+                )
+            })
+            .collect::<Vec<_>>();
 
-                if true_signing_cert.is_none() {
-                    log::warn!(
-                        "no signing cert found for cert in {}",
-                        (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
-                    );
-                }
-            }
+        // Self-signed certs have no signer
+        let signee_indices = (0..certs.len()).filter(|&i| !certs[i].1).collect::<Vec<_>>();
 
-            (**cert_key_pair).borrow_mut().signer = true_signing_cert;
+        let signers = crypto_utils::cert_signers::find_signers(
+            &certs.iter().map(|(der, _)| der).collect::<Vec<_>>(),
+            &signee_indices.iter().map(|&i| &certs[i].0).collect::<Vec<_>>(),
+        )
+        .context("finding cert signers")?;
+
+        for (signee_index, signers) in signee_indices.into_iter().zip(signers) {
+            let cert_key_pair = &self.cert_key_pairs[signee_index];
+
+            // When multiple certs share the signing key, the last one wins (like it always has)
+            let Some(&signer_index) = signers.last() else {
+                log::warn!(
+                    "no signing cert found for cert in {}",
+                    (*(**cert_key_pair).borrow().distributed_cert).borrow().locations
+                );
+                continue;
+            };
+
+            (**cert_key_pair).borrow_mut().signer = Some(Rc::clone(&self.cert_key_pairs[signer_index]));
         }
 
         Ok(())

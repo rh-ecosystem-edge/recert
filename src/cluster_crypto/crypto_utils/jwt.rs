@@ -123,7 +123,7 @@ pub(crate) fn resign(jwt: &str, private_key: &SigningKey) -> Result<String> {
 mod tests {
     use super::*;
     use crate::cluster_crypto::crypto_utils::{generate_rsa_key, SigningKey};
-    use crate::cluster_crypto::keys::{PrivateKey, PublicKey};
+    use crate::cluster_crypto::keys::PublicKey;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD as b64;
 
     fn unsigned_rs256_jwt() -> String {
@@ -142,7 +142,7 @@ mod tests {
     }
 
     fn rsa_public_key() -> PublicKey {
-        let private_key = PrivateKey::try_from(&rsa_signing_key().in_memory_signing_key_pair).unwrap();
+        let private_key = rsa_signing_key().to_private_key().unwrap();
         PublicKey::try_from(&private_key).unwrap()
     }
 

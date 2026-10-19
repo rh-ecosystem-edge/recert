@@ -194,10 +194,19 @@ verify_jwt() {
     return $result
 }
 
+ALGOS=(rsa-2048 rsa-4096 ec-p256 ec-p384 ed25519)
+
+# Ed25519 is not available in FIPS mode
+if grep -Eq '^[[:space:]]+fips$' <<<"$(openssl list -providers)"; then
+    echo "openssl is in FIPS mode"
+    skip "ed25519 (not available in FIPS mode)"
+    ALGOS=(rsa-2048 rsa-4096 ec-p256 ec-p384)
+fi
+
 echo ""
 echo "=== Generating crypto fixtures ==="
 
-for algo in rsa-2048 rsa-4096 ec-p256 ec-p384 ed25519; do
+for algo in "${ALGOS[@]}"; do
     echo "  Generating ${algo}..."
     generate_ca_and_leaf "$TMPDIR/$algo" "$algo"
 done
@@ -225,7 +234,7 @@ echo "  recert completed successfully"
 echo ""
 echo "=== Verifying results ==="
 
-for algo in rsa-2048 rsa-4096 ec-p256 ec-p384 ed25519; do
+for algo in "${ALGOS[@]}"; do
     echo ""
     echo "--- ${algo} ---"
     dir="$TMPDIR/$algo"

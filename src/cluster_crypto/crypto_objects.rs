@@ -12,7 +12,6 @@ use base64::{
 };
 use bytes::Bytes;
 use pkcs1::DecodeRsaPrivateKey;
-use x509_certificate::InMemorySigningKeyPair;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoObject {
@@ -163,14 +162,7 @@ pub(crate) fn process_single_pem(pem: &pem::Pem, external_certs: &ExternalCerts)
 }
 
 fn process_pem_private_key(pem: &pem::Pem) -> Result<Option<CryptoObject>> {
-    let pkcs8_der = pem.contents().to_vec();
-    let pair = super::crypto_utils::signing_key_pair_from_pkcs8_der(&pkcs8_der)?;
-
-    let private_part = match pair {
-        InMemorySigningKeyPair::Ecdsa(_, _, ecdsa_pkcs8_der) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::from(ecdsa_pkcs8_der))),
-        InMemorySigningKeyPair::Ed25519(_) => PrivateKey::Ed25519(Bytes::from(pkcs8_der)),
-        InMemorySigningKeyPair::Rsa(_, bytes) => PrivateKey::Rsa(rsa::RsaPrivateKey::from_pkcs1_der(&bytes)?),
-    };
+    let private_part = PrivateKey::from_pkcs8_der(pem.contents())?;
     let public_part = PublicKey::try_from(&private_part)?;
 
     Ok(Some((private_part, public_part).into()))
@@ -247,7 +239,7 @@ pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cluster_crypto::test_utils::{generate_ec_pkcs8_pem, generate_ed25519_pkcs8_pem};
+    use crate::cluster_crypto::test_utils::{generate_ec_pkcs8_pem, generate_ed25519_pkcs8_pem, skip_if_fips};
     use std::{
         io::Write,
         process::{Command, Stdio},
@@ -295,6 +287,8 @@ mod tests {
 
     #[test]
     fn test_process_pem_private_key_ed25519_pkcs8() {
+        skip_if_fips!("Ed25519");
+
         let ed25519_pem = generate_ed25519_pkcs8_pem();
         let parsed = pem::parse(&ed25519_pem).expect("failed to parse PEM");
         assert_eq!(parsed.tag(), "PRIVATE KEY");
@@ -372,6 +366,8 @@ mod tests {
 
     #[test]
     fn test_process_pem_cert_ed25519() {
+        skip_if_fips!("Ed25519");
+
         let cert_pem = generate_ed25519_self_signed_cert();
         let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
         assert_eq!(parsed.tag(), "CERTIFICATE");
@@ -383,6 +379,8 @@ mod tests {
 
     #[test]
     fn test_certificate_try_from_ed25519() {
+        skip_if_fips!("Ed25519");
+
         let cert_pem = generate_ed25519_self_signed_cert();
         let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
         let x509 = x509_certificate::CapturedX509Certificate::from_der(parsed.contents()).expect("failed to parse DER");
@@ -396,6 +394,8 @@ mod tests {
 
     #[test]
     fn test_ed25519_private_key_pem_round_trip() {
+        skip_if_fips!("Ed25519");
+
         let ed25519_pem = generate_ed25519_pkcs8_pem();
         let parsed = pem::parse(&ed25519_pem).expect("failed to parse PEM");
         let result = process_pem_private_key(&parsed).expect("process failed");
@@ -423,9 +423,11 @@ mod tests {
 
     #[test]
     fn test_ed25519_resign_produces_valid_cert() {
+        skip_if_fips!("Ed25519");
+
         use super::super::crypto_utils::fix_ed25519_alg_id;
         use bcder::encode::Values;
-        use x509_certificate::{rfc5280, InMemorySigningKeyPair, KeyAlgorithm, Sign, Signer, X509Certificate};
+        use x509_certificate::{rfc5280, X509Certificate};
 
         let cert_pem = generate_ed25519_self_signed_cert();
         let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
@@ -434,14 +436,14 @@ mod tests {
         let certificate: &rfc5280::Certificate = x509.as_ref();
         let mut tbs_certificate = certificate.tbs_certificate.clone();
 
-        let (new_key, _doc) = InMemorySigningKeyPair::generate_random(KeyAlgorithm::Ed25519).expect("failed to generate Ed25519 key");
+        let new_key = super::super::crypto_utils::generate_ed25519_key().expect("failed to generate Ed25519 key");
 
         tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
-            algorithm: KeyAlgorithm::from(&new_key).into(),
-            subject_public_key: bcder::BitString::new(0, bytes::Bytes::copy_from_slice(&new_key.public_key_data())),
+            algorithm: new_key.key_algorithm().into(),
+            subject_public_key: bcder::BitString::new(0, new_key.public_key_data()),
         };
 
-        let signature_algorithm: rfc5280::AlgorithmIdentifier = new_key.signature_algorithm().expect("sig alg").into();
+        let signature_algorithm: rfc5280::AlgorithmIdentifier = new_key.signature_algorithm().into();
         tbs_certificate.signature = signature_algorithm.clone();
 
         let mut tbs_der = Vec::<u8>::new();
@@ -451,7 +453,7 @@ mod tests {
             .expect("failed to encode TBS");
         let tbs_der = fix_ed25519_alg_id(&tbs_der);
 
-        let signature = new_key.try_sign(&tbs_der).expect("signing failed");
+        let signature = super::super::crypto_utils::sign(&new_key, &tbs_der).expect("signing failed");
 
         let cert = rfc5280::Certificate {
             tbs_certificate,
@@ -479,20 +481,6 @@ mod tests {
             output.status.success(),
             "openssl should be able to parse re-signed Ed25519 cert. stderr: {}",
             String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    #[test]
-    fn test_try_from_in_memory_signing_key_pair_bails_on_ed25519() {
-        let ed25519_pem = generate_ed25519_pkcs8_pem();
-        let parsed = pem::parse(&ed25519_pem).expect("failed to parse PEM");
-        let pair = crate::cluster_crypto::crypto_utils::signing_key_pair_from_pkcs8_der(parsed.contents()).expect("failed to parse key");
-
-        let result = PrivateKey::try_from(&pair);
-        assert!(result.is_err(), "TryFrom should bail for Ed25519");
-        assert!(
-            result.unwrap_err().to_string().contains("Ed25519"),
-            "error message should mention Ed25519"
         );
     }
 
@@ -551,7 +539,8 @@ mod tests {
                             parsed.contents(),
                             "stored bytes should differ from SEC1 input"
                         );
-                        InMemorySigningKeyPair::from_pkcs8_der(ec.pkcs8_der().as_ref()).expect("stored bytes should be valid PKCS#8 DER");
+                        crate::cluster_crypto::crypto_utils::parse_pkcs8_der(ec.pkcs8_der())
+                            .expect("stored bytes should be valid PKCS#8 DER");
                     }
                     _ => panic!("expected PrivateKey::Ec"),
                 }
@@ -625,6 +614,8 @@ mod tests {
 
     #[test]
     fn test_public_key_from_ed25519_private_key() {
+        skip_if_fips!("Ed25519");
+
         let (private_key, _) = generate_ed25519_key_pair();
         let public_key = PublicKey::try_from(&private_key).expect("PublicKey::try_from should succeed for Ed25519");
         assert!(matches!(public_key, PublicKey::Ed25519(_)), "expected PublicKey::Ed25519");
@@ -632,6 +623,8 @@ mod tests {
 
     #[test]
     fn test_ed25519_private_key_serialize() {
+        skip_if_fips!("Ed25519");
+
         let (private_key, _) = generate_ed25519_key_pair();
         let serialized = serde_json::to_string(&private_key).expect("serialize should succeed");
         assert!(
@@ -643,6 +636,8 @@ mod tests {
 
     #[test]
     fn test_ed25519_public_key_serialize() {
+        skip_if_fips!("Ed25519");
+
         // PublicKey::Serialize emits standard-base64(PEM), so the JSON string does not
         // contain the PEM tag in plaintext — decode first.
         let (_, public_key) = generate_ed25519_key_pair();

@@ -1,0 +1,35 @@
+# Runs the unit and e2e tests against the RHEL 9 OpenSSL FIPS provider.
+#
+# OPENSSL_FORCE_FIPS_MODE=1 makes RHEL's openssl behave as if the kernel was booted with fips=1, so
+# only the FIPS provider's algorithms are available. This exercises the real FIPS provider without
+# needing a FIPS-enabled host, but it is not a FIPS-validated system.
+FROM registry.access.redhat.com/ubi9/ubi:latest
+
+ARG PROTOC_VERSION=25.1
+ARG TARGETARCH
+
+RUN dnf install -y rust-toolset openssl unzip && dnf clean all
+
+# protobuf-compiler (needed by the etcd-client build script) is only in the subscription-only
+# codeready-builder repo, so use the upstream release instead
+RUN PROTOC_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo aarch_64 || echo x86_64) \
+    && curl -sSfL -o /tmp/protoc.zip \
+        "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip" \
+    && unzip -q /tmp/protoc.zip -d /usr/local bin/protoc 'include/*' \
+    && rm /tmp/protoc.zip
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock build.rs e2e_test.sh ./
+COPY .cargo/ .cargo/
+COPY vendor/ vendor/
+COPY src/ src/
+
+ENV OPENSSL_FORCE_FIPS_MODE=1
+
+ENTRYPOINT ["/bin/bash", "-c", "\
+    set -euo pipefail && \
+    openssl list -providers && \
+    grep -Eq '^[[:space:]]+fips$' <<<\"$(openssl list -providers)\" || { echo 'FIPS provider is not active'; exit 1; } && \
+    cargo test --offline && \
+    bash e2e_test.sh \
+"]

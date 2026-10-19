@@ -1,4 +1,3 @@
-use super::certificate;
 use super::keys::PrivateKey;
 use anyhow::ensure;
 use anyhow::{bail, Context, Result};
@@ -16,64 +15,153 @@ use std::path::Path;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
 use tokio::process::Command;
-use x509_certificate::{rfc5280, EcdsaCurve, InMemorySigningKeyPair, KeyAlgorithm, Sign};
-
-// The vendored x509-certificate uses ring 0.16 whose Ed25519KeyPair::from_pkcs8 requires
-// PKCS#8 v2 with the public key present. OpenSSL generates v0 without it. We use ring 0.17
-// (our direct dep) to parse the key, extract the public key, and construct a v2 DER that
-// ring 0.16 accepts.
-fn ed25519_pkcs8_to_v2(der: &[u8]) -> Result<Vec<u8>> {
-    use ring::signature::KeyPair;
-    let pair =
-        ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(der).map_err(|e| anyhow::anyhow!("not an Ed25519 key: {:?}", e))?;
-    let public_key = pair.public_key().as_ref();
-
-    ensure!(der.len() >= 48, "Ed25519 PKCS#8 DER too short");
-    let privkey = &der[16..48];
-
-    let mut v2 = Vec::with_capacity(85);
-    v2.extend_from_slice(&[
-        0x30, 0x53, 0x02, 0x01, 0x01, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
-    ]);
-    v2.extend_from_slice(privkey);
-    v2.extend_from_slice(&[0xa1, 0x23, 0x03, 0x21, 0x00]);
-    v2.extend_from_slice(public_key);
-    Ok(v2)
-}
-
-pub(crate) fn signing_key_pair_from_pkcs8_der(der: &[u8]) -> Result<InMemorySigningKeyPair> {
-    InMemorySigningKeyPair::from_pkcs8_der(der).or_else(|_| {
-        let v2_der = ed25519_pkcs8_to_v2(der)?;
-        InMemorySigningKeyPair::from_pkcs8_der(&v2_der).map_err(|e| anyhow::anyhow!("{}", e))
-    })
-}
-
-fn signing_key_pair_from_pkcs8_pem(pem_data: &[u8]) -> Result<InMemorySigningKeyPair> {
-    InMemorySigningKeyPair::from_pkcs8_pem(pem_data).or_else(|_| {
-        let parsed = pem::parse(pem_data).context("parsing PEM for Ed25519 fallback")?;
-        let v2_der = ed25519_pkcs8_to_v2(parsed.contents())?;
-        InMemorySigningKeyPair::from_pkcs8_der(&v2_der).map_err(|e| anyhow::anyhow!("{}", e))
-    })
-}
+use x509_certificate::{rfc5280, rfc5958::OneAsymmetricKey, EcdsaCurve, KeyAlgorithm, SignatureAlgorithm};
 
 use simple_asn1::oid;
 
+pub(crate) mod cert_signers;
 pub(crate) mod jwt;
 
+/// Parses a PKCS#8 private key and identifies its key algorithm. This is pure ASN.1 decoding, no
+/// cryptographic operations are performed.
+pub(crate) fn parse_pkcs8_der(der: &[u8]) -> Result<(KeyAlgorithm, OneAsymmetricKey)> {
+    let key = bcder::decode::Constructed::decode(der, Mode::Der, OneAsymmetricKey::take_from)
+        .map_err(|e| anyhow::anyhow!("decoding PKCS#8 DER: {}", e))?;
+    let key_algorithm = KeyAlgorithm::try_from(&key.private_key_algorithm).context("identifying PKCS#8 key algorithm")?;
+    Ok((key_algorithm, key))
+}
+
+/// Uses openssl to derive the public key of a PKCS#8 private key, returning the contents of the
+/// subjectPublicKey BIT STRING of the resulting SubjectPublicKeyInfo (e.g. the PKCS#1
+/// RSAPublicKey for RSA, the uncompressed point for ECDSA, the raw 32 bytes for Ed25519).
+fn public_key_data_from_spki_der(spki_der: &[u8]) -> Result<bytes::Bytes> {
+    let spki = bcder::decode::Constructed::decode(spki_der, Mode::Der, rfc5280::SubjectPublicKeyInfo::take_from)
+        .map_err(|e| anyhow::anyhow!("decoding SPKI DER: {}", e))?;
+    Ok(spki.subject_public_key.octet_bytes())
+}
+
+const OPENSSL_PUBOUT_DER_ARGS: [&str; 6] = ["pkey", "-inform", "PEM", "-pubout", "-outform", "DER"];
+
+fn openssl_spki_der_from_pkcs8_pem(pkcs8_pem: &[u8]) -> Result<Vec<u8>> {
+    let mut child = StdCommand::new("openssl")
+        .args(OPENSSL_PUBOUT_DER_ARGS)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl pkey")?;
+
+    child
+        .stdin
+        .take()
+        .context("failed to take openssl stdin pipe")?
+        .write_all(pkcs8_pem)?;
+
+    let output = child.wait_with_output().context("waiting for openssl pkey")?;
+    ensure!(
+        output.status.success(),
+        "openssl pkey -pubout failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(output.stdout)
+}
+
+async fn openssl_spki_der_from_pkcs8_pem_async(pkcs8_pem: &[u8]) -> Result<Vec<u8>> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = Command::new("openssl")
+        .args(OPENSSL_PUBOUT_DER_ARGS)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawning openssl pkey")?;
+
+    let mut stdin = child.stdin.take().context("failed to take openssl stdin pipe")?;
+    stdin.write_all(pkcs8_pem).await?;
+    drop(stdin);
+
+    let output = child.wait_with_output().await.context("waiting for openssl pkey")?;
+    ensure!(
+        output.status.success(),
+        "openssl pkey -pubout failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(output.stdout)
+}
+
+/// A private key we can sign with. All cryptographic operations (generation, public key
+/// derivation, signing) are delegated to openssl, we only keep the PKCS#8 PEM along with some
+/// metadata extracted from it.
+#[derive(Clone)]
 pub(crate) struct SigningKey {
-    pub in_memory_signing_key_pair: InMemorySigningKeyPair,
+    key_algorithm: KeyAlgorithm,
+    public_key_data: bytes::Bytes,
     pkcs8_pem: Vec<u8>,
 }
 
 impl SigningKey {
+    /// Parses the PEM and re-encodes it so that openssl (which is stricter than the pem crate
+    /// about formatting) can always read it
+    fn normalize_pkcs8_pem(pkcs8_pem: &[u8]) -> Result<(KeyAlgorithm, Vec<u8>)> {
+        let parsed_pem = pem::parse(pkcs8_pem).context("parsing PKCS#8 PEM")?;
+        ensure!(parsed_pem.tag() == "PRIVATE KEY", "expected PKCS#8 PEM, got {}", parsed_pem.tag());
+        let (key_algorithm, _) = parse_pkcs8_der(parsed_pem.contents())?;
+        let normalized_pem = pem::encode_config(&parsed_pem, pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF));
+        Ok((key_algorithm, normalized_pem.into_bytes()))
+    }
+
+    fn from_pkcs8_pem(pkcs8_pem: Vec<u8>) -> Result<Self> {
+        let (key_algorithm, pkcs8_pem) = Self::normalize_pkcs8_pem(&pkcs8_pem)?;
+        let spki_der = openssl_spki_der_from_pkcs8_pem(&pkcs8_pem)?;
+
+        Ok(Self {
+            key_algorithm,
+            public_key_data: public_key_data_from_spki_der(&spki_der)?,
+            pkcs8_pem,
+        })
+    }
+
+    async fn from_pkcs8_pem_async(pkcs8_pem: Vec<u8>) -> Result<Self> {
+        let (key_algorithm, pkcs8_pem) = Self::normalize_pkcs8_pem(&pkcs8_pem)?;
+        let spki_der = openssl_spki_der_from_pkcs8_pem_async(&pkcs8_pem).await?;
+
+        Ok(Self {
+            key_algorithm,
+            public_key_data: public_key_data_from_spki_der(&spki_der)?,
+            pkcs8_pem,
+        })
+    }
+
+    pub(crate) fn key_algorithm(&self) -> KeyAlgorithm {
+        self.key_algorithm
+    }
+
+    /// The contents of the subjectPublicKey BIT STRING in a SubjectPublicKeyInfo for this key
+    pub(crate) fn public_key_data(&self) -> bytes::Bytes {
+        self.public_key_data.clone()
+    }
+
+    /// The signature algorithm `sign` uses for this key
+    pub(crate) fn signature_algorithm(&self) -> SignatureAlgorithm {
+        match self.key_algorithm {
+            KeyAlgorithm::Rsa => SignatureAlgorithm::RsaSha256,
+            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp256r1) => SignatureAlgorithm::EcdsaSha256,
+            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp384r1) => SignatureAlgorithm::EcdsaSha384,
+            KeyAlgorithm::Ed25519 => SignatureAlgorithm::Ed25519,
+        }
+    }
+
     /// Generates the "kid" field for a JWT header in accordance with how Kubernetes does it (a
     /// Base64URL-encoded SHA256 hash of the PKIX DER encoding of the public key derived from the
     /// private key)
     // Implementation based on https://github.com/openshift/kubernetes/blob/6fdacf04117cef54a0babd0945e8ef87d0f9461d/pkg/serviceaccount/jwt.go#L92-L112
     pub(crate) fn jwt_key_id(&self) -> Result<String> {
         let keyinfo = rfc5280::SubjectPublicKeyInfo {
-            algorithm: KeyAlgorithm::from(&self.in_memory_signing_key_pair).into(),
-            subject_public_key: BitString::new(0, self.in_memory_signing_key_pair.public_key_data()),
+            algorithm: self.key_algorithm.into(),
+            subject_public_key: BitString::new(0, self.public_key_data()),
         };
         let pkix_der_bytes = {
             let mut buffer: Vec<u8> = Vec::new();
@@ -87,34 +175,17 @@ impl SigningKey {
     }
 
     pub(crate) fn jwt_alg(&self) -> Result<&'static str> {
-        match &self.in_memory_signing_key_pair {
-            InMemorySigningKeyPair::Rsa(_, _) => Ok("RS256"),
-            InMemorySigningKeyPair::Ecdsa(_, _, pkcs8_der) => match ec_curve_from_pkcs8_der(pkcs8_der)? {
-                EcdsaCurve::Secp256r1 => Ok("ES256"),
-                EcdsaCurve::Secp384r1 => Ok("ES384"),
-            },
-            InMemorySigningKeyPair::Ed25519(_) => Ok("EdDSA"),
-        }
+        Ok(match self.key_algorithm {
+            KeyAlgorithm::Rsa => "RS256",
+            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp256r1) => "ES256",
+            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp384r1) => "ES384",
+            KeyAlgorithm::Ed25519 => "EdDSA",
+        })
     }
 
     pub(crate) fn to_private_key(&self) -> Result<PrivateKey> {
-        match &self.in_memory_signing_key_pair {
-            InMemorySigningKeyPair::Ed25519(_) => {
-                let parsed = pem::parse(&self.pkcs8_pem).context("parsing Ed25519 pkcs8 pem")?;
-                Ok(PrivateKey::Ed25519(bytes::Bytes::copy_from_slice(parsed.contents())))
-            }
-            other => other.try_into(),
-        }
-    }
-}
-
-impl Clone for SigningKey {
-    fn clone(&self) -> Self {
-        Self {
-            #[allow(clippy::unwrap_used)] // This can never panic because a SigningKey could never be created with an invalid pkcs8_pem
-            in_memory_signing_key_pair: signing_key_pair_from_pkcs8_pem(&self.pkcs8_pem).unwrap(),
-            pkcs8_pem: self.pkcs8_pem.clone(),
-        }
+        let parsed = pem::parse(&self.pkcs8_pem).context("parsing pkcs8 pem")?;
+        PrivateKey::from_pkcs8_der(parsed.contents())
     }
 }
 
@@ -129,40 +200,6 @@ impl serde::Serialize for SigningKey {
     }
 }
 
-/// Shell out to openssl to verify that a certificate is signed by a given signing certificate. We
-/// use this when our certificate lib doesn't support the signature algorithm used by the
-/// certificates.
-pub(crate) fn openssl_is_signed(potential_signer: &certificate::Certificate, signee: &certificate::Certificate) -> Result<bool> {
-    // TODO: This condition is a hack. We should trust the openssl command we run further down to
-    // tell us this, but we don't because currently the way this openssl command works, if you pass
-    // it the same cert in both arguments, even when said cert is not self-signed, openssl would
-    // give it a green light and say it's valid. So we do this hack to avoid pretending
-    // certificates are their own signer when they're not. This is a hack because it's possible
-    // that a certificate is not self-signed and has the same issuer and subject and it would pass
-    // here undetected. This is not a big deal in our use case because these certs are all coming
-    // from our trusted installer/operators.
-    if potential_signer == signee && !potential_signer.cert.subject_is_issuer() {
-        return Ok(false);
-    }
-
-    let mut signing_cert_file = tempfile::NamedTempFile::new()?;
-    signing_cert_file.write_all(potential_signer.cert.encode_pem().as_bytes())?;
-    let mut signed_cert_file = tempfile::NamedTempFile::new()?;
-    signed_cert_file.write_all(signee.cert.encode_pem().as_bytes())?;
-    let mut openssl_verify_command = std::process::Command::new("openssl");
-    openssl_verify_command
-        .arg("verify")
-        .arg("-no_check_time")
-        .arg("-no-CAfile")
-        .arg("-no-CApath")
-        .arg("-partial_chain")
-        .arg("-trusted")
-        .arg(signing_cert_file.path())
-        .arg(signed_cert_file.path());
-    let openssl_verify_output = openssl_verify_command.output()?;
-    Ok(openssl_verify_output.status.success())
-}
-
 pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<SigningKey> {
     let pkcs8_pem = Command::new("openssl")
         .args(["genrsa", &key_size.to_string()])
@@ -172,12 +209,7 @@ pub(crate) async fn generate_rsa_key_async(key_size: usize) -> Result<SigningKey
         .stdout
         .to_vec();
 
-    let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem).context("pair from der")?;
-
-    Ok(SigningKey {
-        in_memory_signing_key_pair,
-        pkcs8_pem,
-    })
+    SigningKey::from_pkcs8_pem_async(pkcs8_pem).await
 }
 
 pub(crate) fn generate_rsa_key(key_size: usize) -> Result<SigningKey> {
@@ -187,12 +219,7 @@ pub(crate) fn generate_rsa_key(key_size: usize) -> Result<SigningKey> {
         .context("openssl genrsa")?
         .stdout;
 
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem).context("pair from der")?;
-
-    Ok(SigningKey {
-        in_memory_signing_key_pair: key_pair,
-        pkcs8_pem,
-    })
+    SigningKey::from_pkcs8_pem(pkcs8_pem)
 }
 
 pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
@@ -220,12 +247,7 @@ pub(crate) fn generate_ec_key(ec_curve: EcdsaCurve) -> Result<SigningKey> {
         .context("openssl pkcs8")?
         .stdout;
 
-    let key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem_data).context("pair from der")?;
-
-    Ok(SigningKey {
-        in_memory_signing_key_pair: key_pair,
-        pkcs8_pem: pkcs8_pem_data,
-    })
+    SigningKey::from_pkcs8_pem(pkcs8_pem_data)
 }
 
 pub(crate) fn generate_ed25519_key() -> Result<SigningKey> {
@@ -245,12 +267,7 @@ pub(crate) fn generate_ed25519_key() -> Result<SigningKey> {
 }
 
 pub(crate) fn key_from_pkcs8_pem(pem: &str) -> Result<SigningKey> {
-    let in_memory_signing_key_pair = signing_key_pair_from_pkcs8_pem(pem.as_bytes()).context("pair from der");
-
-    Ok(SigningKey {
-        in_memory_signing_key_pair: in_memory_signing_key_pair?,
-        pkcs8_pem: pem.into(),
-    })
+    SigningKey::from_pkcs8_pem(pem.into())
 }
 
 pub(crate) fn rsa_key_from_pkcs1_pem(pem: &str) -> Result<SigningKey> {
@@ -260,12 +277,8 @@ pub(crate) fn rsa_key_from_pkcs1_pem(pem: &str) -> Result<SigningKey> {
         .context("private to pkcs8 pem")?
         .as_bytes()
         .into();
-    let in_memory_signing_key_pair = InMemorySigningKeyPair::from_pkcs8_pem(&pkcs8_pem_data).context("pair from der")?;
 
-    Ok(SigningKey {
-        in_memory_signing_key_pair,
-        pkcs8_pem: pkcs8_pem_data,
-    })
+    SigningKey::from_pkcs8_pem(pkcs8_pem_data)
 }
 
 pub(crate) fn key_from_file(path: &Path) -> Result<SigningKey> {
@@ -452,16 +465,16 @@ pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> 
 
     let temp_path = temp_file.path().to_str().context("getting temp file path")?;
 
-    let args: Vec<&str> = match &signing_key.in_memory_signing_key_pair {
-        InMemorySigningKeyPair::Ed25519(_) => vec!["pkeyutl", "-sign", "-inkey", "/dev/stdin", "-rawin", "-in", temp_path],
-        InMemorySigningKeyPair::Ecdsa(_, curve, _) => {
+    let args: Vec<&str> = match signing_key.key_algorithm {
+        KeyAlgorithm::Ed25519 => vec!["pkeyutl", "-sign", "-inkey", "/dev/stdin", "-rawin", "-in", temp_path],
+        KeyAlgorithm::Ecdsa(curve) => {
             let digest = match curve {
                 EcdsaCurve::Secp256r1 => "-sha256",
                 EcdsaCurve::Secp384r1 => "-sha384",
             };
             vec!["dgst", digest, "-sign", "/dev/stdin", temp_path]
         }
-        InMemorySigningKeyPair::Rsa(_, _) => vec!["dgst", "-sha256", "-sign", "/dev/stdin", temp_path],
+        KeyAlgorithm::Rsa => vec!["dgst", "-sha256", "-sign", "/dev/stdin", temp_path],
     };
 
     let mut command = StdCommand::new("openssl")
@@ -555,7 +568,7 @@ mod test {
     #[allow(unused_imports)]
     use std::io::Write;
 
-    use crate::cluster_crypto::test_utils::generate_ed25519_pkcs8_pem;
+    use crate::cluster_crypto::test_utils::{generate_ed25519_pkcs8_pem, skip_if_fips};
 
     #[test]
     fn test_kid() {
@@ -735,28 +748,29 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
     #[test]
     fn test_key_from_pem_ed25519_pkcs8() {
+        skip_if_fips!("Ed25519");
+
         let pem_str = String::from_utf8(generate_ed25519_pkcs8_pem()).unwrap();
         assert!(pem_str.contains("BEGIN PRIVATE KEY"));
 
         let signing_key = super::key_from_pem(&pem_str).expect("key_from_pem should accept Ed25519 PKCS#8 keys");
         assert!(signing_key.pkcs8_pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
-        assert!(matches!(
-            signing_key.in_memory_signing_key_pair,
-            super::InMemorySigningKeyPair::Ed25519(_)
-        ));
+        assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Ed25519);
     }
 
     #[test]
     fn test_generate_ed25519_key() {
+        skip_if_fips!("Ed25519");
+
         let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key should succeed");
-        assert!(matches!(
-            signing_key.in_memory_signing_key_pair,
-            super::InMemorySigningKeyPair::Ed25519(_)
-        ));
+        assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Ed25519);
+        assert_eq!(signing_key.public_key_data().len(), 32, "Ed25519 public key should be 32 bytes");
     }
 
     #[test]
     fn test_sign_ed25519() {
+        skip_if_fips!("Ed25519");
+
         let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key failed");
         let data = b"test data to sign";
 
@@ -798,6 +812,8 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
     #[test]
     fn test_try_from_signing_key_ed25519() {
+        skip_if_fips!("Ed25519");
+
         let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key failed");
         let private_key = signing_key.to_private_key().expect("to_private_key should succeed for Ed25519");
         assert!(matches!(private_key, super::PrivateKey::Ed25519(_)), "expected PrivateKey::Ed25519");
@@ -828,45 +844,98 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
     }
 
     #[test]
-    fn test_ed25519_pkcs8_to_v2_produces_valid_v2() {
-        let parsed = pem::parse(generate_ed25519_pkcs8_pem()).unwrap();
-        let v2 = super::ed25519_pkcs8_to_v2(parsed.contents()).expect("ed25519_pkcs8_to_v2 should succeed");
-        assert_eq!(v2.len(), 85, "PKCS#8 v2 DER should be 85 bytes");
-        assert_eq!(v2[4], 0x01, "version should be 1 for PKCS#8 v2");
-        assert_eq!(&v2[9..12], &[0x2b, 0x65, 0x70], "OID should be Ed25519 (1.3.101.112)");
+    fn test_key_from_pkcs8_pem_garbage() {
+        let garbage = pem::Pem::new("PRIVATE KEY", vec![0xDE, 0xAD]).to_string();
+        let result = super::key_from_pkcs8_pem(&garbage);
+        assert!(result.is_err(), "garbage DER should fail");
+    }
 
-        let pair = x509_certificate::InMemorySigningKeyPair::from_pkcs8_der(&v2);
-        assert!(pair.is_ok(), "v2 DER should be parseable by ring 0.16: {:?}", pair.err());
+    fn assert_public_key_data_matches_openssl(signing_key: &super::SigningKey) {
+        let pkcs8_der = pem::parse(&signing_key.pkcs8_pem).unwrap();
+        let pubkey_pem = super::pubkey_pem_from_pkcs8_der(pkcs8_der.contents()).unwrap();
+        let spki_der = pem::parse(pubkey_pem).unwrap();
+        let spki = bcder::decode::Constructed::decode(spki_der.contents(), bcder::Mode::Der, |cons| {
+            super::rfc5280::SubjectPublicKeyInfo::take_from(cons)
+        })
+        .unwrap();
+        assert_eq!(signing_key.public_key_data(), spki.subject_public_key.octet_bytes());
+        assert_eq!(
+            super::KeyAlgorithm::try_from(&spki.algorithm).unwrap(),
+            signing_key.key_algorithm(),
+            "SPKI algorithm should match the private key algorithm"
+        );
     }
 
     #[test]
-    fn test_ed25519_pkcs8_to_v2_rejects_short_der() {
-        let short_der = vec![0u8; 47];
-        let result = super::ed25519_pkcs8_to_v2(&short_der);
-        assert!(result.is_err(), "should reject DER shorter than 48 bytes");
+    fn test_public_key_data_rsa() {
+        let signing_key = super::generate_rsa_key(2048).unwrap();
+        assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Rsa);
+        assert_public_key_data_matches_openssl(&signing_key);
+
+        // For RSA, the subjectPublicKey is the PKCS#1 RSAPublicKey, which the rsa crate should
+        // agree with
+        use pkcs1::EncodeRsaPublicKey;
+        let super::PrivateKey::Rsa(rsa_private_key) = signing_key.to_private_key().unwrap() else {
+            panic!("expected RSA private key");
+        };
+        assert_eq!(
+            signing_key.public_key_data().as_ref(),
+            rsa_private_key.to_public_key().to_pkcs1_der().unwrap().as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_public_key_data_rsa_async() {
+        let signing_key = super::generate_rsa_key_async(2048).await.unwrap();
+        assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Rsa);
+        assert_public_key_data_matches_openssl(&signing_key);
     }
 
     #[test]
-    fn test_ed25519_pkcs8_to_v2_rejects_garbage() {
-        let garbage = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let result = super::ed25519_pkcs8_to_v2(&garbage);
-        assert!(result.is_err(), "should reject garbage input");
+    fn test_public_key_data_ec() {
+        for curve in [super::EcdsaCurve::Secp256r1, super::EcdsaCurve::Secp384r1] {
+            let signing_key = super::generate_ec_key(curve).unwrap();
+            assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Ecdsa(curve));
+            assert_eq!(
+                signing_key.public_key_data()[0],
+                0x04,
+                "EC public key should be an uncompressed point"
+            );
+            assert_public_key_data_matches_openssl(&signing_key);
+        }
     }
 
     #[test]
-    fn test_signing_key_pair_from_pkcs8_der_garbage() {
-        let result = super::signing_key_pair_from_pkcs8_der(&[0xDE, 0xAD]);
-        assert!(result.is_err(), "garbage DER should fail both primary and fallback paths");
+    fn test_public_key_data_ed25519() {
+        skip_if_fips!("Ed25519");
+
+        let signing_key = super::generate_ed25519_key().unwrap();
+        assert_public_key_data_matches_openssl(&signing_key);
+    }
+
+    #[test]
+    fn test_jwt_alg() {
+        assert_eq!(super::generate_rsa_key(2048).unwrap().jwt_alg().unwrap(), "RS256");
+        assert_eq!(
+            super::generate_ec_key(super::EcdsaCurve::Secp256r1).unwrap().jwt_alg().unwrap(),
+            "ES256"
+        );
+        assert_eq!(
+            super::generate_ec_key(super::EcdsaCurve::Secp384r1).unwrap().jwt_alg().unwrap(),
+            "ES384"
+        );
+
+        skip_if_fips!("Ed25519");
+        assert_eq!(super::generate_ed25519_key().unwrap().jwt_alg().unwrap(), "EdDSA");
     }
 
     #[test]
     fn test_signing_key_clone_ed25519() {
+        skip_if_fips!("Ed25519");
+
         let key = super::generate_ed25519_key().expect("generate failed");
         let cloned = key.clone();
-        assert!(
-            matches!(cloned.in_memory_signing_key_pair, super::InMemorySigningKeyPair::Ed25519(_)),
-            "cloned key should be Ed25519"
-        );
+        assert_eq!(cloned.key_algorithm(), super::KeyAlgorithm::Ed25519, "cloned key should be Ed25519");
 
         let signature = super::sign(&cloned, b"clone test data").expect("sign with clone should succeed");
         assert_eq!(signature.len(), 64, "Ed25519 signature should be 64 bytes");
