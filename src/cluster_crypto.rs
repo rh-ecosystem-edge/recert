@@ -39,6 +39,7 @@ mod signee;
 #[cfg(test)]
 mod test_utils;
 
+pub(crate) mod algorithms;
 pub(crate) mod cert_key_pair;
 pub(crate) mod certificate;
 pub(crate) mod crypto_utils;
@@ -87,7 +88,7 @@ where
 {
     pairs
         .iter()
-        .filter(|pair| pair.borrow().distributed_cert.borrow().certificate.cert.subject_is_issuer())
+        .filter(|pair| pair.borrow().distributed_cert.borrow().certificate.subject_is_issuer())
         .collect::<Vec<_>>()
         .serialize(serializer)
 }
@@ -197,8 +198,8 @@ impl ClusterCryptoObjects {
                 let cert_key_pair = (**cert_key_pair).borrow();
                 let distributed_cert = (*cert_key_pair.distributed_cert).borrow();
                 (
-                    distributed_cert.certificate.cert.constructed_data().to_vec(),
-                    distributed_cert.certificate.cert.subject_is_issuer(),
+                    distributed_cert.certificate.der.clone(),
+                    distributed_cert.certificate.subject_is_issuer(),
                 )
             })
             .collect::<Vec<_>>();
@@ -720,15 +721,13 @@ fn collect_all_pairs_in_tree(pair: &Rc<RefCell<CertKeyPair>>, out: &mut HashSet<
 }
 
 fn cert_would_change_from_cn_san_replace(cert: &certificate::Certificate, cn_san_replace_rules: &CnSanReplaceRules) -> Result<bool> {
-    let x509_cert: &x509_certificate::X509Certificate = &cert.cert;
-    let cert_ref: &x509_certificate::rfc5280::Certificate = x509_cert.as_ref();
+    use der::Encode;
 
-    let before =
-        crate::cluster_crypto::crypto_utils::encode_tbs_cert_to_der(&cert_ref.tbs_certificate).context("encoding original TBS cert")?;
-    let mut tbs_after = cert_ref.tbs_certificate.clone();
+    let before = cert.tbs().to_der().context("encoding original TBS cert")?;
+    let mut tbs_after = cert.tbs().clone();
     crate::cluster_crypto::cert_key_pair::cert_mutations::mutate_cert_cn_san(&mut tbs_after, cn_san_replace_rules)
         .context("mutating TBS CN/SAN")?;
-    let after = crate::cluster_crypto::crypto_utils::encode_tbs_cert_to_der(&tbs_after).context("encoding mutated TBS cert")?;
+    let after = tbs_after.to_der().context("encoding mutated TBS cert")?;
 
     Ok(before != after)
 }

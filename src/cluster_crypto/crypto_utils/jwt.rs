@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_verify_ec_public_key_bad_signature_returns_false() {
-        let key = crate::cluster_crypto::crypto_utils::generate_ec_key(x509_certificate::EcdsaCurve::Secp256r1).unwrap();
+        let key = crate::cluster_crypto::crypto_utils::generate_ec_key(crate::cluster_crypto::algorithms::EcdsaCurve::Secp256r1).unwrap();
         let private_key = key.to_private_key().unwrap();
         let public_key = PublicKey::try_from(&private_key).unwrap();
 
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_resign_and_verify_es256_roundtrip() {
-        let key = crate::cluster_crypto::crypto_utils::generate_ec_key(x509_certificate::EcdsaCurve::Secp256r1).unwrap();
+        let key = crate::cluster_crypto::crypto_utils::generate_ec_key(crate::cluster_crypto::algorithms::EcdsaCurve::Secp256r1).unwrap();
         let resigned = resign(&unsigned_rs256_jwt(), &key).unwrap();
         let parts: Vec<_> = resigned.split('.').collect();
         assert_eq!(parts.len(), 3);

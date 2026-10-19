@@ -7,7 +7,6 @@ use itertools::Itertools;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::sync::Arc;
-use x509_certificate::X509Certificate;
 
 pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK8sEtcd>) -> Result<ExternalCerts> {
     let proxy_trusted_certs = vec![get_openshift_proxy_trusted_certs(&in_memory_etcd_client)
@@ -41,8 +40,8 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
             .map(|pem| match pem.tag() {
                 "CERTIFICATE" => Ok({
                     let der_bytes = pem.contents();
-                    let crt = X509Certificate::from_der(der_bytes).context("from der")?;
-                    let cn = crt.subject_name().user_friendly_str().unwrap_or("undecodable".to_string());
+                    let crt = <x509_cert::Certificate as der::Decode>::from_der(der_bytes).context("from der")?;
+                    let cn = crate::cluster_crypto::certificate::name_string(&crt.tbs_certificate.subject);
 
                     let hash = {
                         let mut sha256 = Sha256::new();

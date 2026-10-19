@@ -1,3 +1,4 @@
+use super::algorithms::{EcdsaCurve, KeyAlgorithm};
 use super::keys::PrivateKey;
 use anyhow::ensure;
 use anyhow::{bail, Context, Result};
@@ -5,8 +6,7 @@ use base64::{
     engine::general_purpose::{STANDARD as base64_standard, URL_SAFE_NO_PAD as base64_url},
     Engine as _,
 };
-use bcder::BitString;
-use bcder::{encode::Values, Mode};
+use der::{Decode, Encode};
 use pkcs1::DecodeRsaPrivateKey;
 use rsa::{self, pkcs8::EncodePrivateKey, RsaPrivateKey};
 use serde::ser::SerializeStruct;
@@ -15,29 +15,16 @@ use std::path::Path;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
 use tokio::process::Command;
-use x509_certificate::{rfc5280, rfc5958::OneAsymmetricKey, EcdsaCurve, KeyAlgorithm, SignatureAlgorithm};
-
-use simple_asn1::oid;
+use x509_cert::spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
 
 pub(crate) mod cert_signers;
 pub(crate) mod jwt;
 
-/// Parses a PKCS#8 private key and identifies its key algorithm. This is pure ASN.1 decoding, no
+/// Identifies the key algorithm of a PKCS#8 private key. This is pure ASN.1 decoding, no
 /// cryptographic operations are performed.
-pub(crate) fn parse_pkcs8_der(der: &[u8]) -> Result<(KeyAlgorithm, OneAsymmetricKey)> {
-    let key = bcder::decode::Constructed::decode(der, Mode::Der, OneAsymmetricKey::take_from)
-        .map_err(|e| anyhow::anyhow!("decoding PKCS#8 DER: {}", e))?;
-    let key_algorithm = KeyAlgorithm::try_from(&key.private_key_algorithm).context("identifying PKCS#8 key algorithm")?;
-    Ok((key_algorithm, key))
-}
-
-/// Uses openssl to derive the public key of a PKCS#8 private key, returning the contents of the
-/// subjectPublicKey BIT STRING of the resulting SubjectPublicKeyInfo (e.g. the PKCS#1
-/// RSAPublicKey for RSA, the uncompressed point for ECDSA, the raw 32 bytes for Ed25519).
-fn public_key_data_from_spki_der(spki_der: &[u8]) -> Result<bytes::Bytes> {
-    let spki = bcder::decode::Constructed::decode(spki_der, Mode::Der, rfc5280::SubjectPublicKeyInfo::take_from)
-        .map_err(|e| anyhow::anyhow!("decoding SPKI DER: {}", e))?;
-    Ok(spki.subject_public_key.octet_bytes())
+pub(crate) fn pkcs8_key_algorithm(der: &[u8]) -> Result<KeyAlgorithm> {
+    let key = pkcs8::PrivateKeyInfo::from_der(der).context("decoding PKCS#8 DER")?;
+    KeyAlgorithm::from_algorithm_identifier(&key.algorithm).context("identifying PKCS#8 key algorithm")
 }
 
 const OPENSSL_PUBOUT_DER_ARGS: [&str; 6] = ["pkey", "-inform", "PEM", "-pubout", "-outform", "DER"];
@@ -98,7 +85,8 @@ async fn openssl_spki_der_from_pkcs8_pem_async(pkcs8_pem: &[u8]) -> Result<Vec<u
 #[derive(Clone)]
 pub(crate) struct SigningKey {
     key_algorithm: KeyAlgorithm,
-    public_key_data: bytes::Bytes,
+    /// As derived by openssl
+    public_key_info: SubjectPublicKeyInfoOwned,
     pkcs8_pem: Vec<u8>,
 }
 
@@ -108,7 +96,7 @@ impl SigningKey {
     fn normalize_pkcs8_pem(pkcs8_pem: &[u8]) -> Result<(KeyAlgorithm, Vec<u8>)> {
         let parsed_pem = pem::parse(pkcs8_pem).context("parsing PKCS#8 PEM")?;
         ensure!(parsed_pem.tag() == "PRIVATE KEY", "expected PKCS#8 PEM, got {}", parsed_pem.tag());
-        let (key_algorithm, _) = parse_pkcs8_der(parsed_pem.contents())?;
+        let key_algorithm = pkcs8_key_algorithm(parsed_pem.contents())?;
         let normalized_pem = pem::encode_config(&parsed_pem, pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF));
         Ok((key_algorithm, normalized_pem.into_bytes()))
     }
@@ -119,7 +107,7 @@ impl SigningKey {
 
         Ok(Self {
             key_algorithm,
-            public_key_data: public_key_data_from_spki_der(&spki_der)?,
+            public_key_info: SubjectPublicKeyInfoOwned::from_der(&spki_der).context("decoding openssl SPKI")?,
             pkcs8_pem,
         })
     }
@@ -130,28 +118,23 @@ impl SigningKey {
 
         Ok(Self {
             key_algorithm,
-            public_key_data: public_key_data_from_spki_der(&spki_der)?,
+            public_key_info: SubjectPublicKeyInfoOwned::from_der(&spki_der).context("decoding openssl SPKI")?,
             pkcs8_pem,
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn key_algorithm(&self) -> KeyAlgorithm {
         self.key_algorithm
     }
 
-    /// The contents of the subjectPublicKey BIT STRING in a SubjectPublicKeyInfo for this key
-    pub(crate) fn public_key_data(&self) -> bytes::Bytes {
-        self.public_key_data.clone()
+    pub(crate) fn public_key_info(&self) -> &SubjectPublicKeyInfoOwned {
+        &self.public_key_info
     }
 
     /// The signature algorithm `sign` uses for this key
-    pub(crate) fn signature_algorithm(&self) -> SignatureAlgorithm {
-        match self.key_algorithm {
-            KeyAlgorithm::Rsa => SignatureAlgorithm::RsaSha256,
-            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp256r1) => SignatureAlgorithm::EcdsaSha256,
-            KeyAlgorithm::Ecdsa(EcdsaCurve::Secp384r1) => SignatureAlgorithm::EcdsaSha384,
-            KeyAlgorithm::Ed25519 => SignatureAlgorithm::Ed25519,
-        }
+    pub(crate) fn signature_algorithm(&self) -> AlgorithmIdentifierOwned {
+        self.key_algorithm.signature_algorithm()
     }
 
     /// Generates the "kid" field for a JWT header in accordance with how Kubernetes does it (a
@@ -159,18 +142,7 @@ impl SigningKey {
     /// private key)
     // Implementation based on https://github.com/openshift/kubernetes/blob/6fdacf04117cef54a0babd0945e8ef87d0f9461d/pkg/serviceaccount/jwt.go#L92-L112
     pub(crate) fn jwt_key_id(&self) -> Result<String> {
-        let keyinfo = rfc5280::SubjectPublicKeyInfo {
-            algorithm: self.key_algorithm.into(),
-            subject_public_key: BitString::new(0, self.public_key_data()),
-        };
-        let pkix_der_bytes = {
-            let mut buffer: Vec<u8> = Vec::new();
-            keyinfo
-                .encode_ref()
-                .write_encoded(bcder::Mode::Der, &mut buffer)
-                .context("encode")?;
-            buffer
-        };
+        let pkix_der_bytes = self.public_key_info.to_der().context("encoding public key")?;
         Ok(base64_url.encode(sha256(pkix_der_bytes.as_slice()).context("hash")?))
     }
 
@@ -312,46 +284,20 @@ pub(crate) fn pubkey_pem_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-fn ec_curve_from_oid(curve_oid: &simple_asn1::OID) -> Result<EcdsaCurve> {
-    if *curve_oid == oid!(1, 2, 840, 10045, 3, 1, 7) {
-        Ok(EcdsaCurve::Secp256r1)
-    } else if *curve_oid == oid!(1, 3, 132, 0, 34) {
-        Ok(EcdsaCurve::Secp384r1)
-    } else {
-        bail!("unsupported EC curve OID: {:?}", curve_oid)
+fn ec_curve(key_algorithm: KeyAlgorithm) -> Result<EcdsaCurve> {
+    match key_algorithm {
+        KeyAlgorithm::Ecdsa(curve) => Ok(curve),
+        key_algorithm => bail!("expected an EC key, got {key_algorithm:?}"),
     }
 }
 
 pub(crate) fn ec_curve_from_pkcs8_der(pkcs8_der: &[u8]) -> Result<EcdsaCurve> {
-    let blocks = simple_asn1::from_der(pkcs8_der).context("parsing PKCS#8 DER")?;
-    let top = blocks.into_iter().next().context("empty ASN.1")?;
-
-    // PKCS#8: SEQUENCE { INTEGER(version), SEQUENCE(algorithmIdentifier), OCTET STRING }
-    if let simple_asn1::ASN1Block::Sequence(_, items) = top {
-        if let Some(simple_asn1::ASN1Block::Sequence(_, alg_items)) = items.get(1) {
-            if let Some(simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid)) = alg_items.get(1) {
-                return ec_curve_from_oid(curve_oid);
-            }
-        }
-    }
-
-    bail!("failed to extract EC curve from PKCS#8 DER")
+    ec_curve(pkcs8_key_algorithm(pkcs8_der)?)
 }
 
 pub(crate) fn ec_curve_from_public_key_der(spki_der: &[u8]) -> Result<EcdsaCurve> {
-    let blocks = simple_asn1::from_der(spki_der).context("parsing SPKI DER")?;
-    let top = blocks.into_iter().next().context("empty ASN.1")?;
-
-    // SPKI: SEQUENCE { SEQUENCE(algorithmIdentifier), BIT STRING }
-    if let simple_asn1::ASN1Block::Sequence(_, items) = top {
-        if let Some(simple_asn1::ASN1Block::Sequence(_, alg_items)) = items.first() {
-            if let Some(simple_asn1::ASN1Block::ObjectIdentifier(_, curve_oid)) = alg_items.get(1) {
-                return ec_curve_from_oid(curve_oid);
-            }
-        }
-    }
-
-    bail!("failed to extract EC curve from SPKI DER")
+    let spki = SubjectPublicKeyInfoOwned::from_der(spki_der).context("decoding SPKI DER")?;
+    ec_curve(KeyAlgorithm::from_algorithm_identifier(&spki.algorithm)?)
 }
 
 fn openssl_stdin_text(args: &[&str], input: &[u8], failure_label: &'static str) -> Result<String> {
@@ -397,66 +343,6 @@ pub(crate) fn key_from_pem(pem: &str) -> Result<SigningKey> {
         "PRIVATE KEY" => key_from_pkcs8_pem(pem).context("key from PKCS#8"),
         _ => bail!("unknown private key format"),
     }
-}
-
-pub(crate) fn encode_tbs_cert_to_der(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Vec<u8>> {
-    let mut tbs_der = Vec::<u8>::new();
-    tbs_certificate.encode_ref().write_encoded(Mode::Der, &mut tbs_der)?;
-    Ok(tbs_der)
-}
-
-/// Workaround for two bugs in the vendored x509-certificate crate's Ed25519 handling:
-///
-/// 1. Uses OID 1.3.101.110 (X25519/key-agreement) instead of 1.3.101.112 (Ed25519/signing)
-/// 2. Adds NULL parameters to AlgorithmIdentifier, but RFC 8410 requires them absent
-///
-/// Parses the DER as ASN.1, fixes all matching AlgorithmIdentifier SEQUENCEs,
-/// and re-encodes. Remove once the vendored crate is updated.
-pub(crate) fn fix_ed25519_alg_id(der: &[u8]) -> Vec<u8> {
-    let mut blocks = match simple_asn1::from_der(der) {
-        Ok(b) => b,
-        Err(_) => return der.to_vec(),
-    };
-    let ed25519_oid = oid!(1, 3, 101, 112);
-    let x25519_oid = oid!(1, 3, 101, 110);
-    let mut changed = false;
-    for block in &mut blocks {
-        changed |= fix_ed25519_alg_ids_recursive(block, &ed25519_oid, &x25519_oid);
-    }
-    if !changed {
-        return der.to_vec();
-    }
-    simple_asn1::to_der(&blocks[0]).unwrap_or_else(|_| der.to_vec())
-}
-
-fn fix_ed25519_alg_ids_recursive(
-    block: &mut simple_asn1::ASN1Block,
-    ed25519_oid: &simple_asn1::OID,
-    x25519_oid: &simple_asn1::OID,
-) -> bool {
-    let mut changed = false;
-    if let simple_asn1::ASN1Block::Sequence(_, items) = block {
-        if is_ed25519_alg_id(items, ed25519_oid, x25519_oid) {
-            *items = vec![simple_asn1::ASN1Block::ObjectIdentifier(0, ed25519_oid.clone())];
-            return true;
-        }
-        for item in items.iter_mut() {
-            changed |= fix_ed25519_alg_ids_recursive(item, ed25519_oid, x25519_oid);
-        }
-    }
-    changed
-}
-
-fn is_ed25519_alg_id(items: &[simple_asn1::ASN1Block], ed25519_oid: &simple_asn1::OID, x25519_oid: &simple_asn1::OID) -> bool {
-    if let Some(simple_asn1::ASN1Block::ObjectIdentifier(_, oid)) = items.first() {
-        if oid == x25519_oid {
-            return true;
-        }
-        if oid == ed25519_oid && items.len() == 2 {
-            return matches!(items[1], simple_asn1::ASN1Block::Null(_));
-        }
-    }
-    false
 }
 
 pub(crate) fn sign(signing_key: &SigningKey, tbs_der: &[u8]) -> Result<Vec<u8>> {
@@ -764,7 +650,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
 
         let signing_key = super::generate_ed25519_key().expect("generate_ed25519_key should succeed");
         assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Ed25519);
-        assert_eq!(signing_key.public_key_data().len(), 32, "Ed25519 public key should be 32 bytes");
+        assert_eq!(public_key_data(&signing_key).len(), 32, "Ed25519 public key should be 32 bytes");
     }
 
     #[test]
@@ -850,17 +736,24 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
         assert!(result.is_err(), "garbage DER should fail");
     }
 
+    /// The contents of the subjectPublicKey BIT STRING
+    fn public_key_data(signing_key: &super::SigningKey) -> Vec<u8> {
+        signing_key.public_key_info().subject_public_key.raw_bytes().to_vec()
+    }
+
     fn assert_public_key_data_matches_openssl(signing_key: &super::SigningKey) {
+        use der::Encode;
+
         let pkcs8_der = pem::parse(&signing_key.pkcs8_pem).unwrap();
         let pubkey_pem = super::pubkey_pem_from_pkcs8_der(pkcs8_der.contents()).unwrap();
         let spki_der = pem::parse(pubkey_pem).unwrap();
-        let spki = bcder::decode::Constructed::decode(spki_der.contents(), bcder::Mode::Der, |cons| {
-            super::rfc5280::SubjectPublicKeyInfo::take_from(cons)
-        })
-        .unwrap();
-        assert_eq!(signing_key.public_key_data(), spki.subject_public_key.octet_bytes());
         assert_eq!(
-            super::KeyAlgorithm::try_from(&spki.algorithm).unwrap(),
+            signing_key.public_key_info().to_der().unwrap(),
+            spki_der.contents(),
+            "public key should re-encode exactly like openssl encodes it"
+        );
+        assert_eq!(
+            super::KeyAlgorithm::from_algorithm_identifier(&signing_key.public_key_info().algorithm).unwrap(),
             signing_key.key_algorithm(),
             "SPKI algorithm should match the private key algorithm"
         );
@@ -879,7 +772,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
             panic!("expected RSA private key");
         };
         assert_eq!(
-            signing_key.public_key_data().as_ref(),
+            public_key_data(&signing_key),
             rsa_private_key.to_public_key().to_pkcs1_der().unwrap().as_bytes()
         );
     }
@@ -897,7 +790,7 @@ wotPP4a26KThoHHoFw7o6RWG6DPLTYoUIzEe7NmZmk3ZtYTWrut1MTquAv4Juy0A
             let signing_key = super::generate_ec_key(curve).unwrap();
             assert_eq!(signing_key.key_algorithm(), super::KeyAlgorithm::Ecdsa(curve));
             assert_eq!(
-                signing_key.public_key_data()[0],
+                public_key_data(&signing_key)[0],
                 0x04,
                 "EC public key should be an uncompressed point"
             );

@@ -1,7 +1,9 @@
+use super::algorithms::KeyAlgorithm;
 use super::REDACT_SECRETS;
 use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
+use der::Decode;
 use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
 use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use rsa::RsaPrivateKey;
@@ -14,7 +16,6 @@ use std::{
     process::{Command, Stdio},
     sync::atomic::Ordering::Relaxed,
 };
-use x509_certificate::KeyAlgorithm;
 
 /// PEM form an ECDSA private key was found in. PKCS#8 DER is what we store and use for key
 /// operations; this only controls how the key is written back.
@@ -145,15 +146,17 @@ impl std::fmt::Debug for PrivateKey {
 
 impl PrivateKey {
     pub(crate) fn from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Self> {
-        let (key_algorithm, key) = super::crypto_utils::parse_pkcs8_der(pkcs8_der)?;
+        let key = pkcs8::PrivateKeyInfo::from_der(pkcs8_der).context("decoding PKCS#8 DER")?;
 
-        Ok(match key_algorithm {
-            KeyAlgorithm::Rsa => PrivateKey::Rsa(
-                RsaPrivateKey::from_pkcs1_der(key.private_key.to_bytes().as_ref()).context("parsing PKCS#8 RSA private key")?,
-            ),
-            KeyAlgorithm::Ecdsa(_) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::copy_from_slice(pkcs8_der))),
-            KeyAlgorithm::Ed25519 => PrivateKey::Ed25519(Bytes::copy_from_slice(pkcs8_der)),
-        })
+        Ok(
+            match KeyAlgorithm::from_algorithm_identifier(&key.algorithm).context("identifying PKCS#8 key algorithm")? {
+                KeyAlgorithm::Rsa => {
+                    PrivateKey::Rsa(RsaPrivateKey::from_pkcs1_der(key.private_key).context("parsing PKCS#8 RSA private key")?)
+                }
+                KeyAlgorithm::Ecdsa(_) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::copy_from_slice(pkcs8_der))),
+                KeyAlgorithm::Ed25519 => PrivateKey::Ed25519(Bytes::copy_from_slice(pkcs8_der)),
+            },
+        )
     }
 
     /// Copy output encoding from `original` onto `self`. No-op unless both keys are EC.
@@ -256,12 +259,12 @@ impl PublicKey {
         Ok(output.stdout.into())
     }
 
-    pub(crate) fn from_cert_bytes(cert_bytes: &Bytes, algo: &x509_certificate::KeyAlgorithm) -> Result<PublicKey> {
+    pub(crate) fn from_cert_bytes(cert_bytes: &Bytes, algo: &KeyAlgorithm) -> Result<PublicKey> {
         let pem = Self::pubkey_pem_from_cert_pem(cert_bytes)?;
         Ok(match algo {
-            x509_certificate::KeyAlgorithm::Ecdsa(_) => PublicKey::Ec(pem),
-            x509_certificate::KeyAlgorithm::Ed25519 => PublicKey::Ed25519(pem),
-            x509_certificate::KeyAlgorithm::Rsa => bail!("use from_rsa_bytes for RSA keys"),
+            KeyAlgorithm::Ecdsa(_) => PublicKey::Ec(pem),
+            KeyAlgorithm::Ed25519 => PublicKey::Ed25519(pem),
+            KeyAlgorithm::Rsa => bail!("use from_rsa_bytes for RSA keys"),
         })
     }
 

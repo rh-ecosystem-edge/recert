@@ -1,19 +1,17 @@
 use anyhow::{bail, ensure, Context, Result};
-use bcder::Oid;
-use der::{asn1::OctetString, Decode, Encode};
+use der::{asn1::OctetString, oid::AssociatedOid, Decode, Encode};
 use num_bigint::Sign;
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
 use simple_asn1::ASN1Block;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-use x509_cert::ext::pkix::{AuthorityKeyIdentifier, SubjectKeyIdentifier};
-use x509_certificate::{
-    rfc5280,
-    KeyAlgorithm::{self, Ecdsa},
+use x509_cert::{
+    ext::pkix::{AuthorityKeyIdentifier, SubjectKeyIdentifier},
+    TbsCertificate,
 };
 
-use crate::cluster_crypto::certificate::{AUTHORITY_KEY_IDENTIFIER_OID, SUBJECT_KEY_IDENTIFIER_OID};
+use crate::cluster_crypto::algorithms::KeyAlgorithm;
 
 #[derive(PartialEq, Eq)]
 pub(crate) struct HashableKeyID(pub(crate) OctetString);
@@ -68,9 +66,13 @@ pub(crate) enum SubjectKeyIdentifierMethod {
     LibraryGoSha256,
 }
 
-fn rsa_modulus_bytes(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Vec<u8>> {
-    let key_bytes = tbs_certificate.subject_public_key_info.subject_public_key.octet_bytes();
-    let asn1_blocks = simple_asn1::from_der(&key_bytes).context("parsing public key as DER")?;
+/// The contents of the subjectPublicKey BIT STRING
+fn subject_public_key_bytes(tbs_certificate: &TbsCertificate) -> &[u8] {
+    tbs_certificate.subject_public_key_info.subject_public_key.raw_bytes()
+}
+
+fn rsa_modulus_bytes(tbs_certificate: &TbsCertificate) -> Result<Vec<u8>> {
+    let asn1_blocks = simple_asn1::from_der(subject_public_key_bytes(tbs_certificate)).context("parsing public key as DER")?;
 
     let asn1_block = asn1_blocks.into_iter().next().context("empty ASN.1 blocks")?;
     match asn1_block {
@@ -94,88 +96,72 @@ fn make_skid(bytes: &[u8]) -> Result<SubjectKeyIdentifier> {
     Ok(SubjectKeyIdentifier(x509_cert::der::asn1::OctetString::new(bytes)?))
 }
 
-fn calculate_skid(tbs_certificate: &rfc5280::TbsCertificate, method: SubjectKeyIdentifierMethod) -> Result<SubjectKeyIdentifier> {
-    let spk_bytes = || tbs_certificate.subject_public_key_info.subject_public_key.octet_bytes();
+fn calculate_skid(tbs_certificate: &TbsCertificate, method: SubjectKeyIdentifierMethod) -> Result<SubjectKeyIdentifier> {
+    let key_algorithm = || {
+        KeyAlgorithm::from_algorithm_identifier(&tbs_certificate.subject_public_key_info.algorithm)
+            .context("failed to get cert key algorithm")
+    };
 
     match method {
-        SubjectKeyIdentifierMethod::RFC5280 => make_skid(&Sha1::digest(spk_bytes())),
-        SubjectKeyIdentifierMethod::RFC7093 => make_skid(&Sha256::digest(spk_bytes())[..20]),
-        SubjectKeyIdentifierMethod::LibraryGoSha1 => {
-            let algo = KeyAlgorithm::try_from(&tbs_certificate.subject_public_key_info.algorithm)
-                .ok()
-                .context("failed to get cert key algorithm")?;
-            match algo {
-                x509_certificate::KeyAlgorithm::Rsa => make_skid(&Sha1::digest(rsa_modulus_bytes(tbs_certificate)?)),
-                Ecdsa(_) => bail!("LibraryGoSha1 not supported for ecdsa keys"),
-                x509_certificate::KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
-            }
-        }
-        SubjectKeyIdentifierMethod::LibraryGoSha256 => {
-            let algo = KeyAlgorithm::try_from(&tbs_certificate.subject_public_key_info.algorithm)
-                .ok()
-                .context("failed to get cert key algorithm")?;
-            match algo {
-                x509_certificate::KeyAlgorithm::Rsa => make_skid(&Sha256::digest(rsa_modulus_bytes(tbs_certificate)?)[..20]),
-                // library-go's ECDSA SKID is identical to RFC7093 (both SHA-256 the
-                // uncompressed EC point), so the brute-force detection in
-                // get_cert_skid_method will always match RFC7093 first for EC certs.
-                Ecdsa(_) => bail!("LibraryGoSha256 for ECDSA is identical to RFC7093, should not reach here"),
-                x509_certificate::KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
-            }
-        }
+        SubjectKeyIdentifierMethod::RFC5280 => make_skid(&Sha1::digest(subject_public_key_bytes(tbs_certificate))),
+        SubjectKeyIdentifierMethod::RFC7093 => make_skid(&Sha256::digest(subject_public_key_bytes(tbs_certificate))[..20]),
+        SubjectKeyIdentifierMethod::LibraryGoSha1 => match key_algorithm()? {
+            KeyAlgorithm::Rsa => make_skid(&Sha1::digest(rsa_modulus_bytes(tbs_certificate)?)),
+            KeyAlgorithm::Ecdsa(_) => bail!("LibraryGoSha1 not supported for ecdsa keys"),
+            KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
+        },
+        SubjectKeyIdentifierMethod::LibraryGoSha256 => match key_algorithm()? {
+            KeyAlgorithm::Rsa => make_skid(&Sha256::digest(rsa_modulus_bytes(tbs_certificate)?)[..20]),
+            // library-go's ECDSA SKID is identical to RFC7093 (both SHA-256 the
+            // uncompressed EC point), so the brute-force detection in
+            // get_cert_skid_method will always match RFC7093 first for EC certs.
+            KeyAlgorithm::Ecdsa(_) => bail!("LibraryGoSha256 for ECDSA is identical to RFC7093, should not reach here"),
+            KeyAlgorithm::Ed25519 => bail!("ed25519 not supported"),
+        },
     }
 }
 
-pub(crate) fn get_skid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Option<SubjectKeyIdentifier>> {
-    Ok(if let Some(all_extensions) = &tbs_certificate.extensions {
-        let skid_extensions = all_extensions
-            .iter()
-            .filter(|ext| ext.id == Oid(&SUBJECT_KEY_IDENTIFIER_OID))
-            .collect::<Vec<_>>();
+/// Decodes the extension of type T, if the certificate has one
+fn get_extension<T: for<'a> Decode<'a> + AssociatedOid>(tbs_certificate: &TbsCertificate, name: &str) -> Result<Option<T>> {
+    let extensions = tbs_certificate
+        .extensions
+        .iter()
+        .flatten()
+        .filter(|ext| ext.extn_id == T::OID)
+        .collect::<Vec<_>>();
 
-        if skid_extensions.is_empty() {
-            return Ok(None);
-        }
-
-        ensure!(
-            skid_extensions.len() == 1,
-            "multiple ({}) SKID extensions found",
-            skid_extensions.len()
-        );
-
-        Some(
-            SubjectKeyIdentifier::from_der(skid_extensions[0].value.as_slice().context("SKID has slice")?)
-                .context("Creating SKID from DER")?,
-        )
-    } else {
-        None
-    })
+    match extensions.as_slice() {
+        [] => Ok(None),
+        [extension] => Ok(Some(
+            T::from_der(extension.extn_value.as_bytes()).with_context(|| format!("decoding {name}"))?,
+        )),
+        _ => bail!("multiple ({}) {name} extensions found", extensions.len()),
+    }
 }
 
-pub(crate) fn get_akid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Option<AuthorityKeyIdentifier>> {
-    Ok(if let Some(all_extensions) = &tbs_certificate.extensions {
-        let akid_extensions = all_extensions
-            .iter()
-            .filter(|ext| ext.id == Oid(&AUTHORITY_KEY_IDENTIFIER_OID))
-            .collect::<Vec<_>>();
+/// Replaces the value of all extensions of type T in the certificate
+fn set_extension<T: Encode + AssociatedOid>(tbs_certificate: &mut TbsCertificate, value: &T) -> Result<()> {
+    let value = OctetString::new(value.to_der().context("converting to DER")?)?;
 
-        if akid_extensions.is_empty() {
-            return Ok(None);
-        }
+    for extension in tbs_certificate
+        .extensions
+        .as_mut()
+        .context("no extensions found")?
+        .iter_mut()
+        .filter(|ext| ext.extn_id == T::OID)
+    {
+        extension.extn_value = value.clone();
+    }
 
-        ensure!(
-            akid_extensions.len() == 1,
-            "multiple ({}) AKID extensions found",
-            akid_extensions.len()
-        );
+    Ok(())
+}
 
-        Some(
-            AuthorityKeyIdentifier::from_der(akid_extensions[0].value.as_slice().context("AKID has slice")?)
-                .context("creating AKID from DER")?,
-        )
-    } else {
-        None
-    })
+pub(crate) fn get_skid(tbs_certificate: &TbsCertificate) -> Result<Option<SubjectKeyIdentifier>> {
+    get_extension(tbs_certificate, "SKID")
+}
+
+pub(crate) fn get_akid(tbs_certificate: &TbsCertificate) -> Result<Option<AuthorityKeyIdentifier>> {
+    get_extension(tbs_certificate, "AKID")
 }
 
 /// Given a certificate, return the key identifier method that was used to generate the SKID
@@ -184,10 +170,7 @@ pub(crate) fn get_akid(tbs_certificate: &rfc5280::TbsCertificate) -> Result<Opti
 /// We find the method by using brute force through all methods until we have a match. If the cert
 /// doesn't have any SKID extension, we return None. But if it has one, and we can't find a method
 /// match, we return an error.
-pub(crate) fn get_cert_skid_method(
-    tbs_certificate: &mut rfc5280::TbsCertificate,
-    skid: &SubjectKeyIdentifier,
-) -> Result<SubjectKeyIdentifierMethod> {
+pub(crate) fn get_cert_skid_method(tbs_certificate: &TbsCertificate, skid: &SubjectKeyIdentifier) -> Result<SubjectKeyIdentifierMethod> {
     for candidate_skid_method in SubjectKeyIdentifierMethod::iter() {
         let method_predicted_skid = calculate_skid(tbs_certificate, candidate_skid_method).context("calculating SKID")?;
 
@@ -202,63 +185,33 @@ pub(crate) fn get_cert_skid_method(
 /// Given a certificate and the SKID method, calculate the SKID extension and set it in the
 /// certificate.
 pub(crate) fn calculate_and_set_skid(
-    tbs_certificate: &mut rfc5280::TbsCertificate,
+    tbs_certificate: &mut TbsCertificate,
     method: SubjectKeyIdentifierMethod,
 ) -> Result<SubjectKeyIdentifier> {
     let new_skid_extension = calculate_skid(tbs_certificate, method).context("calculating skid")?;
-
-    tbs_certificate
-        .extensions
-        .as_mut()
-        .context("no extensions found")?
-        .iter_mut()
-        .filter(|ext| ext.id == Oid(&SUBJECT_KEY_IDENTIFIER_OID))
-        .map(|ext| {
-            ext.value = bcder::OctetString::new(bytes::Bytes::copy_from_slice(
-                new_skid_extension.to_der().context("converting to DER")?.as_slice(),
-            ));
-            Ok(())
-        })
-        .collect::<Result<Vec<()>>>()
-        .context("setting skid")?;
+    set_extension(tbs_certificate, &new_skid_extension).context("setting skid")?;
     Ok(new_skid_extension)
 }
 
 /// Modify the certificate to set the AKID extension.
-pub(crate) fn set_akid(tbs_certificate: &mut rfc5280::TbsCertificate, akid: AuthorityKeyIdentifier) -> Result<()> {
-    tbs_certificate
-        .extensions
-        .as_mut()
-        .context("no extensions found")?
-        .iter_mut()
-        .filter(|ext| ext.id == Oid(&AUTHORITY_KEY_IDENTIFIER_OID))
-        .map(|ext| {
-            ext.value = bcder::OctetString::new(bytes::Bytes::copy_from_slice(
-                akid.to_der().context("converting to DER")?.as_slice(),
-            ));
-            Ok(())
-        })
-        .collect::<Result<Vec<()>>>()
-        .context("setting akid")?;
-    Ok(())
+pub(crate) fn set_akid(tbs_certificate: &mut TbsCertificate, akid: AuthorityKeyIdentifier) -> Result<()> {
+    set_extension(tbs_certificate, &akid).context("setting akid")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x509_certificate::{CapturedX509Certificate, X509Certificate};
 
-    fn tbs_from_pem(pem: &str) -> rfc5280::TbsCertificate {
-        let cert = CapturedX509Certificate::from_pem(pem).unwrap();
-        let x509: &X509Certificate = &cert;
-        let certificate: &rfc5280::Certificate = x509.as_ref();
-        certificate.tbs_certificate.clone()
+    fn tbs_from_pem(pem: &str) -> TbsCertificate {
+        x509_cert::Certificate::from_der(pem::parse(pem).unwrap().contents())
+            .unwrap()
+            .tbs_certificate
     }
 
     fn assert_skid_method(pem: &str, expected_method: SubjectKeyIdentifierMethod) {
-        let mut tbs = tbs_from_pem(pem);
+        let tbs = tbs_from_pem(pem);
         let skid = get_skid(&tbs).unwrap().expect("cert should have SKID");
-        let method = get_cert_skid_method(&mut tbs, &skid).unwrap();
+        let method = get_cert_skid_method(&tbs, &skid).unwrap();
         assert_eq!(method, expected_method);
     }
 

@@ -216,21 +216,13 @@ pub(crate) fn process_pem_ec_private_key(pem: &pem::Pem) -> Result<Option<Crypto
 
 /// Given a certificate PEM, record it in the appropriate data structures.
 pub(crate) fn process_pem_cert(pem: &pem::Pem, external_certs: &ExternalCerts) -> Result<Option<CryptoObject>> {
-    let x509_certificate = &x509_certificate::CapturedX509Certificate::from_der(pem.contents()).context("parsing DER")?;
-
-    let hashable_cert = certificate::Certificate::try_from(x509_certificate).context("parsing cert")?;
+    let hashable_cert = certificate::Certificate::from_der(pem.contents()).context("parsing cert")?;
 
     if external_certs.has_cert(&hashable_cert).context("has external cert")? {
         log::trace!("ignoring external cert {}", hashable_cert.subject);
         return Ok(None);
     } else {
         log::trace!("not ignoring internal cert {}", hashable_cert.subject);
-    }
-
-    match hashable_cert.cert.key_algorithm().context("failed to get cert key algorithm")? {
-        x509_certificate::KeyAlgorithm::Rsa => {}
-        x509_certificate::KeyAlgorithm::Ecdsa(_) => {}
-        x509_certificate::KeyAlgorithm::Ed25519 => {}
     }
 
     Ok(Some(CryptoObject::from(hashable_cert)))
@@ -383,10 +375,8 @@ mod tests {
 
         let cert_pem = generate_ed25519_self_signed_cert();
         let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
-        let x509 = x509_certificate::CapturedX509Certificate::from_der(parsed.contents()).expect("failed to parse DER");
-
-        let cert = certificate::Certificate::try_from(&x509);
-        assert!(cert.is_ok(), "Certificate::try_from should work for Ed25519: {:?}", cert.err());
+        let cert = certificate::Certificate::from_der(parsed.contents());
+        assert!(cert.is_ok(), "Certificate::from_der should work for Ed25519: {:?}", cert.err());
 
         let cert = cert.unwrap();
         assert!(matches!(cert.public_key, PublicKey::Ed25519(_)), "expected PublicKey::Ed25519");
@@ -425,46 +415,60 @@ mod tests {
     fn test_ed25519_resign_produces_valid_cert() {
         skip_if_fips!("Ed25519");
 
-        use super::super::crypto_utils::fix_ed25519_alg_id;
-        use bcder::encode::Values;
-        use x509_certificate::{rfc5280, X509Certificate};
+        use der::{Decode, Encode};
 
         let cert_pem = generate_ed25519_self_signed_cert();
         let parsed = pem::parse(&cert_pem).expect("failed to parse cert PEM");
-        let x509 = x509_certificate::CapturedX509Certificate::from_der(parsed.contents()).expect("failed to parse DER");
-
-        let certificate: &rfc5280::Certificate = x509.as_ref();
-        let mut tbs_certificate = certificate.tbs_certificate.clone();
+        let mut tbs_certificate = x509_cert::Certificate::from_der(parsed.contents())
+            .expect("failed to parse DER")
+            .tbs_certificate;
 
         let new_key = super::super::crypto_utils::generate_ed25519_key().expect("failed to generate Ed25519 key");
 
-        tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
-            algorithm: new_key.key_algorithm().into(),
-            subject_public_key: bcder::BitString::new(0, new_key.public_key_data()),
-        };
-
-        let signature_algorithm: rfc5280::AlgorithmIdentifier = new_key.signature_algorithm().into();
+        tbs_certificate.subject_public_key_info = new_key.public_key_info().clone();
+        let signature_algorithm = new_key.signature_algorithm();
         tbs_certificate.signature = signature_algorithm.clone();
 
-        let mut tbs_der = Vec::<u8>::new();
-        tbs_certificate
-            .encode_ref()
-            .write_encoded(bcder::Mode::Der, &mut tbs_der)
-            .expect("failed to encode TBS");
-        let tbs_der = fix_ed25519_alg_id(&tbs_der);
-
+        let tbs_der = tbs_certificate.to_der().expect("failed to encode TBS");
         let signature = super::super::crypto_utils::sign(&new_key, &tbs_der).expect("signing failed");
 
-        let cert = rfc5280::Certificate {
+        let cert_der = x509_cert::Certificate {
             tbs_certificate,
             signature_algorithm,
-            signature: bcder::BitString::new(0, bytes::Bytes::copy_from_slice(signature.as_ref())),
-        };
+            signature: der::asn1::BitString::from_bytes(&signature).unwrap(),
+        }
+        .to_der()
+        .expect("encoding cert");
 
-        let cert_der = fix_ed25519_alg_id(&X509Certificate::from(cert).encode_der().expect("encode_der"));
-        let new_cert = x509_certificate::CapturedX509Certificate::from_der(cert_der).expect("from_der");
+        // RFC 8410: Ed25519 AlgorithmIdentifiers must have no parameters
+        let new_cert = x509_cert::Certificate::from_der(&cert_der).unwrap();
+        assert_eq!(new_cert.signature_algorithm.parameters, None);
+        assert_eq!(new_cert.tbs_certificate.signature.parameters, None);
+        assert_eq!(new_cert.tbs_certificate.subject_public_key_info.algorithm.parameters, None);
 
-        let new_cert_pem = new_cert.encode_pem();
+        // The cert is self-signed, so it should verify against its own (new) key
+        let cert_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), pem::Pem::new("CERTIFICATE", cert_der).to_string()).unwrap();
+        let cert_path = cert_file.path().to_str().unwrap();
+        let verify = Command::new("openssl")
+            .args([
+                "verify",
+                "-check_ss_sig",
+                "-no_check_time",
+                "-no-CApath",
+                "-CAfile",
+                cert_path,
+                cert_path,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            verify.status.success(),
+            "re-signed Ed25519 cert should verify: {}",
+            String::from_utf8_lossy(&verify.stderr)
+        );
+
+        let new_cert_pem = pem::Pem::new("CERTIFICATE", new_cert.to_der().unwrap()).to_string();
         let mut child = Command::new("openssl")
             .args(["x509", "-pubkey", "-noout"])
             .stdin(Stdio::piped())
@@ -539,7 +543,7 @@ mod tests {
                             parsed.contents(),
                             "stored bytes should differ from SEC1 input"
                         );
-                        crate::cluster_crypto::crypto_utils::parse_pkcs8_der(ec.pkcs8_der())
+                        crate::cluster_crypto::crypto_utils::pkcs8_key_algorithm(ec.pkcs8_der())
                             .expect("stored bytes should be valid PKCS#8 DER");
                     }
                     _ => panic!("expected PrivateKey::Ec"),

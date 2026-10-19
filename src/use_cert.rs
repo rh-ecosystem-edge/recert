@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
 use anyhow::{ensure, Context, Result};
-use bcder::Oid;
-use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
+use x509_cert::name::Name;
 
-use crate::cluster_crypto::certificate::Certificate;
+use crate::cluster_crypto::certificate::{name_attribute_values, Certificate, COMMON_NAME};
 
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct UseCert {
@@ -34,8 +33,7 @@ impl UseCert {
         let pem = &pem[0];
         ensure!(pem.tag() == "CERTIFICATE", "expected CERTIFICATE PEM block, found {}", pem.tag());
 
-        let x509_certificate = &x509_certificate::CapturedX509Certificate::from_der(pem.contents()).context("parsing DER")?;
-        let cert = Certificate::try_from(x509_certificate).context("parsing cert")?;
+        let cert = Certificate::from_der(pem.contents()).context("parsing cert")?;
 
         Ok(Self { cert })
     }
@@ -54,7 +52,7 @@ impl UseCertRules {
         };
 
         for rule in &self.0 {
-            if get_cn(rule.cert.cert.subject_name())
+            if get_cn(&rule.cert.tbs().subject)
                 .context("getting subject name CN")?
                 .context("user provided cert has no CN")?
                 == candidate_cn
@@ -68,15 +66,10 @@ impl UseCertRules {
 }
 
 fn get_cn(subject: &Name) -> Result<Option<String>> {
-    let common_names = subject.iter_by_oid(Oid(OID_COMMON_NAME.as_ref().into())).collect::<Vec<_>>();
+    let mut common_names = name_attribute_values(subject, COMMON_NAME).context("converting CN to string")?;
 
-    Ok(if common_names.is_empty() {
-        None
-    } else {
-        ensure!(common_names.len() == 1, "expected exactly one common name, found more");
-        let cn = common_names[0].to_string().context("converting CN to string")?;
-        Some(cn)
-    })
+    ensure!(common_names.len() <= 1, "expected exactly one common name, found more");
+    Ok(common_names.pop())
 }
 
 impl std::fmt::Display for UseCertRules {
