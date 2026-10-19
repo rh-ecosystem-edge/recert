@@ -156,17 +156,16 @@ pub(crate) fn decode_resource_data_entry(yaml_location: &JsonLocation, value_at_
                 .context("dataurl decoding")?;
             String::from_utf8(decoded)?
         }
-        crate::cluster_crypto::locations::FieldEncoding::ByteArray => value_at_json_pointer
-            .as_array()
-            .context("value no longer array")?
-            .iter()
-            .map(|byte| -> Result<_> { Ok(byte.as_u64().context("byte not u64")? as u8) })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|byte| byte as char)
-            .collect::<String>(),
-    }
-    .clone())
+        crate::cluster_crypto::locations::FieldEncoding::ByteArray => {
+            let bytes = value_at_json_pointer
+                .as_array()
+                .context("value no longer array")?
+                .iter()
+                .map(|byte| -> Result<_> { Ok(u8::try_from(byte.as_u64().context("byte not u64")?).context("converting to u8")?) })
+                .collect::<Result<Vec<_>>>()?;
+            String::from_utf8(bytes).context("non-utf8 decoded byte array value")?
+        }
+    })
 }
 
 /// Annotates a kubernetes resources to indicate that it has been edited by recert. The
@@ -266,4 +265,97 @@ pub(crate) fn update_auth_certificate_annotations(resource: &mut Value, certific
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cluster_crypto::locations::{FieldEncoding, JsonLocation};
+
+    fn location(encoding: FieldEncoding) -> JsonLocation {
+        JsonLocation::new("/data", "tls.crt", encoding)
+    }
+
+    #[test]
+    fn test_encode_decode_none() {
+        let loc = location(FieldEncoding::None);
+        let encoded = encode_resource_data_entry(&loc, &"hello".to_string());
+        assert_eq!(encoded, Value::String("hello".to_string()));
+        assert_eq!(decode_resource_data_entry(&loc, &encoded).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_encode_decode_base64() {
+        let loc = location(FieldEncoding::Base64);
+        let encoded = encode_resource_data_entry(&loc, &"hello".to_string());
+        assert_eq!(encoded, Value::String("aGVsbG8=".to_string()));
+        assert_eq!(decode_resource_data_entry(&loc, &encoded).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_encode_decode_dataurl() {
+        let loc = location(FieldEncoding::DataUrl);
+        let encoded = encode_resource_data_entry(&loc, &"hello".to_string());
+        assert_eq!(encoded, Value::String("data:,hello".to_string()));
+        assert_eq!(decode_resource_data_entry(&loc, &encoded).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_encode_decode_bytearray_ascii() {
+        let loc = location(FieldEncoding::ByteArray);
+        let encoded = encode_resource_data_entry(&loc, &"hello".to_string());
+        assert_eq!(
+            encoded,
+            Value::Array(vec![
+                Value::Number(104.into()),
+                Value::Number(101.into()),
+                Value::Number(108.into()),
+                Value::Number(108.into()),
+                Value::Number(111.into()),
+            ])
+        );
+        assert_eq!(decode_resource_data_entry(&loc, &encoded).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_encode_decode_bytearray_utf8() {
+        let loc = location(FieldEncoding::ByteArray);
+        let encoded = encode_resource_data_entry(&loc, &"café".to_string());
+        assert_eq!(decode_resource_data_entry(&loc, &encoded).unwrap(), "café");
+    }
+
+    #[test]
+    fn test_decode_bytearray_invalid_utf8_errors() {
+        let loc = location(FieldEncoding::ByteArray);
+        let encoded = Value::Array(vec![Value::Number(0xff.into())]);
+        let err = decode_resource_data_entry(&loc, &encoded).unwrap_err();
+        assert!(err.to_string().contains("non-utf8 decoded byte array value"));
+    }
+
+    #[test]
+    fn test_decode_bytearray_not_array_errors() {
+        let loc = location(FieldEncoding::ByteArray);
+        let err = decode_resource_data_entry(&loc, &Value::String("nope".to_string())).unwrap_err();
+        assert!(err.to_string().contains("value no longer array"));
+    }
+
+    #[test]
+    fn test_decode_bytearray_out_of_range_byte_errors() {
+        let loc = location(FieldEncoding::ByteArray);
+        let encoded = Value::Array(vec![Value::Number(256.into())]);
+        let err = decode_resource_data_entry(&loc, &encoded).unwrap_err();
+        assert!(err.to_string().contains("converting to u8"));
+    }
+
+    #[test]
+    fn test_decode_bytearray_empty() {
+        let loc = location(FieldEncoding::ByteArray);
+        assert_eq!(decode_resource_data_entry(&loc, &Value::Array(vec![])).unwrap(), "");
+    }
+
+    #[test]
+    fn test_dataurl_escapes_reserved_characters() {
+        assert_eq!(dataurl_encode("a b"), "data:,a%20b");
+        assert_eq!(dataurl_encode("ok_.-"), "data:,ok_.-");
+    }
 }
