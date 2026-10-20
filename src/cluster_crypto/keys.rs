@@ -1,7 +1,9 @@
+use super::algorithms::KeyAlgorithm;
 use super::REDACT_SECRETS;
 use anyhow::{bail, Context, Error, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bytes::Bytes;
+use der::Decode;
 use pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
 use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use rsa::RsaPrivateKey;
@@ -14,7 +16,6 @@ use std::{
     process::{Command, Stdio},
     sync::atomic::Ordering::Relaxed,
 };
-use x509_certificate::InMemorySigningKeyPair;
 
 /// PEM form an ECDSA private key was found in. PKCS#8 DER is what we store and use for key
 /// operations; this only controls how the key is written back.
@@ -133,26 +134,6 @@ impl Serialize for PrivateKey {
     }
 }
 
-impl TryFrom<&InMemorySigningKeyPair> for PrivateKey {
-    type Error = Error;
-
-    fn try_from(value: &InMemorySigningKeyPair) -> std::result::Result<Self, Self::Error> {
-        Ok(match value {
-            InMemorySigningKeyPair::Ecdsa(_, _, vec) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::copy_from_slice(vec.as_ref()))),
-            // Ed25519 doesn't expose raw key bytes in the enum variant, so we construct
-            // PrivateKey::Ed25519 from the PKCS#8 PEM via TryFrom<&SigningKey> instead.
-            InMemorySigningKeyPair::Ed25519(_) => bail!("Ed25519 private key extraction unsupported from this type"),
-            InMemorySigningKeyPair::Rsa(_, vec) => {
-                let rsa_private_key = RsaPrivateKey::from_pkcs1_der(vec.as_ref()).context(format!(
-                    "converting in memory pair to RSA PrivateKey {:?}",
-                    Bytes::copy_from_slice(vec.as_ref())
-                ))?;
-                PrivateKey::Rsa(rsa_private_key)
-            }
-        })
-    }
-}
-
 impl std::fmt::Debug for PrivateKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -164,6 +145,20 @@ impl std::fmt::Debug for PrivateKey {
 }
 
 impl PrivateKey {
+    pub(crate) fn from_pkcs8_der(pkcs8_der: &[u8]) -> Result<Self> {
+        let key = pkcs8::PrivateKeyInfo::from_der(pkcs8_der).context("decoding PKCS#8 DER")?;
+
+        Ok(
+            match KeyAlgorithm::from_algorithm_identifier(&key.algorithm).context("identifying PKCS#8 key algorithm")? {
+                KeyAlgorithm::Rsa => {
+                    PrivateKey::Rsa(RsaPrivateKey::from_pkcs1_der(key.private_key).context("parsing PKCS#8 RSA private key")?)
+                }
+                KeyAlgorithm::Ecdsa(_) => PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(Bytes::copy_from_slice(pkcs8_der))),
+                KeyAlgorithm::Ed25519 => PrivateKey::Ed25519(Bytes::copy_from_slice(pkcs8_der)),
+            },
+        )
+    }
+
     /// Copy output encoding from `original` onto `self`. No-op unless both keys are EC.
     pub(crate) fn with_encoding_of(mut self, original: &PrivateKey) -> Self {
         if let (PrivateKey::Ec(new_ec), PrivateKey::Ec(orig_ec)) = (&mut self, original) {
@@ -264,12 +259,12 @@ impl PublicKey {
         Ok(output.stdout.into())
     }
 
-    pub(crate) fn from_cert_bytes(cert_bytes: &Bytes, algo: &x509_certificate::KeyAlgorithm) -> Result<PublicKey> {
+    pub(crate) fn from_cert_bytes(cert_bytes: &Bytes, algo: &KeyAlgorithm) -> Result<PublicKey> {
         let pem = Self::pubkey_pem_from_cert_pem(cert_bytes)?;
         Ok(match algo {
-            x509_certificate::KeyAlgorithm::Ecdsa(_) => PublicKey::Ec(pem),
-            x509_certificate::KeyAlgorithm::Ed25519 => PublicKey::Ed25519(pem),
-            x509_certificate::KeyAlgorithm::Rsa => bail!("use from_rsa_bytes for RSA keys"),
+            KeyAlgorithm::Ecdsa(_) => PublicKey::Ec(pem),
+            KeyAlgorithm::Ed25519 => PublicKey::Ed25519(pem),
+            KeyAlgorithm::Rsa => bail!("use from_rsa_bytes for RSA keys"),
         })
     }
 
@@ -286,7 +281,7 @@ impl PublicKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cluster_crypto::test_utils::{generate_ec_pkcs8_pem, generate_ed25519_pkcs8_pem};
+    use crate::cluster_crypto::test_utils::generate_ec_pkcs8_pem;
     use std::io::Write;
     use std::process::{Command, Stdio};
 
@@ -339,11 +334,12 @@ mod tests {
         let parsed = pem::parse(&pkcs8_pem_bytes).expect("failed to parse PEM");
         let generated = PrivateKey::Ec(EcPrivateKey::from_pkcs8_der(bytes::Bytes::copy_from_slice(parsed.contents())));
 
-        let ed25519_bytes = generate_ed25519_pkcs8_pem();
-        let ed25519_pem = pem::parse(&ed25519_bytes).expect("failed to parse PEM");
-        let ed25519 = PrivateKey::Ed25519(bytes::Bytes::copy_from_slice(ed25519_pem.contents()));
+        let rsa = crate::cluster_crypto::crypto_utils::generate_rsa_key(2048)
+            .expect("generate_rsa_key failed")
+            .to_private_key()
+            .expect("to_private_key failed");
 
-        let copied = generated.with_encoding_of(&ed25519);
+        let copied = generated.with_encoding_of(&rsa);
         assert_eq!(
             copied.pem().expect("pem() failed").tag(),
             "PRIVATE KEY",

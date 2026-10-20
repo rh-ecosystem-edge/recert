@@ -1013,6 +1013,11 @@ certificates are just encoding+metadata for cryptographic keys, they are of no
 concern to FIPS. So as long as the keys/signatures themselves are created with
 OpenSSL, the certificate editing can be done with Rust.
 
+Certificate and key parsing/editing is done with RustCrypto's format crates
+(`x509-cert`, `der`, `spki`, `pkcs8`), which are pure ASN.1 and contain no
+cryptography. Public key derivation, signing and signature verification
+(including figuring out which cert signed which) are all done with OpenSSL.
+
 # SKID/AKID regeneration
 
 TODO: Document how we re-generate SKID/AKID fields

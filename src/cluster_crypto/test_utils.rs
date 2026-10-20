@@ -3,7 +3,35 @@
 use std::{
     io::Write,
     process::{Command, Stdio},
+    sync::OnceLock,
 };
+
+/// Whether openssl is running in FIPS mode, in which case some algorithms we support (Ed25519,
+/// SHA-1 signatures) are unavailable
+pub(crate) fn openssl_fips_mode() -> bool {
+    static FIPS_MODE: OnceLock<bool> = OnceLock::new();
+
+    *FIPS_MODE.get_or_init(|| {
+        let output = Command::new("openssl")
+            .args(["list", "-providers"])
+            .output()
+            .expect("failed to run openssl list");
+        assert!(output.status.success(), "openssl list -providers failed");
+        String::from_utf8_lossy(&output.stdout).lines().any(|line| line.trim() == "fips")
+    })
+}
+
+/// Returns early from a test that needs an algorithm openssl doesn't support in FIPS mode
+macro_rules! skip_if_fips {
+    ($algorithm:literal) => {
+        if $crate::cluster_crypto::test_utils::openssl_fips_mode() {
+            eprintln!("skipping test, {} is not available in FIPS mode", $algorithm);
+            return;
+        }
+    };
+}
+
+pub(crate) use skip_if_fips;
 
 pub(crate) fn generate_ed25519_pkcs8_pem() -> Vec<u8> {
     let output = Command::new("openssl")

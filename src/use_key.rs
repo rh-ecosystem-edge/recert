@@ -1,10 +1,10 @@
 use anyhow::{ensure, Context, Result};
-use bcder::Oid;
 use serde::ser::SerializeStruct;
 use std::{self, path::PathBuf, sync::atomic::Ordering::Relaxed};
-use x509_certificate::{rfc3280::Name, rfc4519::OID_COMMON_NAME};
+use x509_cert::name::Name;
 
 use crate::cluster_crypto::{
+    certificate::{name_attribute_values, COMMON_NAME},
     crypto_utils::{key_from_file, key_from_pem, SigningKey},
     REDACT_SECRETS,
 };
@@ -70,16 +70,16 @@ impl UseKey {
 pub(crate) struct UseKeyRules(pub Vec<UseKey>);
 
 impl UseKeyRules {
-    pub(crate) fn key_file(&self, subject: Name) -> Result<Option<UseKey>> {
-        let common_names = subject.iter_by_oid(Oid(OID_COMMON_NAME.as_ref().into())).collect::<Vec<_>>();
+    pub(crate) fn key_file(&self, subject: &Name) -> Result<Option<UseKey>> {
+        let common_names = name_attribute_values(subject, COMMON_NAME).context("converting CN to string")?;
 
         if common_names.is_empty() {
             Ok(None)
         } else {
             ensure!(common_names.len() == 1, "expected exactly one common name, found more");
-            let cn = common_names[0].to_string().context("converting CN to string")?;
+            let cn = &common_names[0];
 
-            Ok(self.0.iter().find(|use_key_rule| use_key_rule.key_cert_cn == cn).cloned())
+            Ok(self.0.iter().find(|use_key_rule| use_key_rule.key_cert_cn == *cn).cloned())
         }
     }
 }

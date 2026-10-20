@@ -31,7 +31,7 @@ pub(crate) struct ExternalCerts(HashSet<(ExternalCertsName, ExternalCertsHash)>)
 
 impl ExternalCerts {
     pub(crate) fn has_cert(&self, hashable_cert: &certificate::Certificate) -> Result<bool> {
-        let der_bytes = hashable_cert.cert.constructed_data();
+        let der_bytes = &hashable_cert.der;
         let sha256bytes = crypto_utils::sha256(der_bytes).context("sha256")?;
         let sha256hex = hex::encode(sha256bytes);
 

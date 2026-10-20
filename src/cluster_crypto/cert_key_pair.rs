@@ -1,7 +1,8 @@
 use self::key_identifiers::{HashableKeyID, HashableSerialNumber};
 use super::{
+    algorithms::KeyAlgorithm,
     certificate::Certificate,
-    crypto_utils::{self, encode_tbs_cert_to_der, sign, SigningKey},
+    crypto_utils::{self, sign, SigningKey},
     distributed_cert::DistributedCert,
     distributed_private_key::DistributedPrivateKey,
     distributed_public_key::DistributedPublicKey,
@@ -21,8 +22,7 @@ use crate::{
     rsa_key_pool::RsaKeyPool,
 };
 use anyhow::{bail, ensure, Context, Result};
-use bcder::{BitString, Oid};
-use bytes::Bytes;
+use der::{asn1::BitString, Encode};
 use fn_error_context::context;
 use p256::pkcs8::DecodePublicKey;
 use rsa::traits::PublicKeyParts;
@@ -30,10 +30,6 @@ use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tokio::{self, io::AsyncReadExt};
 use x509_cert::{ext::pkix::SubjectKeyIdentifier, serial_number::SerialNumber};
-use x509_certificate::{
-    rfc5280::{self, AlgorithmIdentifier, CertificateSerialNumber},
-    CapturedX509Certificate, EcdsaCurve, KeyAlgorithm, Sign, X509Certificate,
-};
 
 pub(crate) mod cert_mutations;
 mod key_identifiers;
@@ -57,7 +53,7 @@ pub(crate) struct CertKeyPair {
 }
 
 pub(crate) type SkidEdits = HashMap<key_identifiers::HashableKeyID, SubjectKeyIdentifier>;
-pub(crate) type SerialNumberEdits = HashMap<key_identifiers::HashableSerialNumber, CertificateSerialNumber>;
+pub(crate) type SerialNumberEdits = HashMap<key_identifiers::HashableSerialNumber, SerialNumber>;
 
 impl CertKeyPair {
     pub(crate) fn regenerate(
@@ -70,7 +66,7 @@ impl CertKeyPair {
     ) -> Result<()> {
         let alternative_certificate = crypto_customizations
             .use_cert_rules
-            .get_replacement_cert((*self.distributed_cert).borrow_mut().certificate.cert.subject_name())
+            .get_replacement_cert(&(*self.distributed_cert).borrow().certificate.tbs().subject)
             .context("evaluating replacement cert")?;
 
         match alternative_certificate {
@@ -79,7 +75,7 @@ impl CertKeyPair {
             None => {
                 let (new_cert_subject_signing_key, new_cert) =
                     self.re_sign_cert(sign_with, rsa_key_pool, crypto_customizations, skid_edits, serial_number_edits)?;
-                let new_cert = Certificate::try_from(&new_cert)?;
+                let new_cert = Certificate::from_der(&new_cert)?;
                 (*self.distributed_cert).borrow_mut().certificate_regenerated = Some(new_cert.clone());
 
                 for signee in &mut self.signees {
@@ -131,11 +127,7 @@ impl CertKeyPair {
     /// Re-signs the certificate with the given signing key. If the signing key is None, then the
     /// certificate will be self-signed.
     ///
-    /// Returns the signing keys, the new certificate, and if the certificate had a subject iden
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
+    /// Returns the new key of the certificate and the new certificate DER
     #[context["re-signing cert at locations {} with subject {}", self.distributed_cert.borrow().locations, self.distributed_cert.borrow().certificate.subject]]
     pub(crate) fn re_sign_cert(
         &mut self,
@@ -144,70 +136,51 @@ impl CertKeyPair {
         crypto_customizations: &CryptoCustomizations,
         skid_edits: &mut SkidEdits,
         serial_number_edits: &mut SerialNumberEdits,
-    ) -> Result<(SigningKey, CapturedX509Certificate)> {
+    ) -> Result<(SigningKey, Vec<u8>)> {
         // Clone the to-be-signed part of the certificate from the original certificate
-        let cert: &X509Certificate = &(*self.distributed_cert).borrow().certificate.cert;
-        let certificate: &rfc5280::Certificate = cert.as_ref();
-        let mut tbs_certificate = certificate.tbs_certificate.clone();
+        let mut tbs_certificate = (*self.distributed_cert).borrow().certificate.tbs().clone();
 
         let skid = key_identifiers::get_skid(&tbs_certificate)?;
 
         // Check which method was used to calculate the SKID. We call this early because
         // determining the method relies on the cert keys before they're regenerated
         let skid_method = if let Some(skid) = &skid {
-            Some(key_identifiers::get_cert_skid_method(&mut tbs_certificate, skid)?)
+            Some(key_identifiers::get_cert_skid_method(&tbs_certificate, skid)?)
         } else {
             None
         };
 
-        // mkoid 1.2.840.113549.1.1.1
-        let rsa_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 134, 247, 13, 1, 1, 1]));
-
-        // mkoid 1.2.840.10045.2.1
-        let ec_public_key_oid: Oid<Bytes> = Oid(Bytes::from_static(&[42, 134, 72, 206, 61, 2, 1]));
-
-        // mkoid 1.3.101.112
-        let ed25519_oid: Oid<Bytes> = Oid(Bytes::from_static(&[43, 101, 112]));
-
         let self_new_key_pair = if let Some(use_key_rule) = crypto_customizations
             .use_key_rules
-            .key_file(tbs_certificate.subject.clone())
+            .key_file(&tbs_certificate.subject)
             .context("getting use key file for cert")?
         {
             log::info!("{}", use_key_rule);
             use_key_rule.signing_key
-        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == rsa_oid {
-            let rsa_key_size = match &(*self.distributed_cert).borrow().certificate.public_key {
-                PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
-                    .context("getting rsa key")?
-                    .n()
-                    .to_radix_le(2)
-                    .len(),
-                _ => bail!("key algorithm mismatch"),
-            };
-
-            // Draw an new RSA key from the pool for this cert
-            rsa_key_pool.get(rsa_key_size).context("getting rsa key")?
-        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ec_public_key_oid {
-            if let Some(params) = &tbs_certificate.subject_public_key_info.algorithm.parameters {
-                let curve_oid = params.decode_oid()?;
-                let curve = EcdsaCurve::try_from(&curve_oid)?;
-
-                crypto_utils::generate_ec_key(curve).context("generating ec key")?
-            } else {
-                bail!("ECDSA key missing parameters");
-            }
-        } else if tbs_certificate.subject_public_key_info.algorithm.algorithm == ed25519_oid {
-            crypto_utils::generate_ed25519_key().context("generating ed25519 key")?
         } else {
-            bail!("unsupported key type");
+            match KeyAlgorithm::from_algorithm_identifier(&tbs_certificate.subject_public_key_info.algorithm)
+                .context("getting cert key algorithm")?
+            {
+                KeyAlgorithm::Rsa => {
+                    let rsa_key_size = match &(*self.distributed_cert).borrow().certificate.public_key {
+                        PublicKey::Rsa(bytes) => rsa::RsaPublicKey::from_public_key_der(bytes)
+                            .context("getting rsa key")?
+                            .n()
+                            .to_radix_le(2)
+                            .len(),
+                        _ => bail!("key algorithm mismatch"),
+                    };
+
+                    // Draw an new RSA key from the pool for this cert
+                    rsa_key_pool.get(rsa_key_size).context("getting rsa key")?
+                }
+                KeyAlgorithm::Ecdsa(curve) => crypto_utils::generate_ec_key(curve).context("generating ec key")?,
+                KeyAlgorithm::Ed25519 => crypto_utils::generate_ed25519_key().context("generating ed25519 key")?,
+            }
         };
 
         // Replace just the public key info in the to-be-signed part with the newly generated key
-        tbs_certificate.subject_public_key_info = rfc5280::SubjectPublicKeyInfo {
-            algorithm: KeyAlgorithm::from(&self_new_key_pair.in_memory_signing_key_pair).into(),
-            subject_public_key: BitString::new(0, self_new_key_pair.in_memory_signing_key_pair.public_key_data()),
-        };
+        tbs_certificate.subject_public_key_info = self_new_key_pair.public_key_info().clone();
 
         // If we weren't given a key to sign with, we use the new key we just generated
         // as this is a root (self-signed) certificate
@@ -219,7 +192,7 @@ impl CertKeyPair {
 
         // TODO: No need to change the signature algorithm once we know how to re-sign ECDSA,
         // we're only forced to change this because we make all certs RSA
-        let signature_algorithm: AlgorithmIdentifier = signing_key.in_memory_signing_key_pair.signature_algorithm()?.into();
+        let signature_algorithm = signing_key.signature_algorithm();
         tbs_certificate.signature = signature_algorithm.clone();
 
         // Fix SKID
@@ -242,6 +215,7 @@ impl CertKeyPair {
         // fix_akid looks it up
         let akid = key_identifiers::get_akid(&tbs_certificate).context("getting akid")?;
         if let Some(mut akid) = akid {
+            cert_mutations::ensure_akid_issuer_unaffected(&akid, &crypto_customizations.cn_san_replace_rules)?;
             fix_akid(&mut akid, skid_edits, serial_number_edits)?;
 
             key_identifiers::set_akid(&mut tbs_certificate, akid).context("setting akid")?;
@@ -252,7 +226,7 @@ impl CertKeyPair {
         let new_serial_number = serial_number.clone(); // TODO: Generate new serial number
 
         let insert_result = serial_number_edits.insert(
-            key_identifiers::HashableSerialNumber(serial_number.into_bytes().into()),
+            key_identifiers::HashableSerialNumber(serial_number.as_bytes().into()),
             new_serial_number.clone(),
         );
 
@@ -270,27 +244,20 @@ impl CertKeyPair {
         )
         .context("mutating cert")?;
 
-        // The to-be-signed certificate, encoded to DER, is the bytes we sign.
-        // fix_ed25519_alg_id: the vendored x509-certificate crate adds NULL
-        // parameters to Ed25519 AlgorithmIdentifiers, but RFC 8410 requires them absent.
-        let tbs_der = crypto_utils::fix_ed25519_alg_id(&encode_tbs_cert_to_der(&tbs_certificate)?);
+        // The to-be-signed certificate, encoded to DER, is the bytes we sign
+        let tbs_der = tbs_certificate.to_der().context("encoding TBS certificate")?;
 
         // Generate the actual signature
         let signature = sign(signing_key, &tbs_der).context("signing")?;
 
         // Create a full certificate by combining the to-be-signed part with the signature itself
-        let cert = rfc5280::Certificate {
+        let cert = x509_cert::Certificate {
             tbs_certificate,
             signature_algorithm,
-            signature: BitString::new(0, Bytes::copy_from_slice(signature.as_ref())),
+            signature: BitString::from_bytes(&signature).context("encoding signature")?,
         };
 
-        // Encode the entire cert as DER and reload it into a CapturedX509Certificate which is the
-        // type we use in our structs.
-        let cert_der = crypto_utils::fix_ed25519_alg_id(&X509Certificate::from(cert).encode_der()?);
-        let cert = CapturedX509Certificate::from_der(cert_der)?;
-
-        Ok((self_new_key_pair, cert))
+        Ok((self_new_key_pair, cert.to_der().context("encoding certificate")?))
     }
 
     pub(crate) async fn commit_to_etcd_and_disk(&self, etcd_client: &InMemoryK8sEtcd) -> Result<()> {
@@ -340,7 +307,6 @@ impl CertKeyPair {
                 .certificate_regenerated
                 .clone()
                 .context("certificate was not regenerated")?
-                .cert
                 .encode_pem(),
         )?;
 
@@ -392,7 +358,6 @@ impl CertKeyPair {
                 .clone()
                 .certificate_regenerated
                 .context("certificate was not regenerated")?
-                .cert
                 .encode_pem(),
         )?;
 
@@ -446,7 +411,7 @@ fn fix_akid(
             .get(&HashableSerialNumber(serial_number.as_bytes().into()))
             .context("could not find matching akid serial number in chain")?;
 
-        akid.authority_cert_serial_number = Some(SerialNumber::new(&matching_sn.clone().into_bytes())?);
+        akid.authority_cert_serial_number = Some(matching_sn.clone());
     }
 
     Ok(())

@@ -5,7 +5,7 @@ use crate::cluster_crypto::{
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::SecondsFormat;
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
@@ -237,13 +237,8 @@ pub(crate) fn add_recert_edited_annotation(_resource: &mut Value, _yaml_location
     Ok(())
 }
 
-fn time_rfc3339(asn1time: &x509_certificate::asn1time::Time) -> String {
-    match asn1time {
-        x509_certificate::asn1time::Time::UtcTime(time) => time.to_rfc3339_opts(SecondsFormat::Secs, true),
-        x509_certificate::asn1time::Time::GeneralTime(time) => {
-            DateTime::<Utc>::from((*time).clone()).to_rfc3339_opts(SecondsFormat::Secs, true)
-        }
-    }
+fn time_rfc3339(time: &x509_cert::time::Time) -> Result<String> {
+    Ok(crate::cluster_crypto::certificate::time_to_chrono(time)?.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 /// Updates the auth.openshift.io/certificate-not-{after,before} annotations to match the
@@ -254,14 +249,13 @@ fn time_rfc3339(asn1time: &x509_certificate::asn1time::Time) -> String {
 /// Reference:
 /// - https://github.com/openshift/library-go/blob/master/pkg/operator/certrotation/signer.go#L85
 pub(crate) fn update_auth_certificate_annotations(resource: &mut Value, certificate: &Certificate) -> Result<()> {
-    let cert: &x509_certificate::X509Certificate = &certificate.cert;
-    let certificate: &x509_certificate::rfc5280::Certificate = cert.as_ref();
+    let validity = &certificate.tbs().validity;
 
     if let Some(not_before) = resource.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-not-before") {
-        *not_before = Value::String(time_rfc3339(&certificate.tbs_certificate.validity.not_before));
+        *not_before = Value::String(time_rfc3339(&validity.not_before)?);
     }
     if let Some(not_after) = resource.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-not-after") {
-        *not_after = Value::String(time_rfc3339(&certificate.tbs_certificate.validity.not_after));
+        *not_after = Value::String(time_rfc3339(&validity.not_after)?);
     }
 
     Ok(())
