@@ -3,7 +3,7 @@
 set -euo pipefail
 
 workdir=$(setup_test_workdir "crypto_use_key")
-crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key)
+crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key system-admin-ca.crt system-admin-ca.key)
 
 # Copy custom key outside the scanned crypto dir
 cp "${FIXTURES_DIR}/custom.key" "${workdir}/custom.key"
@@ -15,6 +15,7 @@ crypto_dirs:
   - ${crypto_dir}
 use_key_rules:
   - "rsa2048-root-ca:${workdir}/custom.key"
+  - "system:admin:${workdir}/custom.key"
 force_expire: true
 summary_file: ${workdir}/summary.yaml
 EOF
@@ -25,5 +26,10 @@ RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success > /dev/null
 ca_modulus=$(openssl x509 -noout -modulus -in "${crypto_dir}/ca.crt" 2>/dev/null)
 assert_eq "$ca_modulus" "$custom_key_modulus" \
     "CA cert should use the custom key after recert"
+
+# A cert whose CN itself contains a colon should be matched by use_key_rules
+sysadmin_modulus=$(openssl x509 -noout -modulus -in "${crypto_dir}/system-admin-ca.crt" 2>/dev/null)
+assert_eq "$sysadmin_modulus" "$custom_key_modulus" \
+    "cert with colon in CN should use the custom key after recert"
 
 assert_summary_valid "${workdir}/summary.yaml"
