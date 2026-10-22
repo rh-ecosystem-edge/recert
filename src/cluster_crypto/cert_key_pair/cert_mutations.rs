@@ -66,19 +66,16 @@ fn extend_certificate_expiration(tbs_certificate: &mut TbsCertificate) -> Result
 }
 
 fn get_certificate_expiration(tbs_certificate: &mut TbsCertificate) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let (current_not_before, current_not_after) = match &tbs_certificate.validity.not_before {
-        x509_certificate::asn1time::Time::UtcTime(not_before) => {
-            match &tbs_certificate.validity.not_after {
-                x509_certificate::asn1time::Time::UtcTime(not_after) => {
-                    // Dereferencing is the only way to get a chrono::DateTime out of the
-                    // x509_certificate::asn1time::UtcTime struct.
-                    (*(not_before.clone()), *(not_after.clone()))
-                }
-                x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
-            }
-        }
-        x509_certificate::asn1time::Time::GeneralTime(_) => bail!("GeneralTime not supported"),
+    let current_not_before: DateTime<Utc> = match &tbs_certificate.validity.not_before {
+        x509_certificate::asn1time::Time::UtcTime(not_before) => *(not_before.clone()),
+        x509_certificate::asn1time::Time::GeneralTime(not_before) => (*not_before).clone().into(),
     };
+
+    let current_not_after: DateTime<Utc> = match &tbs_certificate.validity.not_after {
+        x509_certificate::asn1time::Time::UtcTime(not_after) => *(not_after.clone()),
+        x509_certificate::asn1time::Time::GeneralTime(not_after) => (*not_after).clone().into(),
+    };
+
     Ok((current_not_before, current_not_after))
 }
 
