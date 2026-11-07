@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${1:-${SCRIPT_DIR}/generated}"
+ECDSA_JWS="${SCRIPT_DIR}/../lib/ecdsa_jws.py"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -101,20 +102,32 @@ openssl pkey -in "${OUT_DIR}/standalone-ec.key" -pubout -out "${OUT_DIR}/standal
 openssl genpkey -algorithm Ed25519 -out "${OUT_DIR}/standalone-ed25519.key" 2>/dev/null
 openssl pkey -in "${OUT_DIR}/standalone-ed25519.key" -pubout -out "${OUT_DIR}/standalone-ed25519.pub" 2>/dev/null
 
-# JWTs signed by matching CA keys (copied into crypto dirs as sa/token)
+# JWTs signed by matching CA keys (copied into crypto dirs as sa/token).
+# ECDSA JWTs use the JWS R||S signature form; an optional 4th argument also writes the same token with
+# the raw OpenSSL DER signature that older recert versions produced.
 sign_jwt() {
     local alg="$1"
     local key="$2"
     local out="$3"
-    local header payload sig tmpdata
+    local legacy_der_out="${4:-}"
+    local header payload sig tmpdata digest
     header=$(printf '%s' "{\"alg\":\"${alg}\",\"typ\":\"JWT\",\"kid\":\"fixture\"}" | b64url)
     payload=$(printf '%s' '{"sub":"recert-test","iss":"recert-integration"}' | b64url)
     case "$alg" in
-        RS256|ES256)
-            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha256 -sign "$key" -binary | b64url)
-            ;;
-        ES384)
-            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha384 -sign "$key" -binary | b64url)
+        RS256|ES256|ES384)
+            digest="-sha256"
+            if [[ "$alg" == "ES384" ]]; then digest="-sha384"; fi
+            tmpdata=$(mktemp)
+            printf '%s' "${header}.${payload}" | openssl dgst "$digest" -sign "$key" -binary > "$tmpdata"
+            if [[ "$alg" == ES* ]]; then
+                if [[ -n "$legacy_der_out" ]]; then
+                    printf '%s' "${header}.${payload}.$(b64url < "$tmpdata")" > "$legacy_der_out"
+                fi
+                sig=$(python3 "${ECDSA_JWS}" der-to-jose "$alg" < "$tmpdata" | b64url)
+            else
+                sig=$(b64url < "$tmpdata")
+            fi
+            rm -f "$tmpdata"
             ;;
         EdDSA)
             tmpdata=$(mktemp)
@@ -131,8 +144,8 @@ sign_jwt() {
 }
 
 sign_jwt "RS256" "${OUT_DIR}/rsa2048-ca.key" "${OUT_DIR}/jwt-rs256"
-sign_jwt "ES256" "${OUT_DIR}/ec-p256-ca.key" "${OUT_DIR}/jwt-es256"
-sign_jwt "ES384" "${OUT_DIR}/ec-p384-ca.key" "${OUT_DIR}/jwt-es384"
+sign_jwt "ES256" "${OUT_DIR}/ec-p256-ca.key" "${OUT_DIR}/jwt-es256" "${OUT_DIR}/jwt-es256-der"
+sign_jwt "ES384" "${OUT_DIR}/ec-p384-ca.key" "${OUT_DIR}/jwt-es384" "${OUT_DIR}/jwt-es384-der"
 sign_jwt "EdDSA" "${OUT_DIR}/ed25519-ca.key" "${OUT_DIR}/jwt-eddsa"
 
 rm -f "${OUT_DIR}"/*.srl
