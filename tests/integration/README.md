@@ -46,6 +46,7 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_invalid_kubelet_pull_secret` | Invalid kubelet config.json is skipped with a warning while etcd and valid filesystem pull-secret updates continue |
 | `test_etcd_tls_secret_regen` | TLS Secret regen round-trip |
 | `test_etcd_cert_manager` | cert-manager Certificate CR rename (spiffe / comma CN-SAN) |
+| `test_etcd_hostname_rename` | etcd static pod hostname rename with a reserved seed hostname (`existing`) and `REVISION`/`true` value collisions |
 | `test_etcd_pem_crlf` | Mixed/CRLF PEM line endings |
 | `test_etcd_json_encode` | JSON-mode etcd write-back stays JSON (not protobuf) |
 | `test_etcd_bytearray_utf8` | ByteArray decode preserves multi-byte UTF-8 |
