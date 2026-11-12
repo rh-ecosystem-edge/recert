@@ -7,7 +7,7 @@ COPY vendor/ vendor/
 COPY .cargo/ .cargo/
 RUN cargo build --release --bin recert
 
-FROM docker.io/library/debian:bookworm
+FROM docker.io/library/debian:trixie
 WORKDIR /app
 
 ARG ETCD_VERSION=v3.5.17
