@@ -64,6 +64,9 @@ CONFIG_MAP = {
 }
 
 
+POD_TEMPLATE_WORKLOADS = ("Deployment", "DaemonSet", "StatefulSet")
+
+
 def fill(dst, defaults):
     for key, value in defaults.items():
         if key not in dst or dst[key] is None:
@@ -93,13 +96,13 @@ def complete_pod_spec(spec):
 
 def complete(obj):
     kind = obj.get("kind")
-    if "metadata" in obj or kind in ("Secret", "Deployment", "ConfigMap"):
+    if "metadata" in obj or kind in ("Secret", "ConfigMap") + POD_TEMPLATE_WORKLOADS:
         obj["metadata"] = complete_metadata(obj.get("metadata") or {})
     if kind == "Secret":
         fill(obj, SECRET)
     elif kind == "ConfigMap":
         fill(obj, CONFIG_MAP)
-    elif kind == "Deployment":
+    elif kind in POD_TEMPLATE_WORKLOADS:
         spec = obj.setdefault("spec", {})
         selector = spec.get("selector") or {}
         fill(selector, LABEL_SELECTOR)
