@@ -37,6 +37,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+echo "Running integration helper unit tests..."
+python3 "${SCRIPT_DIR}/lib/test_ecdsa_jws.py"
+
 echo "Running integration tests..."
 echo "  Binary:   $RECERT_BIN"
 echo "  Fixtures: $FIXTURES_DIR"
