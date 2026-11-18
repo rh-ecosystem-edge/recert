@@ -42,6 +42,7 @@ See [hack/assets](hack/assets/README.md)
 |-------|---------|------|
 | Unit | `make rust-test` (or `cargo test`) | Rust unit tests |
 | E2E crypto | `make e2e-test` | Fast host-runner crypto-dir smoke (RSA/ECDSA/Ed25519, JWT, standalone pubs). On failure, uploads `e2e-failure/` in CI. |
+| E2E crypto (container) | `make e2e-test-container` | The same suite in `Dockerfile.integration`'s builder image, for hosts where the host build can't run (macOS: the vendor tree is filtered for x86_64 Linux, and OpenSSL 3 is required). |
 | Integration | `make integration-test` | Containerized etcd + scenario suite. Owns config CLI, etcd, CN/SAN, PKCS#8 EC, multi-alg JWT, standalone keys, dry-run/force-expire. |
 
 See [tests/integration/README.md](tests/integration/README.md) for the full
