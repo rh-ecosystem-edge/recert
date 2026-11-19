@@ -44,6 +44,7 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_crypto_ip_change_only_prunes` | IP-change-only pruning |
 | `test_crypto_kubeconfig_embedded` | Embedded kubeconfig certs |
 | `test_crypto_summary_redaction` | Summary redaction |
+| `test_crypto_ssh_host_keys` | `regenerate_server_ssh_keys` replaces every host key type; refused with `dry_run` |
 | `test_etcd_connect` / `bad_endpoint` | etcd connectivity |
 | `test_etcd_invalid_kubelet_pull_secret` | Invalid kubelet config.json is skipped with a warning while etcd and valid filesystem pull-secret updates continue |
 | `test_etcd_install_config_cidr_chrony` | `install_config`, `machine_network_cidr` (runs after, so it wins) and `chrony_config`; missing `install-config` key is an error, not a panic |
