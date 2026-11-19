@@ -1,7 +1,7 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
-    ocp_postprocess::rename_utils::{fix_api_server_arguments_ip, fix_ip},
+    ocp_postprocess::rename_utils::{data_str, fix_api_server_arguments_ip, fix_ip},
 };
 use anyhow::{bail, ensure, Context, Result};
 use futures_util::future::join_all;
@@ -73,8 +73,7 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
         .as_object_mut()
         .context("data not an object")?;
 
-    let mut config: Value = serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
-        .context("deserializing config.yaml")?;
+    let mut config: Value = serde_yaml::from_slice(data_str(data, "config.yaml")?.as_bytes()).context("deserializing config.yaml")?;
 
     // Check if the current config contains the original IP before making changes
     let current_url = config
@@ -168,8 +167,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
                     .context("data not an object")?;
 
                 let mut config: Value =
-                    serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
-                        .context("deserializing config.yaml")?;
+                    serde_yaml::from_slice(data_str(data, "config.yaml")?.as_bytes()).context("deserializing config.yaml")?;
 
                 fix_api_server_arguments_ip(&mut config, original_ip, ip)?;
 

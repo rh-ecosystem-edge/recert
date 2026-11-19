@@ -7,12 +7,22 @@ use futures_util::future::join_all;
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::io::BufRead;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::file_utils;
+
+/// Returns a string value from a ConfigMap/object data map without panicking on
+/// a missing key. Indexing a `serde_json::Map` directly panics (`no entry found
+/// for key`), which can be reached with real cluster data that lacks the key.
+pub(crate) fn data_str<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a str> {
+    map.get(key)
+        .with_context(|| format!("{key} not found"))?
+        .as_str()
+        .with_context(|| format!("{key} not a string"))
+}
 
 pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &str) -> Result<String> {
     // In 4.15 this file might just be empty (e.g. /etc/machine-config-daemon/noorig/etc/kubernetes/apiserver-url.env.mcdnoorig)
@@ -774,7 +784,7 @@ pub(crate) fn fix_machineconfig(machineconfig: &mut Value, cluster_domain: &str)
         .as_object_mut()
         .context("annotations not an object")?;
 
-    let original_data = file_contents["source"].as_str().context("source not a string")?;
+    let original_data = data_str(file_contents, "source")?;
 
     let (decoded, _fragment) = data_url::DataUrl::process(original_data)
         .ok()
@@ -967,5 +977,28 @@ mod tests {
             metadata["token_endpoint"],
             "https://oauth-openshift.apps.new.example.com/oauth/token"
         );
+    }
+
+    #[test]
+    fn test_data_str_returns_value() {
+        let mut map = Map::new();
+        map.insert("config.yaml".to_string(), Value::String("foo: bar".to_string()));
+        assert_eq!(data_str(&map, "config.yaml").unwrap(), "foo: bar");
+    }
+
+    #[test]
+    fn test_data_str_missing_key_errors_without_panicking() {
+        let mut map = Map::new();
+        map.insert("other".to_string(), Value::String("value".to_string()));
+        let err = data_str(&map, "config.yaml").unwrap_err();
+        assert!(err.to_string().contains("config.yaml not found"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_data_str_non_string_errors() {
+        let mut map = Map::new();
+        map.insert("config.yaml".to_string(), Value::from(42));
+        let err = data_str(&map, "config.yaml").unwrap_err();
+        assert!(err.to_string().contains("config.yaml not a string"), "unexpected error: {err}");
     }
 }
