@@ -47,6 +47,7 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_crypto_ssh_host_keys` | `regenerate_server_ssh_keys` replaces every host key type; refused with `dry_run` |
 | `test_etcd_connect` / `bad_endpoint` | etcd connectivity |
 | `test_etcd_invalid_kubelet_pull_secret` | Invalid kubelet config.json is skipped with a warning while etcd and valid filesystem pull-secret updates continue |
+| `test_etcd_cluster_rename` | `cluster_rename` rewrites domain, API URLs, apps domain and infra ID across the required objects ([`lib/cluster_rename_fixtures.py`](lib/cluster_rename_fixtures.py)) and on-disk kubeconfig / `apiserver-url.env`; malformed value rejected (re-seeds the baseline) |
 | `test_etcd_install_config_cidr_chrony` | `install_config`, `machine_network_cidr` (runs after, so it wins) and `chrony_config`; missing `install-config` key is an error, not a panic |
 | `test_etcd_ip_rename` | `ip` single- and dual-stack: etcd pod/scripts/endpoints/secrets, apiserver etcd-servers, OVN annotation, on-disk static pods; nodes/pods deleted; IP count mismatch rejected (re-seeds the baseline) |
 | `test_etcd_user_ca_bundle` | `user_ca_bundle` (+ `proxy_trusted_ca_bundle: "user-ca-bundle:"`) rewrites the user bundle, ControllerConfig/MachineConfig/anchor copies and every injected merged bundle; documented errors |

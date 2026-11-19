@@ -147,6 +147,15 @@ clusters:
 - cluster:
     server: https://localhost:6443
   name: local
+contexts:
+- context:
+    cluster: local
+    user: webhook
+  name: webhook
+current-context: webhook
+users:
+- name: webhook
+  user: {}
 KUBECONFIG
 }
 
