@@ -56,6 +56,7 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_json_encode` | JSON-mode etcd write-back stays JSON (not protobuf) |
 | `test_etcd_bytearray_utf8` | ByteArray decode preserves multi-byte UTF-8 |
 | `test_etcd_z_encryption` | aesgcm encryption round-trip (sorts last; mutates shared keyspace) |
+| `test_etcd_z_encryption_aescbc` | aescbc round-trip as a rotation from aesgcm key 1; ciphertext decrypted independently with `openssl` |
 
 Helpers live in [`lib/helpers.sh`](lib/helpers.sh) (`run_crypto_algo_test`,
 `run_jwt_algo_test`, `run_encryption_roundtrip`, `assert_jwt_verifies`, etcd helpers
