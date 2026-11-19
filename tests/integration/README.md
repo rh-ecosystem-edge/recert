@@ -50,6 +50,10 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_cluster_rename` | `cluster_rename` rewrites domain, API URLs, apps domain and infra ID across the required objects ([`lib/cluster_rename_fixtures.py`](lib/cluster_rename_fixtures.py)) and on-disk kubeconfig / `apiserver-url.env`; malformed value rejected (re-seeds the baseline) |
 | `test_etcd_install_config_cidr_chrony` | `install_config`, `machine_network_cidr` (runs after, so it wins) and `chrony_config`; missing `install-config` key is an error, not a panic |
 | `test_etcd_ip_rename` | `ip` single- and dual-stack: etcd pod/scripts/endpoints/secrets, apiserver etcd-servers, OVN annotation, on-disk static pods; nodes/pods deleted; IP count mismatch rejected (re-seeds the baseline) |
+| `test_etcd_kubeadmin_password` | kubeadmin hash: update, delete on empty, error when the Secret is missing |
+| `test_etcd_postprocess_defaults` | Always-on postprocess: leases / node-kubeconfigs deleted, CVO Available=False, OLM `olmcahash`, apiserver dep-/spec-hash annotations (re-seeds the baseline first) |
+| `test_etcd_proxy_rename` | `proxy` spec values go to the Proxy spec, status values to Proxy status, operator observedConfigs, workload env, MachineConfig and on-disk `proxy.env`; malformed value rejected |
+| `test_etcd_pull_secret_rename` | Pull secret replaced in the Secret, kubelet MachineConfig, and on-disk `config.json` |
 | `test_etcd_user_ca_bundle` | `user_ca_bundle` (+ `proxy_trusted_ca_bundle: "user-ca-bundle:"`) rewrites the user bundle, ControllerConfig/MachineConfig/anchor copies and every injected merged bundle; documented errors |
 | `test_etcd_tls_secret_regen` | TLS Secret regen round-trip |
 | `test_etcd_cert_manager` | cert-manager Certificate CR rename (spiffe / comma CN-SAN) |
