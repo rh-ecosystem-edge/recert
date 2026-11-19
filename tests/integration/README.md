@@ -10,6 +10,8 @@ second integration suite.
 
 ```bash
 make integration-test
+# Run only scenarios matching test_<tag>_*:
+make integration-test INTEGRATION_ARGS="--tag etcd_kubeadmin"
 ```
 
 Builds `Dockerfile.integration`, seeds etcd, generates fixtures via

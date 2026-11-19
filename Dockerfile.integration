@@ -39,5 +39,5 @@ ENTRYPOINT ["/bin/bash", "-c", "\
     timeout 30 bash -c 'until etcdctl endpoint health --endpoints=localhost:2379 2>/dev/null; do sleep 0.5; done' && \
     bash /app/tests/integration/fixtures/seed_etcd.sh && \
     bash /app/tests/integration/fixtures/generate.sh && \
-    bash /app/tests/integration/run_tests.sh \
-"]
+    bash /app/tests/integration/run_tests.sh \"$@\" \
+", "--"]
