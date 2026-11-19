@@ -128,21 +128,14 @@ pub(crate) fn fix_api_server_arguments_ip(config: &mut Value, original_ip: &str,
         .context("etcd-servers not an array")?
         .clone();
 
-    let original_ip = if original_ip.contains(':') {
-        format!("[{original_ip}]")
-    } else {
-        original_ip.to_string()
-    };
-
-    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-
     let new_etcd_servers = original_etcd_servers
         .iter()
         .map(|etcd_server| {
-            Ok(Value::String(etcd_server.as_str().context("etcd server not a string")?.replace(
-                format!("https://{original_ip}").as_str(),
-                format!("https://{ip}").as_str(),
-            )))
+            Ok(Value::String(fix_ip(
+                etcd_server.as_str().context("etcd server not a string")?,
+                original_ip,
+                ip,
+            )?))
         })
         .collect::<Result<Vec<_>>>()
         .context("replacing etcd servers")?;
@@ -487,9 +480,11 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
     Ok(pod_yaml)
 }
 
-pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
-    let mut pod_yaml = pod_yaml.to_string();
+fn is_ip_token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '.' || c == '_'
+}
 
+pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
     let original_ip = if original_ip.contains(':') {
         format!("[{original_ip}]")
     } else {
@@ -497,8 +492,28 @@ pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<Stri
     };
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-    pod_yaml = pod_yaml.replace(original_ip.as_str(), ip.as_str()).to_string();
-    Ok(pod_yaml)
+
+    // Replace only whole address tokens: a bare substring replace would also hit the address when
+    // it is a prefix of a longer one (10.0.0.1 inside 10.0.0.10), a CIDR, or an unrelated value.
+    let mut out = String::with_capacity(pod_yaml.len());
+    let mut last = 0;
+
+    for (start, _) in pod_yaml.match_indices(original_ip.as_str()) {
+        let end = start + original_ip.len();
+
+        let starts_token = pod_yaml[..start].chars().next_back().map_or(true, |c| !is_ip_token_char(c));
+        let ends_token = pod_yaml[end..].chars().next().map_or(true, |c| !is_ip_token_char(c));
+
+        if starts_token && ends_token {
+            out.push_str(&pod_yaml[last..start]);
+            out.push_str(&ip);
+            last = end;
+        }
+    }
+
+    out.push_str(&pod_yaml[last..]);
+
+    Ok(out)
 }
 
 pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
@@ -973,6 +988,63 @@ mod tests {
         map.insert("config.yaml".to_string(), Value::from(42));
         let err = data_str(&map, "config.yaml").unwrap_err();
         assert!(err.to_string().contains("config.yaml not a string"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_fix_api_server_arguments_ip_replaces_target_only() {
+        let mut config = serde_json::json!({
+            "apiServerArguments": {
+                "etcd-servers": [
+                    "https://192.168.126.10:2379",
+                    "https://192.168.126.100:2379",
+                    "https://localhost:2379"
+                ]
+            }
+        });
+
+        fix_api_server_arguments_ip(&mut config, "192.168.126.10", "192.168.127.20").unwrap();
+
+        assert_eq!(
+            config.pointer("/apiServerArguments/etcd-servers"),
+            Some(&serde_json::json!([
+                "https://192.168.127.20:2379",
+                "https://192.168.126.100:2379",
+                "https://localhost:2379"
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_fix_api_server_arguments_ip_missing_etcd_servers_errors() {
+        let mut config = serde_json::json!({"apiServerArguments": {}});
+        let err = fix_api_server_arguments_ip(&mut config, "192.168.126.10", "192.168.127.20").unwrap_err();
+        assert!(err.to_string().contains("etcd-servers not found"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_fix_ip_replaces_whole_tokens_only() {
+        let text = "peer=https://192.0.2.10:2379\ncidr=192.0.2.10/24\nlonger=192.0.2.100\nother=10.0.0.10\n";
+
+        let replaced = fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap();
+
+        assert!(replaced.contains("peer=https://192.0.2.20:2379"));
+        assert!(replaced.contains("cidr=192.0.2.20/24"));
+        assert!(replaced.contains("longer=192.0.2.100"), "must not match inside a longer address");
+        assert!(replaced.contains("other=10.0.0.10"));
+    }
+
+    #[test]
+    fn test_fix_ip_ipv6_is_bracketed() {
+        let text = "endpoints: [https://[fc00::1]:2379]\n";
+
+        assert_eq!(fix_ip(text, "fc00::1", "fc00::2").unwrap(), "endpoints: [https://[fc00::2]:2379]\n");
+    }
+
+    #[test]
+    fn test_fix_ip_without_match_is_unchanged() {
+        let text = "no addresses here\n";
+
+        assert_eq!(fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap(), text);
     }
 
     fn container(name: Value) -> Value {

@@ -47,6 +47,7 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_connect` / `bad_endpoint` | etcd connectivity |
 | `test_etcd_invalid_kubelet_pull_secret` | Invalid kubelet config.json is skipped with a warning while etcd and valid filesystem pull-secret updates continue |
 | `test_etcd_install_config_cidr_chrony` | `install_config`, `machine_network_cidr` (runs after, so it wins) and `chrony_config`; missing `install-config` key is an error, not a panic |
+| `test_etcd_ip_rename` | `ip` single- and dual-stack: etcd pod/scripts/endpoints/secrets, apiserver etcd-servers, OVN annotation, on-disk static pods; nodes/pods deleted; IP count mismatch rejected (re-seeds the baseline) |
 | `test_etcd_tls_secret_regen` | TLS Secret regen round-trip |
 | `test_etcd_cert_manager` | cert-manager Certificate CR rename (spiffe / comma CN-SAN) |
 | `test_etcd_pem_crlf` | Mixed/CRLF PEM line endings |

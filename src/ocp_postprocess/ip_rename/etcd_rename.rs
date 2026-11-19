@@ -377,11 +377,19 @@ pub(crate) async fn fix_etcd_secrets(etcd_client: &Arc<InMemoryK8sEtcd>, origina
                     if let Some(certificate_hostnames) =
                         secret.pointer_mut("/metadata/annotations/auth.openshift.io~1certificate-hostnames")
                     {
+                        let hostnames = certificate_hostnames
+                            .as_str()
+                            .context("auth.openshift.io/certificate-hostnames annotation not a string")?;
+
+                        // The annotation is a comma-separated host list, so only whole
+                        // entries are replaced. A plain replace would also rewrite a
+                        // longer IP (192.168.126.100 for 192.168.126.10).
                         *certificate_hostnames = serde_json::Value::String(
-                            certificate_hostnames
-                                .as_str()
-                                .context("aut.openshift.io/certificate-hostnames annotation not a string")?
-                                .replace(original_ip, ip),
+                            hostnames
+                                .split(',')
+                                .map(|host| if host.trim() == original_ip { ip } else { host })
+                                .collect::<Vec<_>>()
+                                .join(","),
                         );
                     }
 
