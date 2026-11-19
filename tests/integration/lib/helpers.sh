@@ -329,6 +329,84 @@ etcd_get() {
     etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$1" --print-value-only
 }
 
+etcd_del() {
+    local key
+    for key in "$@"; do
+        etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$key" >/dev/null
+    done
+}
+
+# Binary-safe substring check: recert re-encodes Secrets/ConfigMaps/Deployments as
+# protobuf on commit, so values may contain NUL bytes that $(etcd_get ...) would mangle.
+etcd_has() {
+    etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$1" --print-value-only | grep -aF -- "$2" >/dev/null
+}
+
+assert_etcd_has() {
+    local key="$1" needle="$2" msg="${3:-etcd ${1} should contain ${2}}"
+    if ! etcd_has "$key" "$needle"; then
+        echo "FAIL: $msg" >&2
+        return 1
+    fi
+}
+
+assert_etcd_lacks() {
+    local key="$1" needle="$2" msg="${3:-etcd ${1} should not contain ${2}}"
+    if etcd_has "$key" "$needle"; then
+        echo "FAIL: $msg" >&2
+        return 1
+    fi
+}
+
+assert_etcd_absent() {
+    local key="$1" msg="${2:-etcd key ${1} should be deleted}"
+    assert_eq "$(etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$key" --keys-only)" "" "$msg"
+}
+
+# Print the value at JSON POINTER inside the object stored at etcd KEY. Strings
+# print raw; anything else prints canonical JSON so it can be compared with assert_eq.
+etcd_json_pointer() {
+    etcd_get "$1" | python3 -c '
+import json, sys
+o = json.load(sys.stdin)
+for part in sys.argv[1].strip("/").split("/"):
+    o = o[int(part)] if isinstance(o, list) else o[part]
+print(o if isinstance(o, str) else json.dumps(o, sort_keys=True))
+' "$2"
+}
+
+# Print the decoded contents of file PATH inside the MachineConfig stored at etcd KEY.
+etcd_mc_file() {
+    etcd_get "$1" | python3 -c '
+import json, sys, urllib.parse
+path = sys.argv[1]
+for f in json.load(sys.stdin)["spec"]["config"]["storage"]["files"]:
+    if f["path"] == path:
+        src = f["contents"]["source"]
+        assert src.startswith("data:,"), src
+        sys.stdout.write(urllib.parse.unquote(src[len("data:,"):]))
+        break
+else:
+    sys.exit("no file %s in machineconfig" % path)
+' "$2"
+}
+
+# Emit a MachineConfig JSON holding a single file PATH with plain-text CONTENTS.
+machineconfig_json() {
+    python3 -c '
+import json, sys, urllib.parse
+name, path, contents = sys.argv[1:4]
+print(json.dumps({
+    "apiVersion": "machineconfiguration.openshift.io/v1",
+    "kind": "MachineConfig",
+    "metadata": {"name": name},
+    "spec": {"config": {"ignition": {"version": "3.2.0"}, "storage": {"files": [
+        {"path": path, "mode": 420, "overwrite": True,
+         "contents": {"source": "data:," + urllib.parse.quote(contents, safe="")}}]}}},
+}))
+' "$@"
+}
+
 etcd_put_json() {
     local key="$1"
     local completed

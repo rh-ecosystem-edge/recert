@@ -54,4 +54,6 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_z_encryption` | Encryption round-trip (sorts last; mutates shared keyspace) |
 
 Helpers live in [`lib/helpers.sh`](lib/helpers.sh) (`run_crypto_algo_test`,
-`run_jwt_algo_test`, `assert_jwt_verifies`, etcd helpers).
+`run_jwt_algo_test`, `assert_jwt_verifies`, etcd helpers such as
+`etcd_has`/`assert_etcd_has` for protobuf-encoded values and
+`machineconfig_json`/`etcd_mc_file` for MachineConfig file contents).
