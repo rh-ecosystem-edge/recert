@@ -1,9 +1,9 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
-    ocp_postprocess::rename_utils::{data_str, fix_api_server_arguments_ip, fix_ip},
+    ocp_postprocess::rename_utils::{data_str, fix_api_server_arguments_ip, fix_ip, unique_container_mut},
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use futures_util::future::join_all;
 use serde_json::Value;
 use std::net::Ipv6Addr;
@@ -456,51 +456,42 @@ pub(crate) async fn fix_oauth_apiserver_deployment(etcd_client: &Arc<InMemoryK8s
         .as_array_mut()
         .context("/spec/template/spec/containers not an array")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in deployment");
-    }
+    let container = unique_container_mut(containers, "oauth-apiserver")?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in container");
+
+    let find = if original_ip.contains(':') {
+        format!("--etcd-servers='https://[{original_ip}]:2379'")
+    } else {
+        format!("--etcd-servers=https://{original_ip}:2379")
+    };
+
+    let arg_idx = args
         .iter_mut()
-        .filter(|container| container["name"] == Value::String("oauth-apiserver".to_string()))
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .enumerate()
+        .find_map(|(i, arg)| arg.as_str()?.contains(&find).then_some(i));
 
-            ensure!(!args.is_empty(), "expected at least one arg in container");
+    let Some(arg_idx) = arg_idx else {
+        log::info!(
+            "etcd server argument with {} not found, skipping (this is normal for IPv6 in dual-stack)",
+            original_ip
+        );
+        return Ok(());
+    };
 
-            let find = if original_ip.contains(':') {
-                format!("--etcd-servers='https://[{original_ip}]:2379'")
-            } else {
-                format!("--etcd-servers=https://{original_ip}:2379")
-            };
+    let replace = if ip.contains(':') {
+        format!("--etcd-servers='https://[{ip}]:2379'")
+    } else {
+        format!("--etcd-servers=https://{ip}:2379")
+    };
 
-            let arg_idx = args
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.contains(&find).then_some(i));
-
-            let Some(arg_idx) = arg_idx else {
-                log::info!(
-                    "etcd server argument with {} not found, skipping (this is normal for IPv6 in dual-stack)",
-                    original_ip
-                );
-                return Ok(());
-            };
-
-            let replace = if ip.contains(':') {
-                format!("--etcd-servers='https://[{ip}]:2379'")
-            } else {
-                format!("--etcd-servers=https://{ip}:2379")
-            };
-
-            args[arg_idx] = serde_json::Value::String(args[arg_idx].as_str().context("arg not a string")?.replace(&find, &replace));
-
-            Ok(())
-        })?;
+    args[arg_idx] = serde_json::Value::String(args[arg_idx].as_str().context("arg not a string")?.replace(&find, &replace));
 
     put_etcd_yaml(etcd_client, &k8s_resource_location, deployment).await?;
 

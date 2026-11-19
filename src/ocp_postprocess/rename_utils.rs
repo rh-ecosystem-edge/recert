@@ -2,7 +2,7 @@ use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use futures_util::future::join_all;
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
@@ -350,6 +350,21 @@ fn fix_kubeconfig_context_cluster_name(cluster: &mut serde_json::Map<String, Val
     Ok(())
 }
 
+/// Returns the single container named `name`. Errors when the list is empty, when no container
+/// carries that name, or when more than one does — indexing a `Value` for `name` would otherwise
+/// yield `Null` and skip the container silently.
+pub(crate) fn unique_container_mut<'a>(containers: &'a mut [Value], name: &str) -> Result<&'a mut Value> {
+    ensure!(!containers.is_empty(), "expected at least one container");
+
+    let expected = format!("expected exactly one container named {}", name);
+    let mut matches = containers.iter_mut().filter(|container| container["name"] == name);
+    let container = matches.next().context(expected.clone())?;
+
+    ensure!(matches.next().is_none(), expected);
+
+    Ok(container)
+}
+
 pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<()> {
     let containers = &mut pod
         .pointer_mut("/spec/containers")
@@ -357,37 +372,30 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
         .as_array_mut()
         .context("clusters not an object")?;
 
-    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+    let container = unique_container_mut(containers, "kube-controller-manager")?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in kube-controller-manager");
+
+    let arg = args
         .iter_mut()
-        .filter(|container| container["name"] == "kube-controller-manager")
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .find_map(|arg| arg.as_str()?.contains("--cluster-name=").then_some(arg))
+        .context("cluster-name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in kube-controller-manager");
-
-            let arg = args
-                .iter_mut()
-                .find_map(|arg| arg.as_str()?.contains("--cluster-name=").then_some(arg))
-                .context("cluster-name not found")?;
-
-            *arg = serde_json::Value::String(
-                regex::Regex::new(r"--cluster-name=[^ ]+")
-                    .context("compiling regex")?
-                    .replace_all(
-                        arg.as_str().context("arg not string")?,
-                        format!("--cluster-name={}", generated_infra_id).as_str(),
-                    )
-                    .to_string(),
-            );
-
-            Ok(())
-        })?;
+    *arg = serde_json::Value::String(
+        regex::Regex::new(r"--cluster-name=[^ ]+")
+            .context("compiling regex")?
+            .replace_all(
+                arg.as_str().context("arg not string")?,
+                format!("--cluster-name={}", generated_infra_id).as_str(),
+            )
+            .to_string(),
+    );
 
     Ok(())
 }
@@ -683,40 +691,23 @@ pub(crate) fn fix_pod_container_env(pod: &mut Value, domain: &str, container_nam
         .as_array_mut()
         .context("clusters not an object")?;
 
-    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+    let container = unique_container_mut(containers, container_name)?;
 
-    ensure!(
-        containers
-            .iter()
-            .filter(|container| container["name"] == container_name)
-            .collect::<Vec<_>>()
-            .len()
-            == 1,
-        format!("expected exactly one container named {}", container_name)
-    );
+    let env = container
+        .pointer_mut("/env")
+        .context("env not found")?
+        .as_array_mut()
+        .context("env not an array")?;
 
-    containers
-        .iter_mut()
-        .filter(|container| container["name"] == container_name)
-        .try_for_each(|container| {
-            let env = container
-                .pointer_mut("/env")
-                .context("env not found")?
-                .as_array_mut()
-                .context("env not an array")?;
+    ensure!(!env.is_empty(), "expected at least one env in container");
 
-            ensure!(!env.is_empty(), "expected at least one env in container");
-
-            env.iter_mut()
-                .find_map(|var| (var.get("name")? == env_name).then_some(var))
-                .context(format!("env var {} not found", env_name))?
-                .as_object_mut()
-                .context("env var not an object")?
-                .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
-                .context("no previous value")?;
-
-            Ok(())
-        })?;
+    env.iter_mut()
+        .find_map(|var| (var.get("name")? == env_name).then_some(var))
+        .context(format!("env var {} not found", env_name))?
+        .as_object_mut()
+        .context("env var not an object")?
+        .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
+        .context("no previous value")?;
 
     Ok(())
 }
@@ -728,32 +719,23 @@ pub(crate) fn fix_mcd_pod_container_args(pod: &mut Value, cluster_domain: &str, 
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    let container = unique_container_mut(containers, container_name)?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in container");
+
+    let arg_idx = args
         .iter_mut()
-        .filter(|container| container["name"] == container_name)
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .enumerate()
+        .find_map(|(i, arg)| arg.as_str()?.starts_with("--apiserver-url=").then_some(i))
+        .context("name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in container");
-
-            let arg_idx = args
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.starts_with("--apiserver-url=").then_some(i))
-                .context("name not found")?;
-
-            args[arg_idx] = serde_json::Value::String(format!("--apiserver-url=https://api-int.{}:6443", cluster_domain));
-
-            Ok(())
-        })?;
+    args[arg_idx] = serde_json::Value::String(format!("--apiserver-url=https://api-int.{}:6443", cluster_domain));
 
     Ok(())
 }
@@ -807,32 +789,23 @@ pub(crate) fn fix_kapi_startup_monitor_pod_container_args(pod: &mut Value, hostn
         .as_array_mut()
         .context("containers not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    let container = unique_container_mut(containers, "startup-monitor")?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in container");
+
+    let arg_idx = args
         .iter_mut()
-        .filter(|container| container["name"] == "startup-monitor")
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .enumerate()
+        .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
+        .context("--node-name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in container");
-
-            let arg_idx = args
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
-                .context("--node-name not found")?;
-
-            args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
-
-            Ok(())
-        })?;
+    args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
 
     Ok(())
 }
@@ -1000,5 +973,126 @@ mod tests {
         map.insert("config.yaml".to_string(), Value::from(42));
         let err = data_str(&map, "config.yaml").unwrap_err();
         assert!(err.to_string().contains("config.yaml not a string"), "unexpected error: {err}");
+    }
+
+    fn container(name: Value) -> Value {
+        serde_json::json!({ "name": name })
+    }
+
+    #[test]
+    fn test_unique_container_mut_returns_the_matching_container() {
+        let mut containers = vec![container(Value::String("a".to_string())), container(Value::String("b".to_string()))];
+
+        let found = unique_container_mut(&mut containers, "b").unwrap();
+
+        assert_eq!(found["name"], "b");
+    }
+
+    #[test]
+    fn test_unique_container_mut_without_a_match_errors() {
+        let mut containers = vec![container(Value::String("a".to_string()))];
+
+        let err = unique_container_mut(&mut containers, "missing").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named missing"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_non_string_name_errors() {
+        let mut containers = vec![container(serde_json::json!(1))];
+
+        assert!(unique_container_mut(&mut containers, "1").is_err());
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_duplicates_errors() {
+        let mut containers = vec![container(Value::String("a".to_string())), container(Value::String("a".to_string()))];
+
+        let err = unique_container_mut(&mut containers, "a").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named a"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_no_containers_errors() {
+        let mut containers: Vec<Value> = vec![];
+
+        let err = unique_container_mut(&mut containers, "a").unwrap_err();
+
+        assert!(err.to_string().contains("at least one container"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_non_object_entry_errors() {
+        let mut containers = vec![serde_json::json!("not a container")];
+
+        assert!(unique_container_mut(&mut containers, "a").is_err());
+    }
+
+    #[test]
+    fn test_fix_kcm_pod_replaces_cluster_name() {
+        let mut pod = serde_json::json!({
+            "spec": {"containers": [{"name": "kube-controller-manager", "args": ["--cluster-name=old"]}]}
+        });
+
+        fix_kcm_pod(&mut pod, "new-id").unwrap();
+
+        assert_eq!(pod["spec"]["containers"][0]["args"][0], "--cluster-name=new-id");
+    }
+
+    #[test]
+    fn test_fix_kcm_pod_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_kcm_pod(&mut pod, "new-id").unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("expected exactly one container named kube-controller-manager"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_pod_container_env_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_pod_container_env(&mut pod, "new.example.com", "router", "ROUTER_DOMAIN", false).unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named router"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_mcd_pod_container_args_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_mcd_pod_container_args(&mut pod, "new.example.com", "machine-config-server").unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("expected exactly one container named machine-config-server"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_kapi_startup_monitor_pod_container_args_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_kapi_startup_monitor_pod_container_args(&mut pod, "new-hostname").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named startup-monitor"),
+            "unexpected error: {err}"
+        );
     }
 }
