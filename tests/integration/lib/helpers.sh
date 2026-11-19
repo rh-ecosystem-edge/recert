@@ -662,3 +662,87 @@ print_summary() {
     echo "=============================="
     return $TESTS_FAILED
 }
+
+# run_encryption_roundtrip LABEL APISERVER_TYPE EXPECTED_PREFIX ENCRYPTION_CONFIG_JSON
+#
+# End-to-end kube_encryption_config coverage. Enabling encryption on the cluster
+# (APIServer spec.encryption.type) makes recert encrypt Secrets on commit with the
+# first provider of ENCRYPTION_CONFIG_JSON and re-encrypt the *entire* shared etcd
+# keyspace (reencrypt_resources). Callers must be named test_etcd_z_* so they sort
+# after every other serial scenario. Decryption uses every key in the config, so a
+# config listing an older key second can read data left by an earlier z_ scenario.
+# The encrypted test Secret is /kubernetes.io/secrets/default/app-tls-enc-LABEL.
+run_encryption_roundtrip() {
+    local label="$1" apiserver_type="$2" expected_prefix="$3" encryption_config_json="$4"
+    local secret_key="/kubernetes.io/secrets/default/app-tls-enc-${label}"
+
+    local workdir crypto_dir
+    workdir=$(setup_test_workdir "etcd_z_encryption_${label}")
+    crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key server.crt server.key)
+    setup_webhook_authenticator "$crypto_dir"
+
+    # The kube-apiserver encryption-config file drives BOTH the encrypt path
+    # (kube_encryption_config) and the decrypt path (build_decryption_transformers()
+    # discovers **/encryption-config/encryption-config under cluster_customization_dirs).
+    local encryption_config_file="${crypto_dir}/kube-apiserver-pod-1/encryption-config/encryption-config"
+    mkdir -p "$(dirname "$encryption_config_file")"
+    printf '%s\n' "$encryption_config_json" > "$encryption_config_file"
+
+    trap "etcd_del '${secret_key}' /1 /kubernetes.io/secrets/openshift-apiserver/encryption-config /kubernetes.io/secrets/openshift-oauth-apiserver/encryption-config 2>/dev/null" EXIT
+
+    etcd_put_tls_secret "default" "app-tls-enc-${label}" "${crypto_dir}/server.crt" "${crypto_dir}/server.key"
+
+    # A short etcd key (single segment, no k8s resource prefix). Scans only enumerate
+    # keys via prefix queries so it is never matched directly, but its presence is a
+    # regression guard for resource_from_key() which used to index segment [2]
+    # unconditionally and panicked on keys with fewer than 3 segments.
+    etcd_put_json "/1" '{"kind":"ConfigMap","metadata":{"name":"1"}}'
+
+    # is_encryption_enabled() is gated on the APIServer "cluster" resource: without
+    # spec.encryption.type no transformers are built and everything stays plaintext.
+    etcd_put_json "/kubernetes.io/config.openshift.io/apiservers/cluster" '{
+  "apiVersion": "config.openshift.io/v1",
+  "kind": "APIServer",
+  "metadata": {"name": "cluster"},
+  "spec": {"encryption": {"type": "'"${apiserver_type}"'"}}
+}'
+
+    # build_decryption_transformers() also merges the openshift/oauth apiserver
+    # encryption-config Secrets and errors if they are missing, so seed both.
+    local secret_bytes ns
+    secret_bytes=$(python3 -c 'import json,sys; sys.stdout.write(json.dumps(list(open(sys.argv[1], "rb").read())))' "$encryption_config_file")
+    for ns in openshift-apiserver openshift-oauth-apiserver; do
+        etcd_put_json "/kubernetes.io/secrets/${ns}/encryption-config" "{
+  \"apiVersion\": \"v1\",
+  \"kind\": \"Secret\",
+  \"metadata\": {\"name\": \"encryption-config\", \"namespace\": \"${ns}\"},
+  \"data\": {\"encryption-config\": ${secret_bytes}}
+}"
+    done
+
+    cat > "${workdir}/config.yaml" <<CFG
+etcd_endpoint: localhost:2379
+crypto_dirs:
+  - ${crypto_dir}
+cluster_customization_dirs:
+  - ${crypto_dir}
+force_expire: true
+kube_encryption_config: ${encryption_config_file}
+summary_file: ${workdir}/summary.yaml
+CFG
+
+    local output
+    output=$(RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success)
+    assert_contains "$output" "Regenerated all crypto objects" "${label}: should regenerate crypto"
+    assert_contains "$output" "Committing to actual etcd" "${label}: should persist etcd cache"
+    cp "${workdir}/summary.yaml" "${workdir}/summary-run1.yaml"
+    assert_match "$(etcd_get "$secret_key")" "^${expected_prefix}" "${label}: secret should be encrypted in etcd"
+
+    # Run again with the same config: reading back the now-encrypted Secret (and the
+    # re-encrypted baseline) must succeed via prefix-based decryption.
+    RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success >/dev/null
+    assert_match "$(etcd_get "$secret_key")" "^${expected_prefix}" "${label}: secret should stay encrypted across round-trip"
+
+    assert_summary_valid "${workdir}/summary-run1.yaml"
+    assert_summary_valid "${workdir}/summary.yaml"
+}

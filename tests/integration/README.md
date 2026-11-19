@@ -55,9 +55,9 @@ Artifacts land in `.integration-artifacts/` (mounted into the container).
 | `test_etcd_pem_crlf` | Mixed/CRLF PEM line endings |
 | `test_etcd_json_encode` | JSON-mode etcd write-back stays JSON (not protobuf) |
 | `test_etcd_bytearray_utf8` | ByteArray decode preserves multi-byte UTF-8 |
-| `test_etcd_z_encryption` | Encryption round-trip (sorts last; mutates shared keyspace) |
+| `test_etcd_z_encryption` | aesgcm encryption round-trip (sorts last; mutates shared keyspace) |
 
 Helpers live in [`lib/helpers.sh`](lib/helpers.sh) (`run_crypto_algo_test`,
-`run_jwt_algo_test`, `assert_jwt_verifies`, etcd helpers such as
-`etcd_has`/`assert_etcd_has` for protobuf-encoded values and
+`run_jwt_algo_test`, `run_encryption_roundtrip`, `assert_jwt_verifies`, etcd helpers
+such as `etcd_has`/`assert_etcd_has` for protobuf-encoded values and
 `machineconfig_json`/`etcd_mc_file` for MachineConfig file contents).
