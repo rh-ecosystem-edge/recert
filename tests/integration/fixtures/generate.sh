@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${1:-${SCRIPT_DIR}/generated}"
+ECDSA_JWS="${SCRIPT_DIR}/../lib/ecdsa_jws.py"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -101,20 +102,27 @@ openssl pkey -in "${OUT_DIR}/standalone-ec.key" -pubout -out "${OUT_DIR}/standal
 openssl genpkey -algorithm Ed25519 -out "${OUT_DIR}/standalone-ed25519.key" 2>/dev/null
 openssl pkey -in "${OUT_DIR}/standalone-ed25519.key" -pubout -out "${OUT_DIR}/standalone-ed25519.pub" 2>/dev/null
 
-# JWTs signed by matching CA keys (copied into crypto dirs as sa/token)
+# JWTs signed by matching CA keys (copied into crypto dirs as sa/token).
+# ECDSA JWTs use the JWS R||S signature form.
 sign_jwt() {
     local alg="$1"
     local key="$2"
     local out="$3"
-    local header payload sig tmpdata
+    local header payload sig tmpdata digest
     header=$(printf '%s' "{\"alg\":\"${alg}\",\"typ\":\"JWT\",\"kid\":\"fixture\"}" | b64url)
     payload=$(printf '%s' '{"sub":"recert-test","iss":"recert-integration"}' | b64url)
     case "$alg" in
-        RS256|ES256)
-            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha256 -sign "$key" -binary | b64url)
-            ;;
-        ES384)
-            sig=$(printf '%s' "${header}.${payload}" | openssl dgst -sha384 -sign "$key" -binary | b64url)
+        RS256|ES256|ES384)
+            digest="-sha256"
+            if [[ "$alg" == "ES384" ]]; then digest="-sha384"; fi
+            tmpdata=$(mktemp)
+            printf '%s' "${header}.${payload}" | openssl dgst "$digest" -sign "$key" -binary > "$tmpdata"
+            if [[ "$alg" == ES* ]]; then
+                sig=$(python3 "${ECDSA_JWS}" der-to-jose "$alg" < "$tmpdata" | b64url)
+            else
+                sig=$(b64url < "$tmpdata")
+            fi
+            rm -f "$tmpdata"
             ;;
         EdDSA)
             tmpdata=$(mktemp)
