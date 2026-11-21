@@ -56,6 +56,23 @@ test: rust-test
 e2e-test: ## Run e2e crypto tests
 	bash $(PROJECT_DIR)/e2e_test.sh
 
+# The host build only works on the platform the vendor tree is filtered for
+# (x86_64 Linux, see [package.metadata.vendor-filter] in Cargo.toml) and needs
+# OpenSSL 3 plus GNU base64. This image matches Dockerfile.integration's builder,
+# so e2e can run unchanged on macOS and other non-Linux hosts.
+E2E_IMAGE ?= rust:1.87
+# Named volume shadowing target/ so root-owned Linux build artifacts never land in the repo.
+E2E_TARGET_VOLUME ?= recert-e2e-target
+
+.PHONY: e2e-test-container
+e2e-test-container: ## Run e2e crypto tests in a container (works on any host)
+	docker run --rm \
+		-v "$(PROJECT_DIR):/app" \
+		-v "$(E2E_TARGET_VOLUME):/app/target" \
+		-w /app \
+		$(E2E_IMAGE) \
+		bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 openssl protobuf-compiler >/dev/null && make e2e-test'
+
 # Allocate a TTY for interactive local runs so run_tests.sh draws a live progress bar.
 INTEGRATION_TTY ?= $(if $(CI),,$$([ -t 1 ] && echo -t))
 
@@ -226,4 +243,4 @@ rust-ci: rust-deps rust-fmt rust-vendor-check rust-check rust-clippy rust-test r
 .PHONY: help
 help: ## Display available targets
 	@echo "Available targets:"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-30s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-30s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
