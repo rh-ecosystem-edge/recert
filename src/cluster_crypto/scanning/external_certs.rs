@@ -28,10 +28,19 @@ pub(crate) async fn discover_external_certs(in_memory_etcd_client: Arc<InMemoryK
         .await
         .context("image trusted certs")?;
 
+    // These sometimes diverge from the normal bundle of internet certs, as they seem to be taken
+    // from the ccm container image:
+    // https://github.com/openshift/cluster-cloud-controller-manager-operator/blob/e58049fbf77e3be8f2e51eeb51476e01ed08a25f/pkg/controllers/trusted_ca_bundle_controller.go#L85
+    // so we should treat all of them as external certs.
+    let ccm_trusted_certs = get_openshift_ccm_trusted_certs(&in_memory_etcd_client)
+        .await
+        .context("openshift ccm trusted certs")?;
+
     let all_certs_bundled = proxy_trusted_certs
         .into_iter()
         .chain(image_trusted_certs)
         .chain(ocp_trusted_certs)
+        .chain(ccm_trusted_certs)
         .join("\n");
 
     Ok(ExternalCerts(
@@ -134,7 +143,39 @@ pub(crate) async fn get_openshift_user_ca_bundle(in_memory_etcd_client: &Arc<InM
     .context("getting trusted-ca-bundle")?;
 
     match trusted_ca_bundle_configmap {
-        None => Ok(None),
+        None => {
+            log::info!("user-ca-bundle configmap not present, skipping external certs lookup");
+            Ok(None)
+        }
+        Some(trusted_ca_bundle_configmap) => Ok(Some(
+            trusted_ca_bundle_configmap
+                .pointer("/data/ca-bundle.crt")
+                .context("parsing ca-bundle.crt")?
+                .as_str()
+                .context("must be string")?
+                .to_string(),
+        )),
+    }
+}
+
+pub(crate) async fn get_openshift_ccm_trusted_certs(in_memory_etcd_client: &Arc<InMemoryK8sEtcd>) -> Result<Option<String>> {
+    let trusted_ca_bundle_configmap = get_etcd_json(
+        in_memory_etcd_client,
+        &(K8sResourceLocation {
+            namespace: Some("openshift-cloud-controller-manager".into()),
+            kind: "ConfigMap".into(),
+            apiversion: "v1".into(),
+            name: "ccm-trusted-ca".into(),
+        }),
+    )
+    .await
+    .context("getting ccm-trusted-ca")?;
+
+    match trusted_ca_bundle_configmap {
+        None => {
+            log::info!("ccm-trusted-ca configmap not present, skipping external certs lookup");
+            Ok(None)
+        }
         Some(trusted_ca_bundle_configmap) => Ok(Some(
             trusted_ca_bundle_configmap
                 .pointer("/data/ca-bundle.crt")
