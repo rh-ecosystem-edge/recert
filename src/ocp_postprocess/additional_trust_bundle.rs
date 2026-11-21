@@ -74,6 +74,14 @@ async fn fix_etcd_resources(
     user_ca_bundle: &Option<String>,
     proxy_trusted_ca_bundle: &Option<ProxyAdditionalTrustBundleSet>,
 ) -> Result<Option<String>> {
+    // The proxy trust bundle must be handled first: when its configmap is user-ca-bundle,
+    // replace_and_get_proxy_trust_bundle has to read the seed's original bundle from it before
+    // fix_user_ca_bundle overwrites it, or the seed's certs can't be found in the merged bundle.
+    let new_merged_bundle = match proxy_trusted_ca_bundle {
+        Some(proxy_trusted_ca_bundle) => Some(fix_proxy_trusted_ca_bundle(etcd_client, proxy_trusted_ca_bundle).await?),
+        None => None,
+    };
+
     if let Some(user_ca_bundle) = user_ca_bundle {
         etcd_rename::fix_machineconfigs(etcd_client, user_ca_bundle)
             .await
@@ -85,36 +93,40 @@ async fn fix_etcd_resources(
 
         etcd_rename::fix_user_ca_bundle(etcd_client, user_ca_bundle)
             .await
-            .context("fixing machineconfigs")?;
+            .context("fixing user-ca-bundle configmap")?;
     }
 
-    if let Some(proxy_trusted_ca_bundle) = proxy_trusted_ca_bundle {
-        let original_proxy_bundle = etcd_rename::replace_and_get_proxy_trust_bundle(etcd_client, proxy_trusted_ca_bundle)
-            .await
-            .context("fixing labeled configmaps")?;
+    Ok(new_merged_bundle)
+}
 
-        let just_the_system_certs = utils::derive_system_certs_from_merged_bundle(
-            original_proxy_bundle,
-            utils::get_merged_bundle(etcd_client).await.context("getting merged bundle")?,
-        )
-        .context("getting unmerged bundle")?;
+/// Replaces the proxy trusted CA bundle and returns the new merged (proxy + system certs) bundle
+async fn fix_proxy_trusted_ca_bundle(
+    etcd_client: &Arc<InMemoryK8sEtcd>,
+    proxy_trusted_ca_bundle: &ProxyAdditionalTrustBundleSet,
+) -> Result<String> {
+    let original_proxy_bundle = etcd_rename::replace_and_get_proxy_trust_bundle(etcd_client, proxy_trusted_ca_bundle)
+        .await
+        .context("replacing proxy trust bundle")?;
 
-        let new_merged_bundle = utils::merge_bundles(&proxy_trusted_ca_bundle.ca_bundle, &just_the_system_certs);
+    let just_the_system_certs = utils::derive_system_certs_from_merged_bundle(
+        original_proxy_bundle,
+        utils::get_merged_bundle(etcd_client).await.context("getting merged bundle")?,
+    )
+    .context("getting unmerged bundle")?;
 
-        etcd_rename::fix_labeled_configmaps(etcd_client, &new_merged_bundle)
-            .await
-            .context("fixing labeled configmaps")?;
+    let new_merged_bundle = utils::merge_bundles(&proxy_trusted_ca_bundle.ca_bundle, &just_the_system_certs);
 
-        etcd_rename::fix_monitoring_configmaps(etcd_client, &new_merged_bundle)
-            .await
-            .context("fixing labeled configmaps")?;
+    etcd_rename::fix_labeled_configmaps(etcd_client, &new_merged_bundle)
+        .await
+        .context("fixing labeled configmaps")?;
 
-        etcd_rename::fix_kcm_openshift_user_ca(etcd_client, &proxy_trusted_ca_bundle.ca_bundle)
-            .await
-            .context("fixing kcm openshift user ca")?;
+    etcd_rename::fix_monitoring_configmaps(etcd_client, &new_merged_bundle)
+        .await
+        .context("fixing monitoring configmaps")?;
 
-        return Ok(Some(new_merged_bundle));
-    }
+    etcd_rename::fix_kcm_openshift_user_ca(etcd_client, &proxy_trusted_ca_bundle.ca_bundle)
+        .await
+        .context("fixing kcm openshift user ca")?;
 
-    Ok(None)
+    Ok(new_merged_bundle)
 }

@@ -423,6 +423,12 @@ impl RecertConfig {
             !(recert_config.dry_run && recert_config.etcd_defrag),
             "dry_run and etcd_defrag are mutually exclusive"
         );
+        // Mirrors the CLI's "dry" group: regenerating SSH host keys deletes the old ones, so it
+        // can't be part of a dry run.
+        ensure!(
+            !(recert_config.dry_run && recert_config.regenerate_server_ssh_keys.is_some()),
+            "dry_run and regenerate_server_ssh_keys are mutually exclusive"
+        );
         ensure!(
             !(recert_config.crypto_customizations.ip_change_only && recert_config.crypto_customizations.cn_san_replace_rules.is_empty()),
             "ip-change-only requires at least one cn_san_replace rule"
@@ -796,6 +802,25 @@ fn parse_dir_file_config(
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    #[test]
+    fn test_dry_run_rejects_regenerate_server_ssh_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let ssh_dir = dir.path().display();
+
+        let Err(err) = RecertConfig::parse_from_config_file(format!("dry_run: true\nregenerate_server_ssh_keys: {ssh_dir}\n").as_bytes())
+        else {
+            panic!("dry_run with regenerate_server_ssh_keys should be rejected");
+        };
+        assert!(
+            err.to_string()
+                .contains("dry_run and regenerate_server_ssh_keys are mutually exclusive"),
+            "{err:#}"
+        );
+
+        let config = RecertConfig::parse_from_config_file(format!("regenerate_server_ssh_keys: {ssh_dir}\n").as_bytes()).unwrap();
+        assert!(config.regenerate_server_ssh_keys.is_some());
+    }
 
     #[test]
     #[serial]

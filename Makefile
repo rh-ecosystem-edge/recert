@@ -58,12 +58,14 @@ e2e-test: ## Run e2e crypto tests
 
 # Allocate a TTY for interactive local runs so run_tests.sh draws a live progress bar.
 INTEGRATION_TTY ?= $(if $(CI),,$$([ -t 1 ] && echo -t))
+# Extra run_tests.sh arguments, e.g. INTEGRATION_ARGS="--tag etcd_kubeadmin" to run one scenario.
+INTEGRATION_ARGS ?=
 
 .PHONY: integration-test
 integration-test: ## Run integration tests in a container
 	docker build -f Dockerfile.integration -t recert-integration .
 	mkdir -p "$(PROJECT_DIR)/.integration-artifacts"
-	docker run --rm $(INTEGRATION_TTY) -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration
+	docker run --rm $(INTEGRATION_TTY) -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration $(INTEGRATION_ARGS)
 
 # Konflux targets
 

@@ -1,6 +1,7 @@
 use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
+    ocp_postprocess::rename_utils::data_str,
 };
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -20,7 +21,7 @@ pub(crate) async fn fix_configmap(
         .as_object_mut()
         .context("data not an object")?;
 
-    let install_config_bytes = data["install-config"].as_str().context("install-config not a string")?.to_string();
+    let install_config_bytes = data_str(data, "install-config")?.to_string();
 
     let mut install_config_value: Value =
         serde_yaml::from_slice(install_config_bytes.as_bytes()).context("deserializing install-config")?;
