@@ -387,43 +387,14 @@ pub(crate) fn env_var_safe(node_name: &str) -> String {
     node_name.replace(['-', '.'], "_")
 }
 
-pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
-    let mut pod_yaml = pod_yaml.to_string();
+/// Literal substitutions that are unambiguous wherever they appear: they all embed either the
+/// node's safe env-var prefix or a full certificate file name, so a plain replace cannot hit an
+/// unrelated value.
+fn hostname_substitutions(original_hostname: &str, hostname: &str) -> Vec<(String, String)> {
+    let original_hostname_safe = env_var_safe(original_hostname);
+    let hostname_safe = env_var_safe(hostname);
 
-    // TODO: The "value:" replacement below is risky - if the hostname is "existing",
-    // or "REVISION", or "true" this will wreak havoc because these appear in the
-    // pod.yaml as values. Unlikely but crash if we see these values for now.
-    ensure!(
-        ["existing", "REVISION", "true"]
-            .iter()
-            .all(|invalid_hostname| invalid_hostname != &original_hostname),
-        "{} hostname is unsupported at the moment, please use a different seed hostname",
-        original_hostname
-    );
-
-    let patterns = [
-        (
-            r#"- name: "NODE_{original_hostname_safe}_ETCD_NAME"#,
-            r#"- name: "NODE_{hostname_safe}_ETCD_NAME"#,
-        ),
-        (r#"value: "{original_hostname}""#, r#"value: "{hostname}""#),
-        (
-            r#"- name: "NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
-            r#"- name: "NODE_{hostname_safe}_ETCD_URL_HOST"#,
-        ),
-        (
-            r#"- name: "NODE_{original_hostname_safe}_IP"#,
-            r#"- name: "NODE_{hostname_safe}_IP"#,
-        ),
-        (
-            r#"${NODE_{original_hostname_safe}_ETCD_URL_HOST"#,
-            r#"${NODE_{hostname_safe}_ETCD_URL_HOST"#,
-        ),
-        (
-            r#"${NODE_{original_hostname_safe}_ETCD_NAME"#,
-            r#"${NODE_{hostname_safe}_ETCD_NAME""#,
-        ),
-        ("${NODE_{original_hostname_safe}_IP", "${NODE_{hostname_safe}_IP"),
+    [
         ("NODE_{original_hostname_safe}_ETCD_URL_HOST", "NODE_{hostname_safe}_ETCD_URL_HOST"),
         ("NODE_{original_hostname_safe}_ETCD_NAME", "NODE_{hostname_safe}_ETCD_NAME"),
         ("NODE_{original_hostname_safe}_IP", "NODE_{hostname_safe}_IP"),
@@ -435,6 +406,15 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
         ),
+        ("--target-name={original_hostname}", "--target-name={hostname}"),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
+        ),
+        (
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
+            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
+        ),
         (
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
@@ -443,35 +423,148 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
             "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
         ),
+    ]
+    .into_iter()
+    .map(|(pattern, replacement)| {
         (
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
-        ),
-        (
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
-            "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
-        ),
-        ("--target-name={original_hostname}", "--target-name={hostname}"),
-    ];
+            pattern
+                .replace("{original_hostname}", original_hostname)
+                .replace("{original_hostname_safe}", &original_hostname_safe),
+            replacement
+                .replace("{hostname}", hostname)
+                .replace("{hostname_safe}", &hostname_safe),
+        )
+    })
+    .collect()
+}
 
-    for (pattern, replacement) in patterns {
-        let pattern = pattern
-            .replace("{original_hostname}", original_hostname)
-            .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
-
-        let replacement = replacement
-            .replace("{hostname}", hostname)
-            .replace("{hostname_safe}", &env_var_safe(hostname));
-
-        pod_yaml = pod_yaml.replace(&pattern, &replacement).to_string();
+fn split_line_ending(line: &str) -> (&str, &str) {
+    if let Some(content) = line.strip_suffix("\r\n") {
+        (content, "\r\n")
+    } else if let Some(content) = line.strip_suffix('\n') {
+        (content, "\n")
+    } else {
+        (line, "")
     }
+}
+
+/// Splits a YAML scalar into its quote character (empty when unquoted) and the unquoted value.
+fn split_quoted_scalar(scalar: &str) -> (&str, &str) {
+    let scalar = scalar.trim_end();
+    if scalar.len() >= 2 && ((scalar.starts_with('"') && scalar.ends_with('"')) || (scalar.starts_with('\'') && scalar.ends_with('\''))) {
+        (&scalar[..1], &scalar[1..scalar.len() - 1])
+    } else {
+        ("", scalar)
+    }
+}
+
+fn unquote_scalar(scalar: &str) -> &str {
+    split_quoted_scalar(scalar).1
+}
+
+/// Parses a block-style env item line such as `      - name: "NODE_node1_ETCD_NAME"` and returns
+/// the unquoted name.
+fn env_item_name(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('-')?.trim_start();
+    let rest = rest.strip_prefix("name:")?;
+    Some(unquote_scalar(rest.trim_start()))
+}
+
+/// Splits a `value:` line into (everything up to and including the `value:` key and the whitespace
+/// after it, quote character, unquoted value, trailing whitespace), so the value can be replaced
+/// while preserving the original formatting and quoting style.
+fn value_line_parts(line: &str) -> Option<(&str, &str, &str, &str)> {
+    let rest = line.trim_start();
+    let indent = &line[..line.len() - rest.len()];
+    let after_key = rest.strip_prefix("value:")?;
+
+    let after_separator = after_key.trim_start();
+    let separator = &after_key[..after_key.len() - after_separator.len()];
+
+    let scalar = after_separator.trim_end();
+    let trailing = &after_separator[scalar.len()..];
+    let (quote, value) = split_quoted_scalar(scalar);
+
+    let prefix = &line[..indent.len() + "value:".len() + separator.len()];
+
+    Some((prefix, quote, value, trailing))
+}
+
+/// Rewrites the hostname in the `value:` of the `NODE_<safe(original)>_ETCD_NAME` env entry.
+///
+/// The rendered pod also contains unrelated values such as `value: "REVISION"`
+/// (`ETCD_STATIC_POD_VERSION`), so the hostname cannot be replaced with a document-wide
+/// `value: "<hostname>"` substitution: a seed hostname like `existing`, `REVISION` or `true`
+/// would be rewritten everywhere. This walks the text instead and only touches the value that
+/// belongs to the matching env item, preserving indentation and quoting.
+fn replace_etcd_name_env_value(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let etcd_name_env = format!("NODE_{}_ETCD_NAME", env_var_safe(original_hostname));
+
+    let mut out = String::with_capacity(pod_yaml.len());
+    let mut expecting_value = false;
+    let mut saw_etcd_name_env = false;
+    let mut rewrote_value = false;
+
+    for line in pod_yaml.split_inclusive('\n') {
+        let (content, eol) = split_line_ending(line);
+
+        if let Some(name) = env_item_name(content) {
+            expecting_value = name == etcd_name_env;
+            saw_etcd_name_env |= expecting_value;
+            out.push_str(line);
+            continue;
+        }
+
+        if expecting_value {
+            if let Some((prefix, quote, value, trailing)) = value_line_parts(content) {
+                expecting_value = false;
+                if value == original_hostname {
+                    out.push_str(prefix);
+                    out.push_str(quote);
+                    out.push_str(hostname);
+                    out.push_str(quote);
+                    out.push_str(trailing);
+                    out.push_str(eol);
+                    rewrote_value = true;
+                    continue;
+                }
+            }
+        }
+
+        out.push_str(line);
+    }
+
+    ensure!(
+        !saw_etcd_name_env || rewrote_value,
+        "found the {} env var in the etcd pod but no value line holding the original hostname; the pod.yaml format may have changed",
+        etcd_name_env
+    );
+
+    Ok(out)
+}
+
+pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str, hostname: &str) -> Result<String> {
+    let mut pod_yaml = replace_etcd_name_env_value(pod_yaml, original_hostname, hostname)?;
+
+    for (pattern, replacement) in hostname_substitutions(original_hostname, hostname) {
+        pod_yaml = pod_yaml.replace(&pattern, &replacement);
+    }
+
+    let leftover = format!("NODE_{}_", env_var_safe(original_hostname));
+    ensure!(
+        !pod_yaml.contains(&leftover),
+        "etcd pod still references {} after renaming; the pod.yaml format may have changed",
+        leftover
+    );
 
     Ok(pod_yaml)
 }
 
-pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
-    let mut pod_yaml = pod_yaml.to_string();
+fn is_ip_token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '.' || c == '_'
+}
 
+pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
     let original_ip = if original_ip.contains(':') {
         format!("[{original_ip}]")
     } else {
@@ -479,8 +572,28 @@ pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<Stri
     };
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-    pod_yaml = pod_yaml.replace(original_ip.as_str(), ip.as_str()).to_string();
-    Ok(pod_yaml)
+
+    // Replace only whole address tokens: a bare substring replace would also hit the address when
+    // it is a prefix of a longer one (10.0.0.1 inside 10.0.0.10), a CIDR, or an unrelated value.
+    let mut out = String::with_capacity(pod_yaml.len());
+    let mut last = 0;
+
+    for (start, _) in pod_yaml.match_indices(original_ip.as_str()) {
+        let end = start + original_ip.len();
+
+        let starts_token = pod_yaml[..start].chars().next_back().map_or(true, |c| !is_ip_token_char(c));
+        let ends_token = pod_yaml[end..].chars().next().map_or(true, |c| !is_ip_token_char(c));
+
+        if starts_token && ends_token {
+            out.push_str(&pod_yaml[last..start]);
+            out.push_str(&ip);
+            last = end;
+        }
+    }
+
+    out.push_str(&pod_yaml[last..]);
+
+    Ok(out)
 }
 
 pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
@@ -521,36 +634,7 @@ pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, host
 
 fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
     {
-        let patterns = [
-            ("NODE_{original_hostname_safe}_ETCD_URL_HOST", "NODE_{hostname_safe}_ETCD_URL_HOST"),
-            ("NODE_{original_hostname_safe}_ETCD_NAME", "NODE_{hostname_safe}_ETCD_NAME"),
-            ("NODE_{original_hostname_safe}_IP", "NODE_{hostname_safe}_IP"),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.crt",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.crt",
-            ),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{original_hostname}.key",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-{hostname}.key",
-            ),
-            ("--target-name={original_hostname}", "--target-name={hostname}"),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.crt",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.crt",
-            ),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{original_hostname}.key",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-{hostname}.key",
-            ),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.crt",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.crt",
-            ),
-            (
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{original_hostname}.key",
-                "/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-serving-metrics-{hostname}.key",
-            ),
-        ];
+        let patterns = hostname_substitutions(original_hostname, hostname);
 
         ensure!(
             container
@@ -570,15 +654,7 @@ fn fix_etcd_static_pod_container(container: &mut Value, original_hostname: &str,
                 let mut replaced = arg_str.to_string();
 
                 for (pattern, replacement) in &patterns {
-                    let pattern = pattern
-                        .replace("{original_hostname}", original_hostname)
-                        .replace("{original_hostname_safe}", &env_var_safe(original_hostname));
-
-                    let replacement = replacement
-                        .replace("{hostname}", hostname)
-                        .replace("{hostname_safe}", &env_var_safe(hostname));
-
-                    replaced = replaced.replace(&pattern, &replacement);
+                    replaced = replaced.replace(pattern.as_str(), replacement.as_str());
                 }
 
                 *arg = serde_json::Value::String(replaced);
@@ -967,5 +1043,215 @@ mod tests {
             metadata["token_endpoint"],
             "https://oauth-openshift.apps.new.example.com/oauth/token"
         );
+    }
+
+    const HOSTNAME_POD_YAML: &str = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: etcd
+  labels:
+    etcd: "true"
+spec:
+  initContainers:
+  - name: etcd-ensure-env-vars
+    command:
+    - /bin/sh
+    - -c
+    - exec echo ensure
+    env:
+    - name: "ETCD_STATIC_POD_VERSION"
+      value: "REVISION"
+    - name: "NODE_existing_ETCD_NAME"
+      value: "existing"
+  containers:
+  - name: etcd
+    command:
+    - /bin/sh
+    - -c
+    - exec etcd --target-name=existing --cert=/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-existing.crt
+    env:
+    - name: "NODE_existing_ETCD_NAME"
+      value: "existing"
+    - name: "NODE_existing_ETCD_URL_HOST"
+      value: "192.0.2.10"
+    - name: "NODE_existing_IP"
+      value: "192.0.2.10"
+  - name: etcd-metrics
+    command:
+    - /bin/sh
+    - -c
+    - exec echo metrics
+    env:
+    - name: "NODE_existing_ETCD_NAME"
+      value: "existing"
+"#;
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_supports_reserved_seed_hostname() {
+        let renamed = fix_etcd_pod_yaml_hostname(HOSTNAME_POD_YAML, "existing", "node2").unwrap();
+
+        assert!(!renamed.contains("NODE_existing_"), "old env var names must be gone");
+        assert_eq!(renamed.matches(r#"- name: "NODE_node2_ETCD_NAME""#).count(), 3);
+        assert_eq!(renamed.matches(r#"- name: "NODE_node2_ETCD_URL_HOST""#).count(), 1);
+        assert_eq!(renamed.matches(r#"- name: "NODE_node2_IP""#).count(), 1);
+        assert_eq!(renamed.matches(r#"value: "node2""#).count(), 3);
+        // The URL host and IP env values hold the address, not the hostname
+        assert_eq!(renamed.matches(r#"value: "192.0.2.10""#).count(), 2);
+        // Unrelated values and boilerplate are untouched
+        assert!(renamed.contains(r#"value: "REVISION""#));
+        assert!(renamed.contains(r#"etcd: "true""#));
+        assert!(renamed.contains("--target-name=node2"));
+        assert!(renamed.contains("etcd-peer-node2.crt"));
+        assert!(renamed.ends_with('\n'), "trailing newline must be preserved");
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_does_not_rewrite_unrelated_revision_values() {
+        let pod_yaml = HOSTNAME_POD_YAML
+            .replace("NODE_existing_", "NODE_REVISION_")
+            .replace(r#"value: "existing""#, r#"value: "REVISION""#);
+
+        let renamed = fix_etcd_pod_yaml_hostname(&pod_yaml, "REVISION", "node2").unwrap();
+
+        // Only ETCD_STATIC_POD_VERSION still holds the literal REVISION
+        assert_eq!(renamed.matches(r#"value: "REVISION""#).count(), 1);
+        assert!(renamed.contains("- name: \"ETCD_STATIC_POD_VERSION\"\n      value: \"REVISION\""));
+        assert_eq!(renamed.matches(r#"value: "node2""#).count(), 3);
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_preserves_scalar_quoting() {
+        let pod_yaml = r#"spec:
+  containers:
+  - name: etcd
+    env:
+    - name: 'NODE_existing_ETCD_NAME'
+      value: 'existing'
+    - name: NODE_existing_IP
+      value: 192.0.2.10
+"#;
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap();
+
+        assert!(renamed.contains("- name: 'NODE_node2_ETCD_NAME'\n      value: 'node2'"));
+        assert!(renamed.contains("- name: NODE_node2_IP\n      value: 192.0.2.10"));
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_errors_when_etcd_name_has_no_value_line() {
+        let pod_yaml = r#"env:
+- name: "NODE_existing_ETCD_NAME"
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+"#;
+
+        let err = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap_err();
+
+        assert!(
+            err.to_string().contains("NODE_existing_ETCD_NAME"),
+            "error should name the env var: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_leaves_unrelated_text_byte_identical() {
+        let suffix =
+            "  volumes:\n  - name: etcd-certs\n    hostPath:\n      path: /etc/kubernetes/static-pod-resources/etcd-certs-REVISION\n";
+        let pod_yaml = format!("{HOSTNAME_POD_YAML}{suffix}");
+
+        let renamed = fix_etcd_pod_yaml_hostname(&pod_yaml, "existing", "node2").unwrap();
+
+        assert!(renamed.ends_with(suffix));
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_matches_parsed_static_pod_path() {
+        let text_path = fix_etcd_pod_yaml_hostname(HOSTNAME_POD_YAML, "existing", "node2").unwrap();
+        let text_pod: Value = serde_yaml::from_str(&text_path).unwrap();
+
+        let mut json_pod: Value = serde_yaml::from_str(HOSTNAME_POD_YAML).unwrap();
+        fix_etcd_static_pod(&mut json_pod, "existing", "node2").unwrap();
+
+        for pointer in ["/spec/initContainers/0/env", "/spec/containers/0/env", "/spec/containers/1/env"] {
+            assert_eq!(text_pod.pointer(pointer), json_pod.pointer(pointer), "{pointer}");
+        }
+    }
+
+    #[test]
+    fn test_fix_ip_replaces_whole_tokens_only() {
+        let text = "peer=https://192.0.2.10:2379\ncidr=192.0.2.10/24\nlonger=192.0.2.100\nother=10.0.0.10\n";
+
+        let replaced = fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap();
+
+        assert!(replaced.contains("peer=https://192.0.2.20:2379"));
+        assert!(replaced.contains("cidr=192.0.2.20/24"));
+        assert!(replaced.contains("longer=192.0.2.100"), "must not match inside a longer address");
+        assert!(replaced.contains("other=10.0.0.10"));
+    }
+
+    #[test]
+    fn test_fix_ip_ipv6_is_bracketed() {
+        let text = "endpoints: [https://[fc00::1]:2379]\n";
+
+        assert_eq!(fix_ip(text, "fc00::1", "fc00::2").unwrap(), "endpoints: [https://[fc00::2]:2379]\n");
+    }
+
+    #[test]
+    fn test_fix_ip_without_match_is_unchanged() {
+        let text = "no addresses here\n";
+
+        assert_eq!(fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap(), text);
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_preserves_crlf_line_endings() {
+        let pod_yaml = "env:\r\n- name: \"NODE_existing_ETCD_NAME\"\r\n  value: \"existing\"\r\n- name: \"ETCD_STATIC_POD_VERSION\"\r\n  value: \"REVISION\"\r\n";
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap();
+
+        assert!(renamed.contains("- name: \"NODE_node2_ETCD_NAME\"\r\n  value: \"node2\"\r\n"));
+        assert!(renamed.contains("value: \"REVISION\"\r\n"));
+        assert_eq!(renamed.matches("\r\n").count(), 5);
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_errors_on_unknown_node_env_reference() {
+        let pod_yaml = "env:\n- name: \"NODE_existing_ETCD_PEERS\"\n  value: \"x\"\n";
+
+        let err = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap_err();
+
+        assert!(
+            err.to_string().contains("NODE_existing_"),
+            "error should name the leftover reference: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_without_etcd_name_env_still_renames_paths() {
+        let pod_yaml = "command:\n- exec etcd --target-name=existing\n- --cert=/etc/kubernetes/static-pod-certs/secrets/etcd-all-certs/etcd-peer-existing.crt\n";
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap();
+
+        assert!(renamed.contains("--target-name=node2"));
+        assert!(renamed.contains("etcd-peer-node2.crt"));
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_preserves_trailing_whitespace() {
+        let pod_yaml = "env:\n- name: \"NODE_existing_ETCD_NAME\"\n  value: \"existing\"   \n";
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap();
+
+        assert!(renamed.contains("value: \"node2\"   \n"));
+    }
+
+    #[test]
+    fn test_fix_ip_does_not_match_when_prefixed_by_a_token_char() {
+        let text = "x192.0.2.10 and 192.0.2.10\n";
+
+        let replaced = fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap();
+
+        assert_eq!(replaced, "x192.0.2.10 and 192.0.2.20\n");
     }
 }
