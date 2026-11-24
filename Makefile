@@ -58,9 +58,10 @@ e2e-test: ## Run e2e crypto tests
 
 # The host build only works on the platform the vendor tree is filtered for
 # (x86_64 Linux, see [package.metadata.vendor-filter] in Cargo.toml) and needs
-# OpenSSL 3 plus GNU base64. This image matches Dockerfile.integration's builder,
-# so e2e can run unchanged on macOS and other non-Linux hosts.
-E2E_IMAGE ?= rust:1.87
+# OpenSSL 3 plus GNU base64. Run in Dockerfile.integration's builder stage, so
+# e2e can run unchanged on macOS and other non-Linux hosts; the image is scraped
+# from that Dockerfile so the two cannot drift.
+E2E_IMAGE ?= $(shell awk 'toupper($$1) == "FROM" && tolower($$NF) == "builder" { print $$(NF-2); exit }' $(PROJECT_DIR)/Dockerfile.integration)
 # Named volume shadowing target/ so root-owned Linux build artifacts never land in the repo.
 E2E_TARGET_VOLUME ?= recert-e2e-target
 
