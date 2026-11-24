@@ -45,16 +45,21 @@ spec:
 EOF
 )
 
-trap '
-  etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" \
+cleanup() {
+  # etcdctl del takes <key> [range_end], not a list of keys: delete each key on its own so the
+  # shared serial etcd instance is not left with keys seeded by this scenario.
+  for key in \
     /kubernetes.io/secrets/openshift-etcd/etcd-all-certs \
     /kubernetes.io/configmaps/openshift-etcd/etcd-pod \
     /kubernetes.io/configmaps/openshift-etcd/etcd-scripts \
     /kubernetes.io/operator.openshift.io/kubeapiservers/cluster \
     /kubernetes.io/operator.openshift.io/kubeschedulers/cluster \
     /kubernetes.io/operator.openshift.io/kubecontrollermanagers/cluster \
-    /kubernetes.io/operator.openshift.io/etcds/cluster >/dev/null 2>&1 || true
-' EXIT
+    /kubernetes.io/operator.openshift.io/etcds/cluster; do
+    etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$key" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup EXIT
 
 # fix_etcd_all_certs derives the original hostname from the etcd-peer-*.crt data key
 etcd_put_json "/kubernetes.io/secrets/openshift-etcd/etcd-all-certs" "{

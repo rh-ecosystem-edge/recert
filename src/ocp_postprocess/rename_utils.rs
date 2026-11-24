@@ -550,12 +550,19 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
         pod_yaml = pod_yaml.replace(&pattern, &replacement);
     }
 
-    let leftover = format!("NODE_{}_", env_var_safe(original_hostname));
-    ensure!(
-        !pod_yaml.contains(&leftover),
-        "etcd pod still references {} after renaming; the pod.yaml format may have changed",
-        leftover
-    );
+    // Check the exact env-var names `hostname_substitutions` manages rather than a `NODE_<old>_`
+    // prefix: when the new hostname extends the old one (`master` -> `master-2`) or another node's
+    // safe name extends it (`master-2` while renaming `master`), the renamed/foreign names also
+    // start with that prefix, and a prefix match would fail an otherwise successful rename.
+    let original_hostname_safe = env_var_safe(original_hostname);
+    for suffix in ["ETCD_NAME", "ETCD_URL_HOST", "IP"] {
+        let leftover = format!("NODE_{original_hostname_safe}_{suffix}");
+        ensure!(
+            !pod_yaml.contains(&leftover),
+            "etcd pod still references {} after renaming; the pod.yaml format may have changed",
+            leftover
+        );
+    }
 
     Ok(pod_yaml)
 }
@@ -1216,15 +1223,37 @@ spec:
     }
 
     #[test]
-    fn test_fix_etcd_pod_yaml_hostname_errors_on_unknown_node_env_reference() {
-        let pod_yaml = "env:\n- name: \"NODE_existing_ETCD_PEERS\"\n  value: \"x\"\n";
-
-        let err = fix_etcd_pod_yaml_hostname(pod_yaml, "existing", "node2").unwrap_err();
-
-        assert!(
-            err.to_string().contains("NODE_existing_"),
-            "error should name the leftover reference: {err}"
+    fn test_fix_etcd_pod_yaml_hostname_new_name_extends_old_name() {
+        // `master` -> `master-2`: the renamed env vars still start with `NODE_master_`, which the
+        // leftover guard must not mistake for an unrenamed reference.
+        let pod_yaml = concat!(
+            "env:\n",
+            "- name: \"NODE_master_ETCD_NAME\"\n  value: \"master\"\n",
+            "- name: \"NODE_master_IP\"\n  value: \"192.0.2.10\"\n",
         );
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "master", "master-2").unwrap();
+
+        assert!(renamed.contains("- name: \"NODE_master_2_ETCD_NAME\"\n  value: \"master-2\"\n"));
+        assert!(renamed.contains("- name: \"NODE_master_2_IP\""));
+        assert!(!renamed.contains("NODE_master_ETCD_NAME"));
+        assert!(!renamed.contains("NODE_master_IP"));
+    }
+
+    #[test]
+    fn test_fix_etcd_pod_yaml_hostname_leaves_another_nodes_env_untouched() {
+        // Renaming `master` must not trip over the `master-2` node's env vars (safe form
+        // `master_2`), which also start with `NODE_master_`.
+        let pod_yaml = concat!(
+            "env:\n",
+            "- name: \"NODE_master_ETCD_NAME\"\n  value: \"master\"\n",
+            "- name: \"NODE_master_2_ETCD_NAME\"\n  value: \"master-2\"\n",
+        );
+
+        let renamed = fix_etcd_pod_yaml_hostname(pod_yaml, "master", "node5").unwrap();
+
+        assert!(renamed.contains("- name: \"NODE_node5_ETCD_NAME\"\n  value: \"node5\"\n"));
+        assert!(renamed.contains("- name: \"NODE_master_2_ETCD_NAME\"\n  value: \"master-2\"\n"));
     }
 
     #[test]
