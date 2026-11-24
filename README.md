@@ -45,6 +45,11 @@ See [hack/assets](hack/assets/README.md)
 | E2E crypto (container) | `make e2e-test-container` | The same suite in `Dockerfile.integration`'s builder image, for hosts where the host build can't run (macOS: the vendor tree is filtered for x86_64 Linux, and OpenSSL 3 is required). |
 | Integration | `make integration-test` | Containerized etcd + scenario suite. Owns config CLI, etcd, CN/SAN, PKCS#8 EC, multi-alg JWT, standalone keys, dry-run/force-expire. |
 
+Both container targets use `docker` by default; override with
+`make e2e-test-container CONTAINER_RUNTIME=podman`. Set `E2E_PLATFORM` to pin the
+container architecture (for example `E2E_PLATFORM=linux/amd64`); it defaults to the
+host's architecture.
+
 See [tests/integration/README.md](tests/integration/README.md) for the full
 scenario index.
 
