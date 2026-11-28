@@ -12,6 +12,7 @@ use crate::{
 };
 use anyhow::{bail, ensure, Context, Error, Result};
 use futures_util::future::join_all;
+use serde::Serialize;
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -26,7 +27,7 @@ pub(crate) mod external_certs;
 pub(crate) type ExternalCertsName = String;
 pub(crate) type ExternalCertsHash = String;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct ExternalCerts(HashSet<(ExternalCertsName, ExternalCertsHash)>);
 
 impl ExternalCerts {
