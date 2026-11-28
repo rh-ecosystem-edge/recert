@@ -44,6 +44,10 @@ cn_san_replace_rules:
   - "old-cluster.example.com:new-cluster.example.com"
   - "api.old-cluster.example.com:api.new-cluster.example.com"
   - "192.168.1.100:10.0.0.50"
+  # spiffe URIs contain ':' (scheme), so use the comma separator that CnSanReplace
+  # also accepts (the IPv6 escape hatch) instead of the default ':' split.
+  - "spiffe://old-cluster.example.com/ns/default/sa/app,spiffe://new-cluster.example.com/ns/default/sa/app"
+  - "admin@old-cluster.example.com:admin@new-cluster.example.com"
 force_expire: true
 summary_file: ${workdir}/summary.yaml
 EOF
@@ -55,6 +59,12 @@ assert_contains "$output" "Updating cert-manager Certificate commonName" \
     "should rename commonName"
 assert_contains "$output" "Updating cert-manager Certificate dnsName" \
     "should rename dnsNames"
+assert_contains "$output" "Updating cert-manager Certificate ipAddress" \
+    "should rename ipAddresses"
+assert_contains "$output" "Updating cert-manager Certificate uri" \
+    "should rename uris"
+assert_contains "$output" "Updating cert-manager Certificate emailAddress" \
+    "should rename emailAddresses"
 assert_contains "$output" "Deleting stale cert-manager CertificateRequest" \
     "should clean up stale CertificateRequests"
 
@@ -65,13 +75,16 @@ assert_contains "$cm_after" "api.new-cluster.example.com" \
     "etcd Certificate dnsNames should be rewritten"
 assert_not_contains "$cm_after" '"commonName":"old-cluster.example.com"' \
     "etcd Certificate commonName should not keep the old domain"
-# Main only rewrites commonName/dnsNames — IP/URI/email stay as-is
-assert_contains "$cm_after" '"ipAddresses":["192.168.1.100"]' \
-    "ipAddresses should be unchanged on main"
-assert_contains "$cm_after" "spiffe://old-cluster.example.com/ns/default/sa/app" \
-    "uris should be unchanged on main"
-assert_contains "$cm_after" "admin@old-cluster.example.com" \
-    "emailAddresses should be unchanged on main"
+assert_contains "$cm_after" '"ipAddresses":["10.0.0.50"]' \
+    "ipAddresses matching a rule should be rewritten"
+assert_contains "$cm_after" '"uris":["spiffe://new-cluster.example.com/ns/default/sa/app"]' \
+    "uris matching a rule should be rewritten"
+assert_contains "$cm_after" '"emailAddresses":["admin@new-cluster.example.com"]' \
+    "emailAddresses matching a rule should be rewritten"
+assert_not_contains "$cm_after" "spiffe://old-cluster.example.com" \
+    "uris should not keep the old spiffe value"
+assert_not_contains "$cm_after" "admin@old-cluster.example.com" \
+    "emailAddresses should not keep the old address"
 
 cr_after=$(etcd_get "/kubernetes.io/cert-manager.io/certificaterequests/default/app-tls-old-req")
 assert_eq "$cr_after" "" "stale CertificateRequest should be deleted from etcd"
