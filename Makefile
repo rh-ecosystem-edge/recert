@@ -56,14 +56,38 @@ test: rust-test
 e2e-test: ## Run e2e crypto tests
 	bash $(PROJECT_DIR)/e2e_test.sh
 
+# The host build only works on the platform the vendor tree is filtered for
+# (x86_64 Linux, see [package.metadata.vendor-filter] in Cargo.toml) and needs
+# OpenSSL 3 plus GNU base64. Run in Dockerfile.integration's builder stage, so
+# e2e can run unchanged on macOS and other non-Linux hosts; the image is scraped
+# from that Dockerfile so the two cannot drift.
+E2E_IMAGE ?= $(shell awk 'toupper($$1) == "FROM" && tolower($$NF) == "builder" { print $$(NF-2); exit }' $(PROJECT_DIR)/Dockerfile.integration)
+# Pin the container platform only when the caller asks: an empty value runs the container on
+# the host architecture, which builds fine from the vendor tree (verified on linux/arm64).
+# Defaulting to linux/amd64 would force QEMU emulation on arm64 hosts, where rustc segfaults.
+E2E_PLATFORM ?=
+E2E_PLATFORM_FLAG = $(if $(E2E_PLATFORM),--platform "$(E2E_PLATFORM)")
+# Named volume shadowing target/ so root-owned Linux build artifacts never land in the repo.
+E2E_TARGET_VOLUME ?= recert-e2e-target
+CONTAINER_RUNTIME ?= docker
+
+.PHONY: e2e-test-container
+e2e-test-container: ## Run e2e crypto tests in a container (works on any host)
+	$(CONTAINER_RUNTIME) run --rm $(E2E_PLATFORM_FLAG) \
+		-v "$(PROJECT_DIR):/app" \
+		-v "$(E2E_TARGET_VOLUME):/app/target" \
+		-w /app \
+		$(E2E_IMAGE) \
+		bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 openssl protobuf-compiler >/dev/null && make e2e-test'
+
 # Allocate a TTY for interactive local runs so run_tests.sh draws a live progress bar.
 INTEGRATION_TTY ?= $(if $(CI),,$$([ -t 1 ] && echo -t))
 
 .PHONY: integration-test
 integration-test: ## Run integration tests in a container
-	docker build -f Dockerfile.integration -t recert-integration .
+	$(CONTAINER_RUNTIME) build -f Dockerfile.integration -t recert-integration .
 	mkdir -p "$(PROJECT_DIR)/.integration-artifacts"
-	docker run --rm $(INTEGRATION_TTY) -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration
+	$(CONTAINER_RUNTIME) run --rm $(INTEGRATION_TTY) -v "$(PROJECT_DIR)/.integration-artifacts:/tmp/recert-integration-tests" recert-integration
 
 # Konflux targets
 
@@ -226,4 +250,4 @@ rust-ci: rust-deps rust-fmt rust-vendor-check rust-check rust-clippy rust-test r
 .PHONY: help
 help: ## Display available targets
 	@echo "Available targets:"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-30s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-30s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
