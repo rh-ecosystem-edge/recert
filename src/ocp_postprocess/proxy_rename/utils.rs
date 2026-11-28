@@ -2,6 +2,7 @@ use std::ops::Not;
 
 use super::args::Proxy;
 use crate::file_utils;
+use crate::ocp_postprocess::rename_utils::data_str;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
@@ -59,7 +60,7 @@ pub(crate) fn fix_machineconfig(machineconfig: &mut Value, proxy: &Proxy) -> Res
         .as_object_mut()
         .context("annotations not an object")?;
 
-    let original_data = file_contents["source"].as_str().context("source not a string")?;
+    let original_data = data_str(file_contents, "source")?;
 
     let (decoded, _fragment) = data_url::DataUrl::process(original_data)
         .ok()

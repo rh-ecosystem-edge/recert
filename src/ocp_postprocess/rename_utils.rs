@@ -2,17 +2,27 @@ use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use futures_util::future::join_all;
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::io::BufRead;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::file_utils;
+
+/// Returns a string value from a ConfigMap/object data map without panicking on
+/// a missing key. Indexing a `serde_json::Map` directly panics (`no entry found
+/// for key`), which can be reached with real cluster data that lacks the key.
+pub(crate) fn data_str<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a str> {
+    map.get(key)
+        .with_context(|| format!("{key} not found"))?
+        .as_str()
+        .with_context(|| format!("{key} not a string"))
+}
 
 pub(crate) fn fix_apiserver_url_file(original_data: Vec<u8>, cluster_domain: &str) -> Result<String> {
     // In 4.15 this file might just be empty (e.g. /etc/machine-config-daemon/noorig/etc/kubernetes/apiserver-url.env.mcdnoorig)
@@ -118,21 +128,14 @@ pub(crate) fn fix_api_server_arguments_ip(config: &mut Value, original_ip: &str,
         .context("etcd-servers not an array")?
         .clone();
 
-    let original_ip = if original_ip.contains(':') {
-        format!("[{original_ip}]")
-    } else {
-        original_ip.to_string()
-    };
-
-    let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-
     let new_etcd_servers = original_etcd_servers
         .iter()
         .map(|etcd_server| {
-            Ok(Value::String(etcd_server.as_str().context("etcd server not a string")?.replace(
-                format!("https://{original_ip}").as_str(),
-                format!("https://{ip}").as_str(),
-            )))
+            Ok(Value::String(fix_ip(
+                etcd_server.as_str().context("etcd server not a string")?,
+                original_ip,
+                ip,
+            )?))
         })
         .collect::<Result<Vec<_>>>()
         .context("replacing etcd servers")?;
@@ -340,6 +343,21 @@ fn fix_kubeconfig_context_cluster_name(cluster: &mut serde_json::Map<String, Val
     Ok(())
 }
 
+/// Returns the single container named `name`. Errors when the list is empty, when no container
+/// carries that name, or when more than one does — indexing a `Value` for `name` would otherwise
+/// yield `Null` and skip the container silently.
+pub(crate) fn unique_container_mut<'a>(containers: &'a mut [Value], name: &str) -> Result<&'a mut Value> {
+    ensure!(!containers.is_empty(), "expected at least one container");
+
+    let expected = format!("expected exactly one container named {}", name);
+    let mut matches = containers.iter_mut().filter(|container| container["name"] == name);
+    let container = matches.next().context(expected.clone())?;
+
+    ensure!(matches.next().is_none(), expected);
+
+    Ok(container)
+}
+
 pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<()> {
     let containers = &mut pod
         .pointer_mut("/spec/containers")
@@ -347,37 +365,30 @@ pub(crate) fn fix_kcm_pod(pod: &mut Value, generated_infra_id: &str) -> Result<(
         .as_array_mut()
         .context("clusters not an object")?;
 
-    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+    let container = unique_container_mut(containers, "kube-controller-manager")?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in kube-controller-manager");
+
+    let arg = args
         .iter_mut()
-        .filter(|container| container["name"] == "kube-controller-manager")
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .find_map(|arg| arg.as_str()?.contains("--cluster-name=").then_some(arg))
+        .context("cluster-name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in kube-controller-manager");
-
-            let arg = args
-                .iter_mut()
-                .find_map(|arg| arg.as_str()?.contains("--cluster-name=").then_some(arg))
-                .context("cluster-name not found")?;
-
-            *arg = serde_json::Value::String(
-                regex::Regex::new(r"--cluster-name=[^ ]+")
-                    .context("compiling regex")?
-                    .replace_all(
-                        arg.as_str().context("arg not string")?,
-                        format!("--cluster-name={}", generated_infra_id).as_str(),
-                    )
-                    .to_string(),
-            );
-
-            Ok(())
-        })?;
+    *arg = serde_json::Value::String(
+        regex::Regex::new(r"--cluster-name=[^ ]+")
+            .context("compiling regex")?
+            .replace_all(
+                arg.as_str().context("arg not string")?,
+                format!("--cluster-name={}", generated_infra_id).as_str(),
+            )
+            .to_string(),
+    );
 
     Ok(())
 }
@@ -469,9 +480,11 @@ pub(crate) fn fix_etcd_pod_yaml_hostname(pod_yaml: &str, original_hostname: &str
     Ok(pod_yaml)
 }
 
-pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
-    let mut pod_yaml = pod_yaml.to_string();
+fn is_ip_token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '.' || c == '_'
+}
 
+pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<String> {
     let original_ip = if original_ip.contains(':') {
         format!("[{original_ip}]")
     } else {
@@ -479,8 +492,28 @@ pub(crate) fn fix_ip(pod_yaml: &str, original_ip: &str, ip: &str) -> Result<Stri
     };
 
     let ip = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-    pod_yaml = pod_yaml.replace(original_ip.as_str(), ip.as_str()).to_string();
-    Ok(pod_yaml)
+
+    // Replace only whole address tokens: a bare substring replace would also hit the address when
+    // it is a prefix of a longer one (10.0.0.1 inside 10.0.0.10), a CIDR, or an unrelated value.
+    let mut out = String::with_capacity(pod_yaml.len());
+    let mut last = 0;
+
+    for (start, _) in pod_yaml.match_indices(original_ip.as_str()) {
+        let end = start + original_ip.len();
+
+        let starts_token = pod_yaml[..start].chars().next_back().map_or(true, |c| !is_ip_token_char(c));
+        let ends_token = pod_yaml[end..].chars().next().map_or(true, |c| !is_ip_token_char(c));
+
+        if starts_token && ends_token {
+            out.push_str(&pod_yaml[last..start]);
+            out.push_str(&ip);
+            last = end;
+        }
+    }
+
+    out.push_str(&pod_yaml[last..]);
+
+    Ok(out)
 }
 
 pub(crate) fn fix_etcd_static_pod(pod: &mut Value, original_hostname: &str, hostname: &str) -> Result<()> {
@@ -673,40 +706,23 @@ pub(crate) fn fix_pod_container_env(pod: &mut Value, domain: &str, container_nam
         .as_array_mut()
         .context("clusters not an object")?;
 
-    ensure!(!containers.is_empty(), "expected at least one container in pod.yaml");
+    let container = unique_container_mut(containers, container_name)?;
 
-    ensure!(
-        containers
-            .iter()
-            .filter(|container| container["name"] == container_name)
-            .collect::<Vec<_>>()
-            .len()
-            == 1,
-        format!("expected exactly one container named {}", container_name)
-    );
+    let env = container
+        .pointer_mut("/env")
+        .context("env not found")?
+        .as_array_mut()
+        .context("env not an array")?;
 
-    containers
-        .iter_mut()
-        .filter(|container| container["name"] == container_name)
-        .try_for_each(|container| {
-            let env = container
-                .pointer_mut("/env")
-                .context("env not found")?
-                .as_array_mut()
-                .context("env not an array")?;
+    ensure!(!env.is_empty(), "expected at least one env in container");
 
-            ensure!(!env.is_empty(), "expected at least one env in container");
-
-            env.iter_mut()
-                .find_map(|var| (var.get("name")? == env_name).then_some(var))
-                .context(format!("env var {} not found", env_name))?
-                .as_object_mut()
-                .context("env var not an object")?
-                .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
-                .context("no previous value")?;
-
-            Ok(())
-        })?;
+    env.iter_mut()
+        .find_map(|var| (var.get("name")? == env_name).then_some(var))
+        .context(format!("env var {} not found", env_name))?
+        .as_object_mut()
+        .context("env var not an object")?
+        .insert("value".to_string(), serde_json::Value::String(domain.to_string()))
+        .context("no previous value")?;
 
     Ok(())
 }
@@ -718,32 +734,23 @@ pub(crate) fn fix_mcd_pod_container_args(pod: &mut Value, cluster_domain: &str, 
         .as_array_mut()
         .context("clusters not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    let container = unique_container_mut(containers, container_name)?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in container");
+
+    let arg_idx = args
         .iter_mut()
-        .filter(|container| container["name"] == container_name)
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .enumerate()
+        .find_map(|(i, arg)| arg.as_str()?.starts_with("--apiserver-url=").then_some(i))
+        .context("name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in container");
-
-            let arg_idx = args
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.starts_with("--apiserver-url=").then_some(i))
-                .context("name not found")?;
-
-            args[arg_idx] = serde_json::Value::String(format!("--apiserver-url=https://api-int.{}:6443", cluster_domain));
-
-            Ok(())
-        })?;
+    args[arg_idx] = serde_json::Value::String(format!("--apiserver-url=https://api-int.{}:6443", cluster_domain));
 
     Ok(())
 }
@@ -774,7 +781,7 @@ pub(crate) fn fix_machineconfig(machineconfig: &mut Value, cluster_domain: &str)
         .as_object_mut()
         .context("annotations not an object")?;
 
-    let original_data = file_contents["source"].as_str().context("source not a string")?;
+    let original_data = data_str(file_contents, "source")?;
 
     let (decoded, _fragment) = data_url::DataUrl::process(original_data)
         .ok()
@@ -797,32 +804,23 @@ pub(crate) fn fix_kapi_startup_monitor_pod_container_args(pod: &mut Value, hostn
         .as_array_mut()
         .context("containers not an object")?;
 
-    if containers.is_empty() {
-        bail!("expected at least one container in pod.yaml");
-    }
+    let container = unique_container_mut(containers, "startup-monitor")?;
 
-    containers
+    let args = container
+        .pointer_mut("/args")
+        .context("args not found")?
+        .as_array_mut()
+        .context("args not an array")?;
+
+    ensure!(!args.is_empty(), "expected at least one arg in container");
+
+    let arg_idx = args
         .iter_mut()
-        .filter(|container| container["name"] == "startup-monitor")
-        .try_for_each(|container| {
-            let args = container
-                .pointer_mut("/args")
-                .context("args not found")?
-                .as_array_mut()
-                .context("args not an array")?;
+        .enumerate()
+        .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
+        .context("--node-name not found")?;
 
-            ensure!(!args.is_empty(), "expected at least one arg in container");
-
-            let arg_idx = args
-                .iter_mut()
-                .enumerate()
-                .find_map(|(i, arg)| arg.as_str()?.starts_with("--node-name=").then_some(i))
-                .context("--node-name not found")?;
-
-            args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
-
-            Ok(())
-        })?;
+    args[arg_idx] = serde_json::Value::String(format!("--node-name={}", hostname));
 
     Ok(())
 }
@@ -966,6 +964,207 @@ mod tests {
         assert_eq!(
             metadata["token_endpoint"],
             "https://oauth-openshift.apps.new.example.com/oauth/token"
+        );
+    }
+
+    #[test]
+    fn test_data_str_returns_value() {
+        let mut map = Map::new();
+        map.insert("config.yaml".to_string(), Value::String("foo: bar".to_string()));
+        assert_eq!(data_str(&map, "config.yaml").unwrap(), "foo: bar");
+    }
+
+    #[test]
+    fn test_data_str_missing_key_errors_without_panicking() {
+        let mut map = Map::new();
+        map.insert("other".to_string(), Value::String("value".to_string()));
+        let err = data_str(&map, "config.yaml").unwrap_err();
+        assert!(err.to_string().contains("config.yaml not found"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_data_str_non_string_errors() {
+        let mut map = Map::new();
+        map.insert("config.yaml".to_string(), Value::from(42));
+        let err = data_str(&map, "config.yaml").unwrap_err();
+        assert!(err.to_string().contains("config.yaml not a string"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_fix_api_server_arguments_ip_replaces_target_only() {
+        let mut config = serde_json::json!({
+            "apiServerArguments": {
+                "etcd-servers": [
+                    "https://192.168.126.10:2379",
+                    "https://192.168.126.100:2379",
+                    "https://localhost:2379"
+                ]
+            }
+        });
+
+        fix_api_server_arguments_ip(&mut config, "192.168.126.10", "192.168.127.20").unwrap();
+
+        assert_eq!(
+            config.pointer("/apiServerArguments/etcd-servers"),
+            Some(&serde_json::json!([
+                "https://192.168.127.20:2379",
+                "https://192.168.126.100:2379",
+                "https://localhost:2379"
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_fix_api_server_arguments_ip_missing_etcd_servers_errors() {
+        let mut config = serde_json::json!({"apiServerArguments": {}});
+        let err = fix_api_server_arguments_ip(&mut config, "192.168.126.10", "192.168.127.20").unwrap_err();
+        assert!(err.to_string().contains("etcd-servers not found"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_fix_ip_replaces_whole_tokens_only() {
+        let text = "peer=https://192.0.2.10:2379\ncidr=192.0.2.10/24\nlonger=192.0.2.100\nother=10.0.0.10\n";
+
+        let replaced = fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap();
+
+        assert!(replaced.contains("peer=https://192.0.2.20:2379"));
+        assert!(replaced.contains("cidr=192.0.2.20/24"));
+        assert!(replaced.contains("longer=192.0.2.100"), "must not match inside a longer address");
+        assert!(replaced.contains("other=10.0.0.10"));
+    }
+
+    #[test]
+    fn test_fix_ip_ipv6_is_bracketed() {
+        let text = "endpoints: [https://[fc00::1]:2379]\n";
+
+        assert_eq!(fix_ip(text, "fc00::1", "fc00::2").unwrap(), "endpoints: [https://[fc00::2]:2379]\n");
+    }
+
+    #[test]
+    fn test_fix_ip_without_match_is_unchanged() {
+        let text = "no addresses here\n";
+
+        assert_eq!(fix_ip(text, "192.0.2.10", "192.0.2.20").unwrap(), text);
+    }
+
+    fn container(name: Value) -> Value {
+        serde_json::json!({ "name": name })
+    }
+
+    #[test]
+    fn test_unique_container_mut_returns_the_matching_container() {
+        let mut containers = vec![container(Value::String("a".to_string())), container(Value::String("b".to_string()))];
+
+        let found = unique_container_mut(&mut containers, "b").unwrap();
+
+        assert_eq!(found["name"], "b");
+    }
+
+    #[test]
+    fn test_unique_container_mut_without_a_match_errors() {
+        let mut containers = vec![container(Value::String("a".to_string()))];
+
+        let err = unique_container_mut(&mut containers, "missing").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named missing"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_non_string_name_errors() {
+        let mut containers = vec![container(serde_json::json!(1))];
+
+        assert!(unique_container_mut(&mut containers, "1").is_err());
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_duplicates_errors() {
+        let mut containers = vec![container(Value::String("a".to_string())), container(Value::String("a".to_string()))];
+
+        let err = unique_container_mut(&mut containers, "a").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named a"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_no_containers_errors() {
+        let mut containers: Vec<Value> = vec![];
+
+        let err = unique_container_mut(&mut containers, "a").unwrap_err();
+
+        assert!(err.to_string().contains("at least one container"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_unique_container_mut_with_non_object_entry_errors() {
+        let mut containers = vec![serde_json::json!("not a container")];
+
+        assert!(unique_container_mut(&mut containers, "a").is_err());
+    }
+
+    #[test]
+    fn test_fix_kcm_pod_replaces_cluster_name() {
+        let mut pod = serde_json::json!({
+            "spec": {"containers": [{"name": "kube-controller-manager", "args": ["--cluster-name=old"]}]}
+        });
+
+        fix_kcm_pod(&mut pod, "new-id").unwrap();
+
+        assert_eq!(pod["spec"]["containers"][0]["args"][0], "--cluster-name=new-id");
+    }
+
+    #[test]
+    fn test_fix_kcm_pod_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_kcm_pod(&mut pod, "new-id").unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("expected exactly one container named kube-controller-manager"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_pod_container_env_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_pod_container_env(&mut pod, "new.example.com", "router", "ROUTER_DOMAIN", false).unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named router"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_mcd_pod_container_args_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_mcd_pod_container_args(&mut pod, "new.example.com", "machine-config-server").unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("expected exactly one container named machine-config-server"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_fix_kapi_startup_monitor_pod_container_args_without_the_named_container_errors() {
+        let mut pod = serde_json::json!({"spec": {"containers": [{"name": "other"}]}});
+
+        let err = fix_kapi_startup_monitor_pod_container_args(&mut pod, "new-hostname").unwrap_err();
+
+        assert!(
+            err.to_string().contains("expected exactly one container named startup-monitor"),
+            "unexpected error: {err}"
         );
     }
 }

@@ -2,7 +2,7 @@ use crate::{
     cluster_crypto::locations::K8sResourceLocation,
     k8s_etcd::{get_etcd_json, put_etcd_yaml, InMemoryK8sEtcd},
     ocp_postprocess::rename_utils::{
-        fix_api_server_arguments_domain, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_mcd_pod_container_args,
+        data_str, fix_api_server_arguments_domain, fix_kcm_extended_args, fix_kcm_pod, fix_machineconfig, fix_mcd_pod_container_args,
         fix_oauth_metadata, fix_pod_container_env,
     },
 };
@@ -359,8 +359,7 @@ pub(crate) async fn fix_openshift_apiserver_configmap(etcd_client: &Arc<InMemory
         .as_object_mut()
         .context("data not an object")?;
 
-    let mut config: Value = serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
-        .context("deserializing config.yaml")?;
+    let mut config: Value = serde_yaml::from_slice(data_str(data, "config.yaml")?.as_bytes()).context("deserializing config.yaml")?;
 
     fix_openshift_apiserver_config(&mut config, cluster_domain).context("fixing config")?;
 
@@ -476,13 +475,8 @@ pub(crate) async fn fix_authentication_config(etcd_client: &Arc<InMemoryK8sEtcd>
         .as_object_mut()
         .context("data not an object")?;
 
-    let mut config: Value = serde_yaml::from_slice(
-        data["v4-0-config-system-cliconfig"]
-            .as_str()
-            .context("v4-0-config-system-cliconfig not a string")?
-            .as_bytes(),
-    )
-    .context("deserializing v4-0-config-system-cliconfig")?;
+    let mut config: Value = serde_yaml::from_slice(data_str(data, "v4-0-config-system-cliconfig")?.as_bytes())
+        .context("deserializing v4-0-config-system-cliconfig")?;
 
     fix_oauth_server_authentication_config(&mut config, cluster_domain)?;
 
@@ -650,13 +644,8 @@ pub(crate) async fn fix_console_config(etcd_client: &Arc<InMemoryK8sEtcd>, clust
             .as_object_mut()
             .context("data not an object")?;
 
-        let mut config: Value = serde_yaml::from_slice(
-            data["console-config.yaml"]
-                .as_str()
-                .context("console-config.yaml not a string")?
-                .as_bytes(),
-        )
-        .context("deserializing console-config.yaml")?;
+        let mut config: Value =
+            serde_yaml::from_slice(data_str(data, "console-config.yaml")?.as_bytes()).context("deserializing console-config.yaml")?;
 
         let cluster_info = &mut config
             .pointer_mut("/clusterInfo")
@@ -920,8 +909,7 @@ pub(crate) async fn fix_kube_apiserver_configs(etcd_client: &Arc<InMemoryK8sEtcd
                     .context("data not an object")?;
 
                 let mut config: Value =
-                    serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
-                        .context("deserializing config.yaml")?;
+                    serde_yaml::from_slice(data_str(data, "config.yaml")?.as_bytes()).context("deserializing config.yaml")?;
 
                 fix_api_server_arguments_domain(&mut config, cluster_domain)?;
 
@@ -998,8 +986,7 @@ pub(crate) async fn fix_kcm_config(etcd_client: &Arc<InMemoryK8sEtcd>, infra_id:
                     .context("data not an object")?;
 
                 let mut config: Value =
-                    serde_yaml::from_slice(data["config.yaml"].as_str().context("config.yaml not a string")?.as_bytes())
-                        .context("deserializing config.yaml")?;
+                    serde_yaml::from_slice(data_str(data, "config.yaml")?.as_bytes()).context("deserializing config.yaml")?;
 
                 fix_kcm_extended_args(&mut config, infra_id)?;
 
@@ -1052,7 +1039,7 @@ pub(crate) async fn fix_kcm_kubeconfig(etcd_client: &Arc<InMemoryK8sEtcd>, clust
                     .as_object_mut()
                     .context("data not an object")?;
 
-                let kubeconfig = data["kubeconfig"].as_str().context("kubeconfig not a string")?;
+                let kubeconfig = data_str(data, "kubeconfig")?;
 
                 // We can't use this until https://github.com/openshift/cluster-kube-scheduler-operator/pull/523 is fixed
                 // fix_kubeconfig(_cluster_name, cluster_domain, &mut config)
@@ -1143,7 +1130,7 @@ pub(crate) async fn fix_install_config(
         .as_object_mut()
         .context("data not an object")?;
 
-    let install_config_bytes = data["install-config"].as_str().context("install-config not a string")?.to_string();
+    let install_config_bytes = data_str(data, "install-config")?.to_string();
 
     let mut install_config_value: Value =
         serde_yaml::from_slice(install_config_bytes.as_bytes()).context("deserializing install-config")?;

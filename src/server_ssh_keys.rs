@@ -1,6 +1,9 @@
 use crate::file_utils;
 use anyhow::{ensure, Context, Result};
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 const PATTERN: &str = r"^ssh_host_([a-z\d]+)_key(?:\.pub)?$";
 
@@ -62,7 +65,9 @@ pub(crate) fn write_new_keys(regenerate_server_ssh_keys: &Path, original_key_typ
     Ok(())
 }
 
-pub(crate) fn remove_old_keys(regenerate_server_ssh_keys: &Path) -> Result<HashSet<String>> {
+/// Lists the server SSH key files in `regenerate_server_ssh_keys` and their key types without
+/// modifying anything. Fails if there are no keys or any key file name is unrecognized.
+fn find_key_types(regenerate_server_ssh_keys: &Path) -> Result<(Vec<PathBuf>, HashSet<String>)> {
     let key_files = file_utils::globvec(regenerate_server_ssh_keys, "**/ssh_host_*_key*")?;
 
     ensure!(
@@ -71,17 +76,25 @@ pub(crate) fn remove_old_keys(regenerate_server_ssh_keys: &Path) -> Result<HashS
         regenerate_server_ssh_keys.display()
     );
 
+    let key_types = key_files
+        .iter()
+        .map(|key| get_key_type(key))
+        .collect::<Result<HashSet<_>>>()
+        .context("getting key type")?;
+
+    Ok((key_files, key_types))
+}
+
+/// Removes the server SSH keys, returning their key types. All file names are validated before
+/// anything is removed.
+pub(crate) fn remove_old_keys(regenerate_server_ssh_keys: &Path) -> Result<HashSet<String>> {
+    let (key_files, key_types) = find_key_types(regenerate_server_ssh_keys)?;
+
     for key_file in &key_files {
         std::fs::remove_file(key_file).with_context(|| format!("Failed to remove old SSH server key file {}", key_file.display()))?;
     }
 
-    Ok(key_files
-        .iter()
-        .map(|key| get_key_type(key))
-        .collect::<Result<Vec<_>>>()
-        .context("getting key type")?
-        .into_iter()
-        .collect::<HashSet<String>>())
+    Ok(key_types)
 }
 
 fn get_key_type(key_file: &Path) -> Result<String> {
@@ -99,4 +112,56 @@ fn get_key_type(key_file: &Path) -> Result<String> {
         .context(format!("extracting key type from file name {:?}", key_file.file_name()))?
         .as_str()
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn touch(dir: &Path, names: &[&str]) {
+        for name in names {
+            std::fs::write(dir.join(name), "key").unwrap();
+        }
+    }
+
+    #[test]
+    fn find_key_types_is_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), &["ssh_host_rsa_key", "ssh_host_rsa_key.pub", "ssh_host_ed25519_key"]);
+
+        let (files, types) = find_key_types(dir.path()).unwrap();
+
+        assert_eq!(files.len(), 3);
+        assert_eq!(types, HashSet::from(["rsa".to_string(), "ed25519".to_string()]));
+        assert!(dir.path().join("ssh_host_rsa_key").exists());
+    }
+
+    #[test]
+    fn find_key_types_rejects_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(find_key_types(dir.path()).is_err());
+    }
+
+    #[test]
+    fn remove_old_keys_removes_all_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), &["ssh_host_ecdsa_key", "ssh_host_ecdsa_key.pub"]);
+
+        let types = remove_old_keys(dir.path()).unwrap();
+
+        assert_eq!(types, HashSet::from(["ecdsa".to_string()]));
+        assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn remove_old_keys_validates_before_removing() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), &["ssh_host_rsa_key", "ssh_host_rsa_key-cert.pub"]);
+
+        assert!(remove_old_keys(dir.path()).is_err());
+        assert!(
+            dir.path().join("ssh_host_rsa_key").exists(),
+            "no key may be removed when a name is invalid"
+        );
+    }
 }

@@ -147,6 +147,15 @@ clusters:
 - cluster:
     server: https://localhost:6443
   name: local
+contexts:
+- context:
+    cluster: local
+    user: webhook
+  name: webhook
+current-context: webhook
+users:
+- name: webhook
+  user: {}
 KUBECONFIG
 }
 
@@ -327,6 +336,84 @@ cert_san_text() {
 
 etcd_get() {
     etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$1" --print-value-only
+}
+
+etcd_del() {
+    local key
+    for key in "$@"; do
+        etcdctl del --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$key" >/dev/null
+    done
+}
+
+# Binary-safe substring check: recert re-encodes Secrets/ConfigMaps/Deployments as
+# protobuf on commit, so values may contain NUL bytes that $(etcd_get ...) would mangle.
+etcd_has() {
+    etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$1" --print-value-only | grep -aF -- "$2" >/dev/null
+}
+
+assert_etcd_has() {
+    local key="$1" needle="$2" msg="${3:-etcd ${1} should contain ${2}}"
+    if ! etcd_has "$key" "$needle"; then
+        echo "FAIL: $msg" >&2
+        return 1
+    fi
+}
+
+assert_etcd_lacks() {
+    local key="$1" needle="$2" msg="${3:-etcd ${1} should not contain ${2}}"
+    if etcd_has "$key" "$needle"; then
+        echo "FAIL: $msg" >&2
+        return 1
+    fi
+}
+
+assert_etcd_absent() {
+    local key="$1" msg="${2:-etcd key ${1} should be deleted}"
+    assert_eq "$(etcdctl get --endpoints="${ETCD_ENDPOINT:-localhost:2379}" "$key" --keys-only)" "" "$msg"
+}
+
+# Print the value at JSON POINTER inside the object stored at etcd KEY. Strings
+# print raw; anything else prints canonical JSON so it can be compared with assert_eq.
+etcd_json_pointer() {
+    etcd_get "$1" | python3 -c '
+import json, sys
+o = json.load(sys.stdin)
+for part in sys.argv[1].strip("/").split("/"):
+    o = o[int(part)] if isinstance(o, list) else o[part]
+print(o if isinstance(o, str) else json.dumps(o, sort_keys=True))
+' "$2"
+}
+
+# Print the decoded contents of file PATH inside the MachineConfig stored at etcd KEY.
+etcd_mc_file() {
+    etcd_get "$1" | python3 -c '
+import json, sys, urllib.parse
+path = sys.argv[1]
+for f in json.load(sys.stdin)["spec"]["config"]["storage"]["files"]:
+    if f["path"] == path:
+        src = f["contents"]["source"]
+        assert src.startswith("data:,"), src
+        sys.stdout.write(urllib.parse.unquote(src[len("data:,"):]))
+        break
+else:
+    sys.exit("no file %s in machineconfig" % path)
+' "$2"
+}
+
+# Emit a MachineConfig JSON holding a single file PATH with plain-text CONTENTS.
+machineconfig_json() {
+    python3 -c '
+import json, sys, urllib.parse
+name, path, contents = sys.argv[1:4]
+print(json.dumps({
+    "apiVersion": "machineconfiguration.openshift.io/v1",
+    "kind": "MachineConfig",
+    "metadata": {"name": name},
+    "spec": {"config": {"ignition": {"version": "3.2.0"}, "storage": {"files": [
+        {"path": path, "mode": 420, "overwrite": True,
+         "contents": {"source": "data:," + urllib.parse.quote(contents, safe="")}}]}}},
+}))
+' "$@"
 }
 
 etcd_put_json() {
@@ -583,4 +670,88 @@ print_summary() {
     fi
     echo "=============================="
     return $TESTS_FAILED
+}
+
+# run_encryption_roundtrip LABEL APISERVER_TYPE EXPECTED_PREFIX ENCRYPTION_CONFIG_JSON
+#
+# End-to-end kube_encryption_config coverage. Enabling encryption on the cluster
+# (APIServer spec.encryption.type) makes recert encrypt Secrets on commit with the
+# first provider of ENCRYPTION_CONFIG_JSON and re-encrypt the *entire* shared etcd
+# keyspace (reencrypt_resources). Callers must be named test_etcd_z_* so they sort
+# after every other serial scenario. Decryption uses every key in the config, so a
+# config listing an older key second can read data left by an earlier z_ scenario.
+# The encrypted test Secret is /kubernetes.io/secrets/default/app-tls-enc-LABEL.
+run_encryption_roundtrip() {
+    local label="$1" apiserver_type="$2" expected_prefix="$3" encryption_config_json="$4"
+    local secret_key="/kubernetes.io/secrets/default/app-tls-enc-${label}"
+
+    local workdir crypto_dir
+    workdir=$(setup_test_workdir "etcd_z_encryption_${label}")
+    crypto_dir=$(setup_crypto_dir "$workdir" ca.crt ca.key server.crt server.key)
+    setup_webhook_authenticator "$crypto_dir"
+
+    # The kube-apiserver encryption-config file drives BOTH the encrypt path
+    # (kube_encryption_config) and the decrypt path (build_decryption_transformers()
+    # discovers **/encryption-config/encryption-config under cluster_customization_dirs).
+    local encryption_config_file="${crypto_dir}/kube-apiserver-pod-1/encryption-config/encryption-config"
+    mkdir -p "$(dirname "$encryption_config_file")"
+    printf '%s\n' "$encryption_config_json" > "$encryption_config_file"
+
+    trap "etcd_del '${secret_key}' /1 /kubernetes.io/secrets/openshift-apiserver/encryption-config /kubernetes.io/secrets/openshift-oauth-apiserver/encryption-config 2>/dev/null" EXIT
+
+    etcd_put_tls_secret "default" "app-tls-enc-${label}" "${crypto_dir}/server.crt" "${crypto_dir}/server.key"
+
+    # A short etcd key (single segment, no k8s resource prefix). Scans only enumerate
+    # keys via prefix queries so it is never matched directly, but its presence is a
+    # regression guard for resource_from_key() which used to index segment [2]
+    # unconditionally and panicked on keys with fewer than 3 segments.
+    etcd_put_json "/1" '{"kind":"ConfigMap","metadata":{"name":"1"}}'
+
+    # is_encryption_enabled() is gated on the APIServer "cluster" resource: without
+    # spec.encryption.type no transformers are built and everything stays plaintext.
+    etcd_put_json "/kubernetes.io/config.openshift.io/apiservers/cluster" '{
+  "apiVersion": "config.openshift.io/v1",
+  "kind": "APIServer",
+  "metadata": {"name": "cluster"},
+  "spec": {"encryption": {"type": "'"${apiserver_type}"'"}}
+}'
+
+    # build_decryption_transformers() also merges the openshift/oauth apiserver
+    # encryption-config Secrets and errors if they are missing, so seed both.
+    local secret_bytes ns
+    secret_bytes=$(python3 -c 'import json,sys; sys.stdout.write(json.dumps(list(open(sys.argv[1], "rb").read())))' "$encryption_config_file")
+    for ns in openshift-apiserver openshift-oauth-apiserver; do
+        etcd_put_json "/kubernetes.io/secrets/${ns}/encryption-config" "{
+  \"apiVersion\": \"v1\",
+  \"kind\": \"Secret\",
+  \"metadata\": {\"name\": \"encryption-config\", \"namespace\": \"${ns}\"},
+  \"data\": {\"encryption-config\": ${secret_bytes}}
+}"
+    done
+
+    cat > "${workdir}/config.yaml" <<CFG
+etcd_endpoint: localhost:2379
+crypto_dirs:
+  - ${crypto_dir}
+cluster_customization_dirs:
+  - ${crypto_dir}
+force_expire: true
+kube_encryption_config: ${encryption_config_file}
+summary_file: ${workdir}/summary.yaml
+CFG
+
+    local output
+    output=$(RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success)
+    assert_contains "$output" "Regenerated all crypto objects" "${label}: should regenerate crypto"
+    assert_contains "$output" "Committing to actual etcd" "${label}: should persist etcd cache"
+    cp "${workdir}/summary.yaml" "${workdir}/summary-run1.yaml"
+    assert_match "$(etcd_get "$secret_key")" "^${expected_prefix}" "${label}: secret should be encrypted in etcd"
+
+    # Run again with the same config: reading back the now-encrypted Secret (and the
+    # re-encrypted baseline) must succeed via prefix-based decryption.
+    RECERT_CONFIG="${workdir}/config.yaml" run_recert_expect_success >/dev/null
+    assert_match "$(etcd_get "$secret_key")" "^${expected_prefix}" "${label}: secret should stay encrypted across round-trip"
+
+    assert_summary_valid "${workdir}/summary-run1.yaml"
+    assert_summary_valid "${workdir}/summary.yaml"
 }
