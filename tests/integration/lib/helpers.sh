@@ -384,6 +384,7 @@ jwt_header_field() {
 jwt_header_alg() { jwt_header_field "$1" "alg"; }
 jwt_header_kid() { jwt_header_field "$1" "kid"; }
 
+# ECDSA JWT signatures must be in the fixed-width JWS R||S form (RFC 7518 section 3.4).
 assert_jwt_verifies() {
     local cert="$1"
     local token="$2"
@@ -397,15 +398,20 @@ assert_jwt_verifies() {
     b64url_decode_to_file "$sig" "${tmpdir}/sig.bin"
     openssl x509 -in "$cert" -pubkey -noout > "${tmpdir}/pub.pem" 2>/dev/null
 
-    local failed=0
+    local failed=0 digest
     case "$alg" in
-        RS256|ES256)
-            openssl dgst -sha256 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
-                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
-            ;;
-        ES384)
-            openssl dgst -sha384 -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
-                "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+        RS256|ES256|ES384)
+            digest="-sha256"
+            if [[ "$alg" == "ES384" ]]; then digest="-sha384"; fi
+            if [[ "$alg" == ES* ]]; then
+                python3 "${INTEGRATION_LIB_DIR}/ecdsa_jws.py" jose-to-der "$alg" \
+                    < "${tmpdir}/sig.bin" > "${tmpdir}/sig.der" \
+                    && mv "${tmpdir}/sig.der" "${tmpdir}/sig.bin" || failed=1
+            fi
+            if [[ "$failed" -eq 0 ]]; then
+                openssl dgst "$digest" -verify "${tmpdir}/pub.pem" -signature "${tmpdir}/sig.bin" \
+                    "${tmpdir}/signing_input" >/dev/null 2>&1 || failed=1
+            fi
             ;;
         EdDSA)
             openssl pkeyutl -verify -inkey "${tmpdir}/pub.pem" -pubin -rawin \
@@ -440,7 +446,7 @@ run_jwt_algo_test() {
     mkdir -p "${crypto_dir}/sa"
     cp "${FIXTURES_DIR}/${jwt_fixture}" "${crypto_dir}/sa/token"
 
-    local token_before kid_before token_after kid_after
+    local token_before token_after kid_before kid_after
     token_before=$(tr -d '\n' < "${crypto_dir}/sa/token")
     assert_eq "$(jwt_header_alg "$token_before")" "$expected_alg" \
         "fixture JWT alg should be ${expected_alg}"
